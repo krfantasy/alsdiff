@@ -1,10 +1,10 @@
 (** A simple path parser for a subset of XPath-like syntax.
     Supports:
-    - Tag names with optional attributes (e.g., `tag`, `tag[@attr="value"]`, `tag[@attr=*]`)
+    - Tag names with optional attributes (e.g., `tag`, `tag@attr="value"`, `tag@attr=*`)
     - Indexing (e.g., `[0]`, `[1]`)
     - Single wildcard (`*`)
     - Multi wildcard (`**`)
-    - Paths separated by `/` (e.g., `/tag1/tag2[@attr="value"]/*/[0]/**/tag3`)
+    - Paths separated by `/` (e.g., `/tag1/tag2@attr="value"/*/tag3/**/tag4`)
 
     Does not support:
     - Functions
@@ -13,7 +13,7 @@
     - Other XPath features
 
     Example usage:
-    let result = parse_path "/bookstore/book[@category=\"cooking\"]/title"
+    let result = parse_path "/bookstore/book@category=\"cooking\"/title"
 *)
 
 
