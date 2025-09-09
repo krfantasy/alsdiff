@@ -1,0 +1,4 @@
+(executable
+ (public_name live_git)
+ (name main)
+ (libraries live_git timedesc))
