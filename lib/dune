@@ -1,0 +1,11 @@
+(library
+ (name live_git)
+ (libraries
+   angstrom
+   camlzip
+   eio
+   eio_main
+   xmlm
+   timedesc-tzdb.full
+   timedesc-tzlocal.unix
+   timedesc))
