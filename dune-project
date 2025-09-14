@@ -19,7 +19,7 @@
  (name live_git)
  (synopsis "Git helper for Ableton Live Set(.als)")
  (description "Git helper for Ableton Live Set(.als)")
- (depends ocaml camlzip xmlm)
+ (depends ocaml camlzip xmlm angstrom eio alcotest)
  (tags
   ("ableton live" "git" "version control")))
 
