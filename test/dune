@@ -1,2 +1,7 @@
 (test
- (name test_live_git))
+ (name test_live_git)
+ (libraries live_git_lib))
+
+(test
+ (name test_upath)
+ (libraries live_git_lib alcotest))

@@ -1,11 +1,15 @@
 (library
- (name live_git)
+ (name live_git_lib)
+ (modules
+  xml
+  upath
+  sink
+  live
+  file
+  diff)
  (libraries
    angstrom
    camlzip
    eio
    eio_main
-   xmlm
-   timedesc-tzdb.full
-   timedesc-tzlocal.unix
-   timedesc))
+   xmlm))
