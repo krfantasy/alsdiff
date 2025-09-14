@@ -11,5 +11,4 @@
    angstrom
    camlzip
    eio
-   eio_main
    xmlm))

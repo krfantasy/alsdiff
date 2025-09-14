@@ -15,6 +15,7 @@ depends: [
   "xmlm"
   "angstrom"
   "eio"
+  "eio_main"
   "alcotest" {with-test}
 ]
 build: [
