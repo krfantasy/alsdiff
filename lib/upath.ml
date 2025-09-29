@@ -1,9 +1,9 @@
 (** A simple path parser for a subset of XPath-like syntax.
     Supports:
     - Tag names with optional attributes (e.g., `tag`, `tag@attr="value"`, `tag@attr=*`)
-    - Indexing (e.g., `[0]`, `[1]`)
-    - Single wildcard (`*`)
-    - Multi wildcard (`**`)
+    - Indexing with optional Tag name (e.g., `[0]`, `[1]`, `tag[3]`)
+    - Single wildcard (`*`) for single level matching
+    - Multi wildcard (`**`) for multiple levels matching
     - Paths separated by `/` (e.g., `/tag1/tag2@attr="value"/*/tag3/**/tag4`)
 
     Does not support:
@@ -156,8 +156,73 @@ type search_node = {
 
 module Seq = Stdlib.Seq
 
+(** Find all XML elements with limited depth search (for single wildcard contexts) *)
+let find_all_single_wildcard (p: path_component list) (nodes: search_node Seq.t) : search_node Seq.t =
+  let rec find_all_limited (p: path_component list) (nodes: search_node Seq.t) (depth: int) : search_node Seq.t =
+    let children_of n =
+      match n.node with
+      | Xml.Element {childs; name; _} ->
+        let new_path = n.path_to_parent ^ "/" ^ name in
+        Seq.map (fun child -> {path_to_parent=new_path; node=child}) (List.to_seq childs)
+      | Xml.Data _ -> Seq.empty
+    in
+    match p with
+    | [] -> nodes
+    | c :: rest ->
+      match c with
+      | Tag _ ->
+        let matched_nodes = Seq.filter (fun sn -> match_component sn.node c) nodes in
+        let results_from_matched =
+          if rest = [] then matched_nodes
+          else find_all_limited rest (Seq.flat_map children_of matched_nodes) (depth + 1)
+        in
+        (* For single wildcard context, limit search depth to avoid nested matches *)
+        if depth >= 1 then
+          results_from_matched  (* Don't do recursive search beyond direct children *)
+        else
+          let all_children = Seq.flat_map children_of nodes in
+          let results_from_children =
+            if Seq.is_empty all_children then Seq.empty
+            else find_all_limited p all_children (depth + 1)
+          in
+          Seq.append results_from_matched results_from_children
+      | SingleWildcard ->
+        let matched_nodes = Seq.filter (fun sn -> match_component sn.node c) nodes in
+        let results_from_matched =
+          if rest = [] then matched_nodes
+          else
+            (* For single wildcard, only search direct children, not recursively *)
+            let direct_children = Seq.flat_map children_of matched_nodes in
+            find_all_limited rest direct_children (depth + 1)
+        in
+        (* For single wildcard, do NOT continue searching recursively like multi-wildcard *)
+        results_from_matched
+      | Index (i, tag_opt) ->
+        let all_children = Seq.flat_map children_of nodes in
+        let filtered_children =
+          match tag_opt with
+          | None -> all_children
+          | Some tag ->
+            Seq.filter (fun sn ->
+                match sn.node with
+                | Xml.Element { name = t; _ } -> t = tag
+                | _ -> false
+              ) all_children
+        in
+        (match Seq.drop i filtered_children |> Seq.uncons with
+         | Some (n, _) -> find_all_limited rest (Seq.return n) (depth + 1)
+         | None -> Seq.empty)
+      | MultiWildcard -> find_all_limited rest nodes (depth + 1)
+  in
+  find_all_limited p nodes 0
+
 (** Find all XML elements in [tree] that match the [path] as a lazy sequence. *)
-let all_path_seq (tree : Xml.t) (path : path) : (string * Xml.t) Seq.t =
+let find_all_seq (tree : Xml.t) (path : string) : (string * Xml.t) Seq.t =
+  let parsed_path =
+    match Parser.parse_path path with
+    | Ok p -> p
+    | Error msg -> failwith ("Failed to parse path: " ^ path ^ " with error: " ^ msg)
+  in
   let rec find_all (p: path_component list) (nodes: search_node Seq.t) : search_node Seq.t =
     let children_of n =
       match n.node with
@@ -166,12 +231,11 @@ let all_path_seq (tree : Xml.t) (path : path) : (string * Xml.t) Seq.t =
         Seq.map (fun child -> {path_to_parent=new_path; node=child}) (List.to_seq childs)
       | Xml.Data _ -> Seq.empty
     in
-
     match p with
     | [] -> nodes
     | c :: rest ->
       match c with
-      | Tag _ | SingleWildcard ->
+      | Tag _ ->
         let matched_nodes = Seq.filter (fun sn -> match_component sn.node c) nodes in
         let results_from_matched =
           if rest = [] then matched_nodes
@@ -183,7 +247,17 @@ let all_path_seq (tree : Xml.t) (path : path) : (string * Xml.t) Seq.t =
           else find_all p all_children
         in
         Seq.append results_from_matched results_from_children
-
+      | SingleWildcard ->
+        let matched_nodes = Seq.filter (fun sn -> match_component sn.node c) nodes in
+        let results_from_matched =
+          if rest = [] then matched_nodes
+          else
+            (* For single wildcard, only search direct children, not recursively *)
+            let direct_children = Seq.flat_map children_of matched_nodes in
+            find_all_single_wildcard rest direct_children
+        in
+        (* For single wildcard, do NOT continue searching recursively like multi-wildcard *)
+        results_from_matched
       | Index (i, tag_opt) ->
         let all_children = Seq.flat_map children_of nodes in
         let filtered_children =
@@ -199,13 +273,11 @@ let all_path_seq (tree : Xml.t) (path : path) : (string * Xml.t) Seq.t =
         (match Seq.drop i filtered_children |> Seq.uncons with
          | Some (n, _) -> find_all rest (Seq.return n)
          | None -> Seq.empty)
-
       | MultiWildcard -> find_all rest nodes
   in
-
   let initial_node = { path_to_parent = ""; node = tree } in
   let result_seq =
-    match path with
+    match parsed_path with
     | [] -> Seq.empty
     | first_component :: rest_path ->
       if match_component tree first_component then
@@ -224,9 +296,9 @@ let all_path_seq (tree : Xml.t) (path : path) : (string * Xml.t) Seq.t =
   |> Seq.memoize
 
 (** Find all XML elements in [tree] that match the [path]. *)
-let filter_path (tree : Xml.t) (path : path) : (string * Xml.t) list =
-  all_path_seq tree path |> List.of_seq
+let find_all (tree : Xml.t) (path : string) : (string * Xml.t) list =
+  find_all_seq tree path |> List.of_seq
 
 (** Find the first XML element in [tree] that matches the [path]. *)
-let find_path (tree : Xml.t) (path : path) : (string * Xml.t) option =
-  all_path_seq tree path |> Seq.uncons |> Option.map fst
+let find (tree : Xml.t) (path : string) : (string * Xml.t) option =
+  find_all_seq tree path |> Seq.uncons |> Option.map fst
