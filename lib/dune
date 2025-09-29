@@ -5,8 +5,7 @@
   upath
   sink
   live
-  file
-  diff)
+  file)
  (libraries
    angstrom
    camlzip
