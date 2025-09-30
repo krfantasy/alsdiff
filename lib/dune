@@ -5,9 +5,14 @@
   upath
   sink
   live
-  file)
+  file
+  time
+  config)
  (libraries
    angstrom
    camlzip
    eio
-   xmlm))
+   xmlm
+   yojson)
+ (preprocess
+  (pps ppx_deriving_jsonschema ppx_deriving_yojson)))

@@ -163,7 +163,6 @@ let find_all_seq (tree : Xml.t) (path : string) : (string * Xml.t) Seq.t =
     | Ok p -> p
     | Error msg -> failwith ("Failed to parse path: " ^ path ^ " with error: " ^ msg)
   in
-
   let children_of n =
     match n.node with
     | Xml.Element {childs; name; _} ->
@@ -171,7 +170,6 @@ let find_all_seq (tree : Xml.t) (path : string) : (string * Xml.t) Seq.t =
       Seq.map (fun child -> {path_to_parent=new_path; node=child}) (List.to_seq childs)
     | Xml.Data _ -> Seq.empty
   in
-
   let rec find_all (p: path_component list) (nodes: search_node Seq.t) : search_node Seq.t =
     match p with
     | [] -> nodes
@@ -201,7 +199,7 @@ let find_all_seq (tree : Xml.t) (path : string) : (string * Xml.t) Seq.t =
            * all descendant nodes (including the current nodes) and apply the rest of the path *)
           let rec collect_all_descendants acc current_nodes =
             if Seq.is_empty current_nodes then acc
-            else 
+            else
               let current_nodes_list = List.of_seq current_nodes in
               let all_nodes = Seq.append acc (List.to_seq current_nodes_list) in
               let next_level = Seq.flat_map children_of current_nodes in
