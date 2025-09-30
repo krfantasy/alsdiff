@@ -17,6 +17,9 @@ depends: [
   "eio"
   "eio_main"
   "alcotest" {with-test}
+  "ppx_deriving_jsonschema"
+  "ppx_deriving_yojson"
+  "yojson"
 ]
 build: [
   ["dune" "build" "-p" name "-j" jobs]

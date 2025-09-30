@@ -55,44 +55,6 @@ let create_automation (xml : Xml.t) : automation =
     try List.assoc name attrs
     with Not_found -> failwith ("Attribute " ^ name ^ " not found")
   in
-  let find_child_element name (node : t) : t option =
-    match node with
-    | Element { childs; _ } ->
-        List.find_opt (function
-          | Element { name = child_name; _ } -> child_name = name
-          | Data _ -> false
-        ) childs
-    | Data _ -> None
-  in
-  let filter_child_elements name (node : t) : t list =
-    match node with
-    | Element { childs; _ } ->
-        List.filter (function
-          | Element { name = child_name; _ } -> child_name = name
-          | Data _ -> false
-        ) childs
-    | Data _ -> []
-  in
-  let get_element_path path start_node =
-    (* For now, we'll use a simple approach for common paths *)
-    let components = String.split_on_char '/' path in
-    let rec find_element node path_components =
-      match path_components with
-      | [] -> Some node
-      | component :: rest ->
-          match node with
-          | Element { childs; _ } ->
-              let found = List.find_opt (function
-                | Element { name; _ } -> name = component
-                | Data _ -> false
-              ) childs in
-              (match found with
-              | Some child_node -> find_element child_node rest
-              | None -> None)
-          | Data _ -> None
-    in
-    find_element start_node components
-  in
   let parse_event = function
     | Element { attrs; _ } ->
         {
@@ -105,24 +67,20 @@ let create_automation (xml : Xml.t) : automation =
     | Element { attrs; _ } as envelope_node ->
         let id = int_of_string (get_attr "Id" attrs) in
         let target =
-          match get_element_path "EnvelopeTarget/PointeeId" envelope_node with
-          | Some (Element { attrs = p_attrs; _ }) ->
+          match Upath.find envelope_node "/EnvelopeTarget/PointeeId@Value" with
+          | Some (_, Element { attrs = p_attrs; _ }) ->
               int_of_string (get_attr "Value" p_attrs)
           | _ -> failwith "Cannot find target"
         in
         let events =
-          match get_element_path "Automation/Events" envelope_node with
-          | Some events_node ->
-              filter_child_elements "FloatEvent" events_node |> List.map parse_event
-          | None -> failwith "Cannot find events"
+          Upath.find_all envelope_node "/Automation/Events/FloatEvent"
+          |> List.map (fun (_, event) -> parse_event event)
         in
         { id; target; events }
     | Data _ -> failwith "Envelope must be an element"
   in
   let envelopes =
-    match find_child_element "Envelopes" xml with
-    | Some envelopes_node ->
-        filter_child_elements "AutomationEnvelope" envelopes_node
-    | None -> failwith "Cannot find Envelopes"
+    Upath.find_all xml "/Envelopes/AutomationEnvelope"
+    |> List.map (fun (_, envelope) -> parse_envelope envelope)
   in
-  { automation_envelopes = List.map parse_envelope envelopes }
+  { automation_envelopes = envelopes }
