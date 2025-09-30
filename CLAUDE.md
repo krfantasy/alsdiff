@@ -6,10 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is an OCaml project using Dune build system:
 - `dune build` - Build the project
-- `dune runtest` - Run all tests
+- `dune runtest --force` - Run all tests
 - `dune exec live_git` - Run the main executable
 - `dune test test_upath` - Run specific test (Upath tests)
-- `dune test test_live_git` - Run specific test (Live Git tests)
 
 ## Project Structure
 
@@ -19,11 +18,8 @@ This is an OCaml project using Dune build system:
   - `upath.ml` - XPath-like query language for XML
   - `live.ml` - Ableton Live specific data structures and logic
   - `file.ml` - File handling and .als file decompression
-  - `diff.ml` - Diffing functionality for Live objects
-  - `patch.ml` - Patch data structures
 - `test/` - Test suites:
   - `test_upath.ml` - Tests for XPath-like functionality
-  - `test_live_git.ml` - Tests for Live Git functionality
 
 ## Key Dependencies
 
@@ -45,7 +41,7 @@ This is a Git helper tool for Ableton Live Set (.als) files. The core functional
 
 The `Upath` module provides a subset of XPath functionality with support for:
 - Tag names with attributes (`tag@attr="value"`)
-- Indexing (`[0]`, `[1]`)
+- Indexing with optional tag matching (`[0]`, `[1]`, `tag[0]`, `tag[1]`)
 - Wildcards (`*`, `**`)
 - Path navigation (`/tag1/tag2`)
 
@@ -54,3 +50,5 @@ The `Upath` module provides a subset of XPath functionality with support for:
 - `dune build @fmt` - Format code
 - `dune promote` - Promote generated files
 - `dune clean` - Clean build artifacts
+- `dune utop` - Load this library into Utop REPL
+- `dune utop . -- -emacs` - Load this library into Utop REPL for Emacs utop-mode
