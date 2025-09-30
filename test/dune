@@ -23,3 +23,8 @@
  (name test_wildcard)
  (modules test_wildcard)
  (libraries live_git_lib alcotest test_utils))
+
+(test
+ (name test_complex)
+ (modules test_complex)
+ (libraries live_git_lib alcotest test_utils))
