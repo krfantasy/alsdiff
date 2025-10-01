@@ -1,61 +1,76 @@
+module TimeSignature = struct
+  type t = { numer : int; denom : int } [@@deriving eq]
+end
 
+module MidiNote = struct
+  type t = {
+    time : int;
+    duration : int;
+    velocity : int;
+    off_velocity : int;
+    note : int;
+  } [@@deriving eq]
+end
 
-type time_signature = { numerator : int; denominator : int }
+module LoopSection = struct
+  type t = {
+    start : int;
+    end_ : int;
+    on : bool;
+  } [@@deriving eq]
+end
 
-type midi_note = {
-  time : int;
-  duration : int;
-  velocity : int;
-  off_velocity : int;
-  note : int;
-}
+module Content = struct
+  type t =
+    | MIDIContent of MidiNote.t list
+    | AudioContent of { file_path : string; sample_rate : int; bit_depth : int }
+  [@@deriving eq]
+end
 
-type loop_section = {
-  start : int;
-  end_ : int;
-  on : bool;
-}
+module Clip = struct
+  type t = {
+    id : int;
+    start : float;
+    duration : float;
+    loop : LoopSection.t option;
+    signature : TimeSignature.t;
+    content : Content.t;
+  } [@@deriving eq]
+end
 
+module EnvelopeEvent = struct
+  type t = {
+    time : float;
+    value : float;
+  } [@@deriving eq]
+end
 
-type content =
-  | MIDIContent of midi_note list
-  | AudioContent of { file_path : string; sample_rate : int; bit_depth : int }
+module AutomationEnvelope = struct
+  type t = {
+    id : int;
+    target : int;
+    events : EnvelopeEvent.t list;
+  } [@@deriving eq]
+end
 
-type clip = {
-  id : int;
-  start : float;
-  duration : float;
-  loop : loop_section option;
-  signature : time_signature;
-  content : content;
-}
+module Automation = struct
+  type t = {
+    automation_envelopes : AutomationEnvelope.t list;
+  } [@@deriving eq]
+end
 
-type envelope_event = {
-  time : float;
-  value : float;
-}
-
-type automation_envelope = {
-  id : int;
-  target : int;
-  events : envelope_event list;
-}
-
-type automation = {
-  automation_envelopes : automation_envelope list;
-}
 
 (** create [automation] from the given [xml] node,
     which is expected to be the root node of an [AutomationEnvelopes] element.
     @raise Failure if the given [xml] is not the expected format.
   *)
-let create_automation (xml : Xml.t) : automation =
+let create_automation (xml : Xml.t) : Automation.t =
   let open Xml in
   let get_attr name attrs =
     try List.assoc name attrs
     with Not_found -> failwith ("Attribute " ^ name ^ " not found")
   in
-  let parse_event = function
+  let parse_event : Xml.t -> EnvelopeEvent.t = function
     | Element { attrs; _ } ->
         {
           time = float_of_string (get_attr "Time" attrs);
@@ -63,7 +78,7 @@ let create_automation (xml : Xml.t) : automation =
         }
     | Data _ -> failwith "Event must be an element"
   in
-  let parse_envelope = function
+  let parse_envelope : Xml.t -> AutomationEnvelope.t = function
     | Element { attrs; _ } as envelope_node ->
         let id = int_of_string (get_attr "Id" attrs) in
         let target =
@@ -84,3 +99,14 @@ let create_automation (xml : Xml.t) : automation =
     |> List.map (fun (_, envelope) -> parse_envelope envelope)
   in
   { automation_envelopes = envelopes }
+
+type audio_track
+type midi_track
+type return_track
+type master_track
+
+type _ track =
+  | AudioTrack : audio_track -> audio_track track
+  | MIDITrack : midi_track -> midi_track track
+  | ReturnTrack : return_track -> return_track track
+  | MasterTrack : master_track -> master_track track

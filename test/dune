@@ -28,3 +28,9 @@
  (name test_complex)
  (modules test_complex)
  (libraries live_git_lib alcotest test_utils))
+
+(test
+ (name test_diff_automation)
+ (modules test_diff_automation)
+ (libraries live_git_lib alcotest test_utils)
+ (deps automation.xml automation_old.xml))

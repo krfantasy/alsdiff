@@ -51,7 +51,7 @@ This will execute the `main.ml` file.
 To run the tests, use the following command:
 
 ```bash
-dune test
+dune runtest
 ```
 
 # Development Conventions
