@@ -9,8 +9,8 @@
   config
   equality
   live
-  patch
-  diff)
+  diff
+  output)
  (libraries
    angstrom
    camlzip

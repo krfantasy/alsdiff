@@ -12,7 +12,7 @@ let test_create_automation () =
   in
 
   (* Create automation from the XML *)
-  let automation = create_automation automation_envelopes_element in
+  let automation = Automation.create automation_envelopes_element in
 
   (* Check that we have the expected number of envelopes *)
   let expected_envelope_count = 6 in
