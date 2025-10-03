@@ -1,8 +1,8 @@
 open Alcotest
 open Live_git_lib
 open Live_git_lib.Live
-open Live_git_lib.Patch
 open Live_git_lib.Diff
+open Live_git_lib.Output
 
 (** Helper to load an Automation.t from a file path. *)
 let load_automation_from_file (path : string) : Automation.t =
@@ -12,7 +12,7 @@ let load_automation_from_file (path : string) : Automation.t =
     | Xml.Element { name = "AutomationEnvelopes"; _ } as envelopes -> envelopes
     | _ -> failwith ("Root element in " ^ path ^ " is not AutomationEnvelopes")
   in
-  create_automation envelopes_element
+  Automation.create envelopes_element
 
 (** The main test function for the automation diffing logic. *)
 let test_diff_logic () =
@@ -21,7 +21,7 @@ let test_diff_logic () =
   let new_automation = load_automation_from_file "automation.xml" in
 
   (* 2. Compute the diff between the old and new states. *)
-  let patch = diff_automation old_automation new_automation in
+  let patch = AutomationPatch.diff old_automation new_automation in
   let changes = patch.envelope_changes in
 
   (* 3. Assert the expected outcomes. *)
@@ -75,8 +75,37 @@ let test_diff_logic () =
   | Some e -> check (float 0.001) "removed event time" 140.0 e.EnvelopeEvent.time
   | None -> fail "Expected to find a removed event in patch for id 0")
 
+(** Test function for verifying the text output from TextOutput module. *)
+let test_text_output () =
+  (* 1. Load the old and new states from the XML files. *)
+  let old_automation = load_automation_from_file "automation_old.xml" in
+  let new_automation = load_automation_from_file "automation.xml" in
+
+  (* 2. Compute the diff between the old and new states. *)
+  let patch = AutomationPatch.diff old_automation new_automation in
+
+  (* 3. Generate the text output using TextOutput. *)
+  let text_output = TextOutput.render_automation_patch patch in
+
+  (* 4. Define the expected text output. *)
+  let expected_lines = [
+    "Automation Patch:";
+    "  ~ Patched Envelope (Id: 0, Target: 27743):";
+    "    - Event at time 140.00 with value 0.3330";
+    "    + Event at time 136.00 with value 0.2239";
+    "+ Added Envelope (Id: 3, Target: 27888)";
+    "- Removed Envelope (Id: 3, Target: 99999)";
+    "+ Added Envelope (Id: 6, Target: 27894)";
+    "- Removed Envelope (Id: 7, Target: 27902)";
+  ] in
+  let expected_output = String.concat "\n" expected_lines in
+
+  (* 5. Assert that the generated text matches the expected text. *)
+  check string "text output" expected_output text_output
+
 (** Alcotest test suite setup. *)
 let () =
   run "Diff Automation" [
     "diff-logic", [ test_case "Test automation diffing logic" `Quick test_diff_logic ];
+    "text-output", [ test_case "Test text output rendering" `Quick test_text_output ];
   ]
