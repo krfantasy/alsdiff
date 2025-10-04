@@ -77,3 +77,10 @@ The `Diff` module implements multiple diffing algorithms:
 - `dune clean` - Clean build artifacts
 - `dune utop` - Load this library into Utop REPL
 - `dune utop . -- -emacs` - Load this library into Utop REPL for Emacs utop-mode
+- Always adding the texts inside the code block in the end of git commit message,
+```
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
