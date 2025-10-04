@@ -44,4 +44,3 @@
  (name test_diff_list_myers)
  (modules test_diff_list_myers)
  (libraries live_git_lib alcotest test_utils))
-

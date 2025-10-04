@@ -3,7 +3,6 @@
  (modules
   xml
   upath
-  sink
   file
   time
   config
