@@ -1,6 +1,6 @@
 open Alcotest
-open Live_git_lib
-open Live_git_lib.Diff
+open Alsdiff_lib
+open Alsdiff_lib.Diff
 
 (** Test basic Myers algorithm functionality *)
 let test_diff_list_myers_basic () =
