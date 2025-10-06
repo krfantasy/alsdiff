@@ -36,10 +36,39 @@ let test_create_automation () =
        | [] -> Alcotest.fail "First envelope should have events")
   | [] -> Alcotest.fail "Should have envelopes"
 
+let test_create_mixer () =
+  (* Read the mixer.xml file *)
+  let (_, xml) = read_file "mixer.xml" in
+
+  (* Create mixer from the XML *)
+  let mixer = Mixer.create xml in
+
+  (* Check mixer values *)
+  Alcotest.(check (float 0.0001)) "volume" 0.5011872053 mixer.volume;
+  Alcotest.(check (float 0.0001)) "pan" 0.4699999988 mixer.pan;
+  Alcotest.(check bool) "mute" true mixer.mute;
+  Alcotest.(check bool) "solo" false mixer.solo;
+
+  (* Check sends *)
+  let expected_sends_count = 1 in
+  let actual_sends_count = List.length mixer.sends in
+  Alcotest.(check int) "sends count" expected_sends_count actual_sends_count;
+
+  (* Check the first send *)
+  (match mixer.sends with
+   | first_send :: _ ->
+       Alcotest.(check int) "first send target" 0 first_send.target;
+       Alcotest.(check (float 0.0001)) "first send amount" 0.0003162277571 first_send.amount;
+   | [] -> Alcotest.fail "Should have sends")
+
 let () =
   Alcotest.run "Live" [
     "create_automation",
     [
       Alcotest.test_case "parse automation XML" `Quick test_create_automation
+    ];
+    "create_mixer",
+    [
+      Alcotest.test_case "parse mixer XML" `Quick test_create_mixer
     ]
   ]
