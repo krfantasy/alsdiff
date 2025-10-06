@@ -17,7 +17,7 @@
  (name test_live)
  (modules test_live)
  (libraries live_git_lib alcotest test_utils)
- (deps automation.xml))
+ (deps automation.xml mixer.xml))
 
 (test
  (name test_wildcard)
@@ -44,3 +44,9 @@
  (name test_diff_list_myers)
  (modules test_diff_list_myers)
  (libraries live_git_lib alcotest test_utils))
+
+(test
+ (name test_diff_mixer)
+ (modules test_diff_mixer)
+ (libraries live_git_lib alcotest test_utils)
+ (deps mixer.xml mixer_old.xml))

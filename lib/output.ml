@@ -65,9 +65,90 @@ module TextOutput : Output with type t = string = struct
     | `Patched patch ->
         render_envelope_patch patch
 
-  let render_automation_patch patch =
+  let render_automation_patch (patch : AutomationPatch.t) =
     let header = "Automation Patch:\n" in
-    let change_lines = List.map render_envelope_op patch.envelope_changes in
+    let change_lines = List.map render_envelope_op patch.AutomationPatch.envelope_changes in
     let filtered_lines = List.filter (fun s -> s <> "") change_lines in
     header ^ (String.concat "\n" filtered_lines)
+
+  let render_mixer (patch : MixerPatch.t) =
+    let header = "Mixer Patch:" in
+
+    (* Render volume change *)
+    let volume_line =
+      match patch.MixerPatch.volume with
+      | `Unchanged -> ""
+      | `Added v -> Printf.sprintf "  + Volume: %.4f" v
+      | `Removed v -> Printf.sprintf "  - Volume: %.4f" v
+      | `Modified m -> Printf.sprintf "  ~ Volume changed from %.4f to %.4f" m.old m.new_
+    in
+
+    (* Render pan change *)
+    let pan_line =
+      match patch.MixerPatch.pan with
+      | `Unchanged -> ""
+      | `Added p -> Printf.sprintf "  + Pan: %.4f" p
+      | `Removed p -> Printf.sprintf "  - Pan: %.4f" p
+      | `Modified m -> Printf.sprintf "  ~ Pan changed from %.4f to %.4f" m.old m.new_
+    in
+
+    (* Render mute change *)
+    let mute_line =
+      match patch.MixerPatch.mute with
+      | `Unchanged -> ""
+      | `Added b -> Printf.sprintf "  + Mute: %b" b
+      | `Removed b -> Printf.sprintf "  - Mute: %b" b
+      | `Modified m -> Printf.sprintf "  ~ Mute changed from %b to %b" m.old m.new_
+    in
+
+    (* Render solo change *)
+    let solo_line =
+      match patch.MixerPatch.solo with
+      | `Unchanged -> ""
+      | `Added b -> Printf.sprintf "  + Solo: %b" b
+      | `Removed b -> Printf.sprintf "  - Solo: %b" b
+      | `Modified m -> Printf.sprintf "  ~ Solo changed from %b to %b" m.old m.new_
+    in
+
+    (* Render send changes *)
+    let render_send_change change =
+      match change with
+      | `Unchanged -> ""
+      | `Added send -> Printf.sprintf "  + Send to track %d with amount %.4f" send.Send.target send.Send.amount
+      | `Removed send -> Printf.sprintf "  - Send to track %d with amount %.4f" send.Send.target send.Send.amount
+      | `Patched patch ->
+          (* For a patched send, we have a SendPatch.t *)
+          let target_change_part = 
+            match patch.SendPatch.target with
+            | `Unchanged -> None
+            | `Modified m -> Some (Printf.sprintf "target: %d->%d" m.old m.new_)
+            | `Added t -> Some (Printf.sprintf "target: ->%d" t)
+            | `Removed t -> Some (Printf.sprintf "target: %d->" t)
+          in
+          let amount_change_part = 
+            match patch.SendPatch.amount with
+            | `Unchanged -> None
+            | `Modified m -> Some (Printf.sprintf "amount: %.4f->%.4f" m.old m.new_)
+            | `Added v -> Some (Printf.sprintf "amount: ->%.4f" v)
+            | `Removed v -> Some (Printf.sprintf "amount: %.4f->" v)
+          in
+          let parts = List.filter_map (fun x -> x) [target_change_part; amount_change_part] in
+          match parts with
+          | [] -> ""
+          | [part] -> Printf.sprintf "    ~ Send modified (%s)" part
+          | parts -> Printf.sprintf "    ~ Send modified (%s)" (String.concat ", " parts)
+    in
+
+    let send_lines = List.map render_send_change patch.MixerPatch.sends in
+    let non_empty_send_lines = List.filter (fun s -> s <> "") send_lines in
+    let send_section =
+      if List.length non_empty_send_lines > 0 then
+        "  Send Changes:\n" ^ (String.concat "\n" (List.map (fun s -> "  " ^ s) non_empty_send_lines))
+      else
+        ""
+    in
+
+    let all_lines = [header; volume_line; pan_line; mute_line; solo_line; send_section] in
+    let non_empty_lines = List.filter (fun s -> s <> "") all_lines in
+    String.concat "\n" non_empty_lines
 end
