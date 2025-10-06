@@ -1,5 +1,5 @@
 (library
- (name live_git_lib)
+ (name alsdiff_lib)
  (modules
   xml
   upath

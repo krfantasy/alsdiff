@@ -1,6 +1,6 @@
 open Alcotest
-open Live_git_lib
-open Live_git_lib.Diff
+open Alsdiff_lib
+open Alsdiff_lib.Diff
 
 (** Test the sequence-based diff function *)
 let test_diff_list_ord () =

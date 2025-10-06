@@ -1,4 +1,4 @@
-open Live_git_lib.Xml
+open Alsdiff_lib.Xml
 
 let rec xml_to_string = function
   | Element {name; attrs; childs} ->

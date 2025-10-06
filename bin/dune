@@ -1,4 +1,4 @@
 (executable
- (public_name live_git)
+ (public_name alsdiff)
  (name main)
- (libraries live_git_lib eio_main))
+ (libraries alsdiff_lib eio_main))
