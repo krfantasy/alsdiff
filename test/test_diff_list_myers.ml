@@ -4,7 +4,7 @@ open Live_git_lib.Diff
 
 (** Test basic Myers algorithm functionality *)
 let test_diff_list_myers_basic () =
-  let (module IntEq) = (module Equality.IntEq : Equality.EQUATABLE with type t = int) in
+  let (module IntEq) = (module Equality.IntEq : Equality.EQUALABLE with type t = int) in
 
   (* Test case 1: Empty lists *)
   let result1 = diff_list_myers (module IntEq) [] [] in
@@ -42,7 +42,7 @@ let test_diff_list_myers_strings () =
     type t = string
     let equal = String.equal
   end in
-  let (module StrEq) = (module StringEq : Equality.EQUATABLE with type t = string) in
+  let (module StrEq) = (module StringEq : Equality.EQUALABLE with type t = string) in
 
   (* Test case 1: String replacement *)
   let result1 = diff_list_myers (module StrEq) ["a"; "b"; "c"] ["a"; "x"; "c"] in
@@ -60,7 +60,7 @@ let test_diff_list_myers_strings () =
 
 (** Test Myers algorithm edge cases *)
 let test_diff_list_myers_edge_cases () =
-  let (module IntEq) = (module Equality.IntEq : Equality.EQUATABLE with type t = int) in
+  let (module IntEq) = (module Equality.IntEq : Equality.EQUALABLE with type t = int) in
 
   (* Test case 1: Single element identical *)
   let result1 = diff_list_myers (module IntEq) [42] [42] in
@@ -88,7 +88,7 @@ let test_diff_list_myers_edge_cases () =
 
 (** Test Myers algorithm optimal edit distance *)
 let test_diff_list_myers_optimal () =
-  let (module IntEq) = (module Equality.IntEq : Equality.EQUATABLE with type t = int) in
+  let (module IntEq) = (module Equality.IntEq : Equality.EQUALABLE with type t = int) in
 
   (* Test case 1: Move detection [1,2,3] -> [2,3,1] *)
   let result1 = diff_list_myers (module IntEq) [1; 2; 3] [2; 3; 1] in
@@ -109,7 +109,7 @@ let test_diff_list_myers_optimal () =
 
 (** Test Myers algorithm vs LCS algorithm comparison *)
 let test_diff_list_myers_vs_lcs () =
-  let (module IntEq) = (module Equality.IntEq : Equality.EQUATABLE with type t = int) in
+  let (module IntEq) = (module Equality.IntEq : Equality.EQUALABLE with type t = int) in
 
   let test_cases = [
     ([1; 2; 3], [1; 4; 3]);  (* Simple replacement *)
@@ -139,7 +139,7 @@ let test_diff_list_myers_custom () =
     let equal a b = abs (a - b) <= 1  (* Equal if within 1 *)
   end in
 
-  let (module CustomEq) = (module CustomInt : Equality.EQUATABLE with type t = int) in
+  let (module CustomEq) = (module CustomInt : Equality.EQUALABLE with type t = int) in
 
   let result = diff_list_myers (module CustomEq) [1; 5; 10] [2; 6; 10] in
   (* All should be unchanged since 1≈2, 5≈6, 10=10 *)
@@ -151,7 +151,7 @@ let test_diff_list_myers_custom () =
 
 (** Additional test to check correctness of Myers implementation *)
 let test_myers_correctness () =
-  let (module IntEq) = (module Equality.IntEq : Equality.EQUATABLE with type t = int) in
+  let (module IntEq) = (module Equality.IntEq : Equality.EQUALABLE with type t = int) in
 
   (* Test case: [1; 2; 3; 4] -> [1; 3; 4; 5] *)
   let old_list = [1; 2; 3; 4] in

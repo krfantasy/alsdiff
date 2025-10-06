@@ -23,26 +23,10 @@ type ('a, 'p) structured_change = [
   | `Patched of 'p
 ]
 
-(** A patch for a single automation envelope. *)
-type automation_envelope_patch = {
-  id : int;
-  target : int;
-  events : EnvelopeEvent.t flat_change list;
-}
-
-(** An operation describing one change within a list of automation envelopes. *)
-type envelope_list_op =
-  (AutomationEnvelope.t, automation_envelope_patch) structured_change
-
-(** A patch for the entire automation section. *)
-type automation_patch = {
-  envelope_changes : envelope_list_op list;
-}
-
 
 (** A generic helper to find added and removed items between two lists.
     This is a simple set-based diff, not a sequence-based one. *)
-let diff_list (type a) (module Eq : EQUATABLE with type t = a) (old_list : a list) (new_list : a list) =
+let diff_list (type a) (module Eq : EQUALABLE with type t = a) (old_list : a list) (new_list : a list) =
   let old_seq = List.to_seq old_list in
   let new_seq = List.to_seq new_list in
 
@@ -58,7 +42,7 @@ let diff_list (type a) (module Eq : EQUATABLE with type t = a) (old_list : a lis
 
 (** A sequence-based diff algorithm that preserves order and can detect moves.
     Returns a list of changes with their positions. *)
-let diff_list_ord (type a) (module Eq : EQUATABLE with type t = a) (old_list : a list) (new_list : a list) : a flat_change list =
+let diff_list_ord (type a) (module Eq : EQUALABLE with type t = a) (old_list : a list) (new_list : a list) : a flat_change list =
   let old_len = List.length old_list in
   let new_len = List.length new_list in
 
@@ -109,7 +93,7 @@ let diff_list_ord (type a) (module Eq : EQUATABLE with type t = a) (old_list : a
     Time complexity: O((N+M)D) where D is the size of the edit script.
     Space complexity: O((N+M)D) for trace storage.
 *)
-let diff_list_myers (type a) (module Eq : EQUATABLE with type t = a) (old_list : a list) (new_list : a list) : a flat_change list =
+let diff_list_myers (type a) (module Eq : EQUALABLE with type t = a) (old_list : a list) (new_list : a list) : a flat_change list =
   let old_arr = Array.of_list old_list in
   let new_arr = Array.of_list new_list in
   let n = Array.length old_arr in
@@ -230,7 +214,12 @@ let diff_list_myers (type a) (module Eq : EQUATABLE with type t = a) (old_list :
     List.rev !result
 
 module AutomationEnvelopePatch = struct
-  type t = automation_envelope_patch
+  (** A patch for a single automation envelope. *)
+  type t = {
+    id : int;
+    target : int;
+    events : EnvelopeEvent.t flat_change list;
+  }
 
   let diff (old_envelope : AutomationEnvelope.t) (new_envelope : AutomationEnvelope.t) : t option =
     let event_changes = diff_list (module EnvelopeEvent) old_envelope.events new_envelope.events in
@@ -247,7 +236,13 @@ module AutomationEnvelopePatch = struct
 end
 
 module AutomationPatch = struct
-  type t = automation_patch
+  (** An operation describing one change within a list of automation envelopes. *)
+  type envelope_list_op =
+    (AutomationEnvelope.t, AutomationEnvelopePatch.t) structured_change
+  (** A patch for the entire automation section. *)
+  type t = {
+    envelope_changes : envelope_list_op list;
+  }
 
   let diff (old_automation : Automation.t) (new_automation : Automation.t) : t =
     (* The unique key for an envelope is the tuple (id, target). *)

@@ -12,15 +12,19 @@ module type Output = sig
 
   (** [render_envelope_patch patch] renders the details of a patched envelope,
       including its list of event changes. *)
-  val render_envelope_patch : automation_envelope_patch -> t
+  val render_envelope_patch : AutomationEnvelopePatch.t -> t
 
   (** [render_envelope_op op] renders a single operation on the list of envelopes
       (Added, Removed, or Patched). *)
-  val render_envelope_op : envelope_list_op -> t
+  val render_envelope_op : AutomationPatch.envelope_list_op -> t
 
   (** [render_automation_patch patch] is the main entry point. It renders the
       entire automation patch, including its list of envelope operations. *)
-  val render_automation_patch : automation_patch -> t
+  val render_automation_patch : AutomationPatch.t -> t
+
+  (** [render_mixer patch] renders the details of a patched mixer,
+      including its volume, pan, mute, solo, and send changes. *)
+  val render_mixer : MixerPatch.t -> t
 end
 
 (** A concrete implementation of the Output interface for plain-text rendering. *)
@@ -40,12 +44,12 @@ module TextOutput : Output with type t = string = struct
         Printf.sprintf "    ~ Event at time %.2f changed value from %.4f to %.4f"
           m.old.EnvelopeEvent.time m.old.EnvelopeEvent.value m.new_.EnvelopeEvent.value
 
-  let render_envelope_patch patch =
+  let render_envelope_patch (patch : AutomationEnvelopePatch.t) =
     let header =
       Printf.sprintf "  ~ Patched Envelope (Id: %d, Target: %d):"
-        patch.id patch.target
+        patch.AutomationEnvelopePatch.id patch.AutomationEnvelopePatch.target
     in
-    let event_lines = List.map render_event_change patch.events in
+    let event_lines = List.map render_event_change patch.AutomationEnvelopePatch.events in
     let non_empty_lines = List.filter (fun s -> s <> "") event_lines in
     String.concat "\n" (header :: non_empty_lines)
 
