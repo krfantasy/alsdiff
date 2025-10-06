@@ -1,9 +1,9 @@
-module type EQUATABLE = sig
+module type EQUALABLE = sig
   type t
   val equal : t -> t -> bool
 end
 
-module MakeDefaultEq (T: sig type t end) : EQUATABLE with type t = T.t = struct
+module MakeDefaultEq (T: sig type t end) : EQUALABLE with type t = T.t = struct
   type t = T.t
   let equal = (=)
 end
