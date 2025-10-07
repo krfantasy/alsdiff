@@ -1,0 +1,7 @@
+(library
+ (name alsdiff_lib_live)
+ (modules
+   automation
+   clip)
+ (libraries alsdiff_lib_base)
+ (preprocess (pps ppx_deriving.eq)))

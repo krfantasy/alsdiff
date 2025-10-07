@@ -1,5 +1,5 @@
-open Alsdiff_lib.Xml
-open Alsdiff_lib.Upath
+open Alsdiff_lib_base.Xml
+open Alsdiff_lib_base.Upath
 open Test_utils.Utils
 
 let complex_xml =

@@ -1,0 +1,5 @@
+(library
+ (name alsdiff_lib_diff)
+ (modules
+   diff)
+ (libraries alsdiff_lib_base alsdiff_lib_live))

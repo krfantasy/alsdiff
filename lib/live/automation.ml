@@ -1,34 +1,5 @@
 open Alsdiff_lib_base
 
-module type LIVE_TYPE = sig
-  type t
-  val create : Xml.t -> t
-end
-
-module TimeSignature = struct
-  type t = { numer : int; denom : int } [@@deriving eq]
-end
-
-module MidiNote = struct
-  type t = {
-    time : int;
-    duration : int;
-    velocity : int;
-    off_velocity : int;
-    note : int;
-  } [@@deriving eq]
-end
-
-module LoopSection = struct
-  type t = {
-    start : int;
-    end_ : int;
-    on : bool;
-  } [@@deriving eq]
-end
-
-
-
 module EnvelopeEvent = struct
   type t = {
     time : float;
@@ -92,15 +63,3 @@ module Automation = struct
     in
     { automation_envelopes = envelopes }
 end
-
-
-type audio_track
-type midi_track
-type return_track
-type master_track
-
-type _ track =
-  | AudioTrack : audio_track -> audio_track track
-  | MIDITrack : midi_track -> midi_track track
-  | ReturnTrack : return_track -> return_track track
-  | MasterTrack : master_track -> master_track track

@@ -16,17 +16,21 @@ This is an OCaml project using Dune build system:
 ## Project Structure
 
 - `bin/main.ml` - Main executable entry point
-- `lib/` - Core library modules:
-  - `xml.ml` - XML parsing and data structures
-  - `upath.ml` - XPath-like query language for XML
-  - `live.ml` - Ableton Live specific data structures and logic
-  - `file.ml` - File handling and .als file decompression
-  - `diff.ml` - Diffing algorithms including Myers O(ND) implementation
-  - `output.ml` - Output formatting and display
-  - `config.ml` - Configuration management
-  - `time.ml` - Time-related utilities
-  - `equality.ml` - Equality checking utilities
-- `test/` - Test suites:
+- `lib/` - Core library modules organized into sublibraries:
+  - `lib/base/` - Base functionality modules:
+    - `xml.ml` - XML parsing and data structures
+    - `upath.ml` - XPath-like query language for XML
+    - `file.ml` - File handling and .als file decompression
+    - `equality.ml` - Equality checking utilities
+  - `lib/live/` - Ableton Live specific modules:
+    - `automation.ml` - Automation envelope handling
+    - `clip.ml` - Clip and mixer functionality
+  - `lib/diff/` - Diffing algorithms:
+    - `diff.ml` - Core diffing algorithms including Myers O(ND) implementation
+  - `lib/output/` - Output formatting:
+    - `output.ml` - Output interface definitions
+    - `text_output.ml` - Plain text output rendering
+- `test/` - Test suites (all use specific module opens for cleaner code):
   - `test_upath.ml` - Tests for XPath-like functionality
   - `test_xml.ml` - Tests for XML parsing
   - `test_live.ml` - Tests for Live set functionality
@@ -35,6 +39,8 @@ This is an OCaml project using Dune build system:
   - `test_diff_automation.ml` - Tests for diffing automation envelopes
   - `test_diff_list_ord.ml` - Tests for ordered list diffing
   - `test_diff_list_myers.ml` - Tests for Myers diffing algorithm
+  - `test_diff_mixer.ml` - Tests for mixer diffing functionality
+  - `utils.ml` - Shared test utilities
 
 ## Key Dependencies
 
@@ -69,6 +75,44 @@ The `Diff` module implements multiple diffing algorithms:
 - Ordered diffing for sequential data
 - Myers O(ND) algorithm for optimal diffing performance
 - Specialized diffing for automation envelopes in Live sets
+
+## Library Organization
+
+The project is organized into four main libraries:
+
+1. **alsdiff_lib_base** (`lib/base/`) - Core functionality
+2. **alsdiff_lib_live** (`lib/live/`) - Ableton Live specific types and logic
+3. **alsdiff_lib_diff** (`lib/diff/`) - Diffing algorithms
+4. **alsdiff_lib_output** (`lib/output/`) - Output formatting
+
+### Module Access Patterns
+
+When working with the libraries, use specific module opens for cleaner code:
+
+```ocaml
+(* Base modules *)
+open Alsdiff_lib_base.Xml
+open Alsdiff_lib_base.Upath
+
+(* Live modules *)
+open Alsdiff_lib_live.Automation
+open Alsdiff_lib_live.Clip
+
+(* Diff modules *)
+open Alsdiff_lib_diff.Diff
+
+(* Output modules *)
+open Alsdiff_lib_output.Text_output.TextOutput
+```
+
+This allows you to write `Automation.t` instead of `Alsdiff_lib_live.Automation.Automation.t` and `Xml.read_file` instead of `Alsdiff_lib_base.Xml.read_file`.
+
+### Legacy Modules
+
+The following modules have been refactored into the new library structure:
+- `config.ml`, `time.ml`, `eff.ml`, `gadt.ml`, `fraction.ml`, `oop.ml` - Moved to lib/base/ or removed
+- `live.ml` - Split into `automation.ml` and `clip.ml` in lib/live/
+- `output.ml` - Split into interface (`output.ml`) and implementation (`text_output.ml`) in lib/output/
 
 ## Development Commands
 

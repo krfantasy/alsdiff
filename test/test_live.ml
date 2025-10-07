@@ -1,5 +1,6 @@
-open Alsdiff_lib.Xml
-open Alsdiff_lib.Live
+open Alsdiff_lib_base.Xml
+open Alsdiff_lib_live.Automation
+open Alsdiff_lib_live.Clip
 
 let test_create_automation () =
   (* Read the automation.xml file *)
