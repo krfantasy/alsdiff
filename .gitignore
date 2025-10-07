@@ -8,5 +8,6 @@ _build
 
 .vscode
 .claude
-.gemini
+
+.gemini/
 gha-creds-*.json
