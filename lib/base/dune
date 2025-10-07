@@ -1,0 +1,11 @@
+(library
+ (name alsdiff_lib_base)
+ (modules
+   file
+   xml
+   upath
+   equality)
+ (libraries
+   angstrom
+   camlzip
+   xmlm))

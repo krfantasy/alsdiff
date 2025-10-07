@@ -1,11 +1,11 @@
 open Alcotest
-open Alsdiff_lib
-open Alsdiff_lib.Diff
+open Alsdiff_lib_base.Equality
+open Alsdiff_lib_diff.Diff
 
 (** Test the sequence-based diff function *)
 let test_diff_list_ord () =
   (* Test with simple integer lists *)
-  let (module IntEq) = (module Equality.IntEq : Equality.EQUALABLE with type t = int) in
+  let (module IntEq) = (module IntEq : EQUALABLE with type t = int) in
 
   (* Test case 1: Empty lists *)
   let result1 = diff_list_ord (module IntEq) [] [] in
@@ -38,7 +38,7 @@ let test_diff_list_ord () =
 (** Additional tests for diff_list_ord *)
 let test_diff_list_ord_advanced () =
   (* Test with simple integer lists *)
-  let (module IntEq) = (module Equality.IntEq : Equality.EQUALABLE with type t = int) in
+  let (module IntEq) = (module IntEq : EQUALABLE with type t = int) in
 
   (* Test case 1: No changes - verify all unchanged *)
   let result1 = diff_list_ord (module IntEq) [1; 2; 3; 4] [1; 2; 3; 4] in
@@ -68,7 +68,7 @@ let test_diff_list_ord_strings () =
     let equal = String.equal
   end in
 
-  let (module StrEq) = (module StringEq : Equality.EQUALABLE with type t = string) in
+  let (module StrEq) = (module StringEq : EQUALABLE with type t = string) in
 
   (* Test case 1: Basic string diffing *)
   let result1 = diff_list_ord (module StrEq) ["a"; "b"; "c"] ["a"; "x"; "c"] in

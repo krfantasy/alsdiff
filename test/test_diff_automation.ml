@@ -1,15 +1,15 @@
 open Alcotest
-open Alsdiff_lib
-open Alsdiff_lib.Live
-open Alsdiff_lib.Diff
-open Alsdiff_lib.Output
+open Alsdiff_lib_base
+open Alsdiff_lib_live.Automation
+open Alsdiff_lib_diff.Diff
+open Alsdiff_lib_output.Text_output.TextOutput
 
 (** Helper to load an Automation.t from a file path. *)
 let load_automation_from_file (path : string) : Automation.t =
   let (_, xml) = Xml.read_file path in
   let envelopes_element =
     match xml with
-    | Xml.Element { name = "AutomationEnvelopes"; _ } as envelopes -> envelopes
+    | Element { name = "AutomationEnvelopes"; _ } as envelopes -> envelopes
     | _ -> failwith ("Root element in " ^ path ^ " is not AutomationEnvelopes")
   in
   Automation.create envelopes_element
@@ -85,7 +85,7 @@ let test_text_output () =
   let patch = AutomationPatch.diff old_automation new_automation in
 
   (* 3. Generate the text output using TextOutput. *)
-  let text_output = TextOutput.render_automation_patch patch in
+  let text_output = render_automation_patch patch in
 
   (* 4. Define the expected text output. *)
   let expected_lines = [

@@ -1,5 +1,6 @@
-open Live
-open Equality
+open Alsdiff_lib_live.Automation
+open Alsdiff_lib_live.Clip
+open Alsdiff_lib_base.Equality
 
 (** The payload for a `Modified` change, containing the old and new values. *)
 type 'a modified = { old : 'a; new_ : 'a }
@@ -239,7 +240,7 @@ module AutomationPatch = struct
   (** An operation describing one change within a list of automation envelopes. *)
   type envelope_list_op =
     (AutomationEnvelope.t, AutomationEnvelopePatch.t) structured_change
-  (** A patch for the entire automation section. *)
+
   type t = {
     envelope_changes : envelope_list_op list;
   }
@@ -336,7 +337,7 @@ module MixerPatch = struct
       else
         `Modified { old = old_mixer.solo; new_ = new_mixer.solo }
     in
-    
+
     (* To properly handle send changes, we need to match sends that represent the same logical send
        Since the target is always 0, we'll use a combination of target and amount to match sends
        For the purpose of this diff, sends with the same target and amount are considered the same *)
@@ -348,7 +349,7 @@ module MixerPatch = struct
 
     (* Create maps of sends keyed by target and amount *)
     let send_to_key send = (send.Send.target, send.Send.amount) in
-    let to_map sends = 
+    let to_map sends =
       List.fold_left (fun map send ->
         let key = send_to_key send in
         SendMap.add key send map
@@ -381,4 +382,3 @@ module MixerPatch = struct
     }
 
 end
-
