@@ -1,4 +1,4 @@
-open Live_git_lib.Xml
+open Alsdiff_lib.Xml
 open Test_utils.Utils
 
 let test_read_string () =

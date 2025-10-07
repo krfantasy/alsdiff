@@ -1,5 +1,5 @@
-open Live_git_lib.Xml
-open Live_git_lib.Live
+open Alsdiff_lib.Xml
+open Alsdiff_lib.Live
 
 let test_create_automation () =
   (* Read the automation.xml file *)

@@ -1,5 +1,5 @@
-open Live_git_lib.Xml
-open Live_git_lib.Upath
+open Alsdiff_lib.Xml
+open Alsdiff_lib.Upath
 open Test_utils.Utils
 
 let sample_xml =

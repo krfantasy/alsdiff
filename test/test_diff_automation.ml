@@ -1,8 +1,8 @@
 open Alcotest
-open Live_git_lib
-open Live_git_lib.Live
-open Live_git_lib.Diff
-open Live_git_lib.Output
+open Alsdiff_lib
+open Alsdiff_lib.Live
+open Alsdiff_lib.Diff
+open Alsdiff_lib.Output
 
 (** Helper to load an Automation.t from a file path. *)
 let load_automation_from_file (path : string) : Automation.t =

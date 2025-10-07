@@ -8,7 +8,7 @@ This is an OCaml project using Dune build system:
 - `dune build` - Build the project
 - `dune runtest` - Run all tests
 - `dune runtest --force` - Force rerun all tests
-- `dune exec live_git` - Run the main executable
+- `dune exec alsdiff` - Run the main executable
 - `dune test test_upath` - Run specific test (Upath tests)
 - `dune test test_diff_list_myers` - Run Myers diffing algorithm tests
 - `dune test test_diff_automation` - Run automation diffing tests
@@ -77,7 +77,9 @@ The `Diff` module implements multiple diffing algorithms:
 - `dune clean` - Clean build artifacts
 - `dune utop` - Load this library into Utop REPL
 - `dune utop . -- -emacs` - Load this library into Utop REPL for Emacs utop-mode
-- Always adding the texts inside the code block in the end of git commit message,
+
+## Git commit message convention
+Always adding the texts inside the code block in the end of git commit message,
 ```
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
