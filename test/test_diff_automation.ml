@@ -1,6 +1,6 @@
 open Alcotest
 open Alsdiff_lib_base
-open Alsdiff_lib_live.Automation
+open Alsdiff_lib_live
 open Alsdiff_lib_diff.Diff
 open Alsdiff_lib_output.Text_output.TextOutput
 
@@ -37,23 +37,23 @@ let test_diff_logic () =
   check int "patched envelopes count" 1 (List.length patched_envelopes);
 
   (* --- Assertions for Added Envelopes --- *)
-  let added_6 = List.find_opt (fun (e:AutomationEnvelope.t) -> e.id = 6) added_envelopes in
+  let added_6 = List.find_opt (fun (e:Automation.AutomationEnvelope.t) -> e.id = 6) added_envelopes in
   (match added_6 with
   | Some e -> check int "added envelope id 6 target" 27894 e.target
   | None -> fail "Expected to find added envelope with id 6");
 
-  let added_3 = List.find_opt (fun (e:AutomationEnvelope.t) -> e.id = 3) added_envelopes in
+  let added_3 = List.find_opt (fun (e:Automation.AutomationEnvelope.t) -> e.id = 3) added_envelopes in
   (match added_3 with
   | Some e -> check int "added envelope id 3 target" 27888 e.target
   | None -> fail "Expected to find added envelope with id 3");
 
   (* --- Assertions for Removed Envelopes --- *)
-  let removed_7 = List.find_opt (fun (e:AutomationEnvelope.t) -> e.id = 7) removed_envelopes in
+  let removed_7 = List.find_opt (fun (e:Automation.AutomationEnvelope.t) -> e.id = 7) removed_envelopes in
   (match removed_7 with
   | Some e -> check int "removed envelope id 7 target" 27902 e.target
   | None -> fail "Expected to find removed envelope with id 7");
 
-  let removed_3 = List.find_opt (fun (e:AutomationEnvelope.t) -> e.id = 3) removed_envelopes in
+  let removed_3 = List.find_opt (fun (e:Automation.AutomationEnvelope.t) -> e.id = 3) removed_envelopes in
   (match removed_3 with
   | Some e -> check int "removed envelope id 3 target" 99999 e.target
   | None -> fail "Expected to find removed envelope with id 3");
@@ -67,12 +67,12 @@ let test_diff_logic () =
 
   let event_added = List.find_map (function `Added e -> Some e | _ -> None) event_changes in
   (match event_added with
-  | Some e -> check (float 0.001) "added event time" 136.0 e.EnvelopeEvent.time
+  | Some e -> check (float 0.001) "added event time" 136.0 e.Automation.EnvelopeEvent.time
   | None -> fail "Expected to find an added event in patch for id 0");
 
   let event_removed = List.find_map (function `Removed e -> Some e | _ -> None) event_changes in
   (match event_removed with
-  | Some e -> check (float 0.001) "removed event time" 140.0 e.EnvelopeEvent.time
+  | Some e -> check (float 0.001) "removed event time" 140.0 e.Automation.EnvelopeEvent.time
   | None -> fail "Expected to find a removed event in patch for id 0")
 
 (** Test function for verifying the text output from TextOutput module. *)

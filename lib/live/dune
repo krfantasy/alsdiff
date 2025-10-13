@@ -2,6 +2,8 @@
  (name alsdiff_lib_live)
  (modules
    automation
-   clip)
- (libraries alsdiff_lib_base)
+   clip
+   device
+   track)
+ (libraries alsdiff_lib_base ppx_deriving)
  (preprocess (pps ppx_deriving.eq)))

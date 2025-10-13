@@ -50,3 +50,27 @@
  (modules test_diff_mixer)
  (libraries alsdiff_lib alcotest test_utils)
  (deps mixer.xml mixer_old.xml))
+
+(test
+ (name test_audio_clip)
+ (modules test_audio_clip)
+ (libraries alsdiff_lib alcotest test_utils)
+ (deps audio_clip.xml))
+
+(test
+ (name test_clip_patch)
+ (modules test_clip_patch)
+ (libraries alsdiff_lib alcotest test_utils)
+ (deps audio_clip.xml))
+
+(test
+ (name test_midi_clip)
+ (modules test_midi_clip)
+ (libraries alsdiff_lib alcotest test_utils)
+ (deps midi_clip.xml))
+
+(test
+ (name test_diff_audio_clip)
+ (modules test_diff_audio_clip)
+ (libraries alsdiff_lib alcotest test_utils)
+ (deps audio_clip.xml audio_clip_old.xml))

@@ -1,6 +1,6 @@
 open Output
 open Alsdiff_lib_live.Automation
-open Alsdiff_lib_live.Clip
+open Alsdiff_lib_live.Track
 open Alsdiff_lib_diff.Diff
 
 (** A concrete implementation of the Output interface for plain-text rendering. *)

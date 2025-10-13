@@ -114,7 +114,7 @@ struct
 
 end
 
-(** the searching engine *)
+(** the search engine *)
 
 let match_attributes (tree : Xml.t) (pattrs : attribute list) : bool =
   match tree with

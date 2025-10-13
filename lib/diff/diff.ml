@@ -1,5 +1,5 @@
-open Alsdiff_lib_live.Automation
-open Alsdiff_lib_live.Clip
+open Alsdiff_lib_live
+open Alsdiff_lib_live.Track
 open Alsdiff_lib_base.Equality
 
 (** The payload for a `Modified` change, containing the old and new values. *)
@@ -219,11 +219,11 @@ module AutomationEnvelopePatch = struct
   type t = {
     id : int;
     target : int;
-    events : EnvelopeEvent.t flat_change list;
+    events : Automation.EnvelopeEvent.t flat_change list;
   }
 
-  let diff (old_envelope : AutomationEnvelope.t) (new_envelope : AutomationEnvelope.t) : t option =
-    let event_changes = diff_list (module EnvelopeEvent) old_envelope.events new_envelope.events in
+  let diff (old_envelope : Automation.AutomationEnvelope.t) (new_envelope : Automation.AutomationEnvelope.t) : t option =
+    let event_changes = diff_list (module Automation.EnvelopeEvent) old_envelope.events new_envelope.events in
 
     match event_changes with
     | [] -> None (* No changes in events *)
@@ -239,7 +239,7 @@ end
 module AutomationPatch = struct
   (** An operation describing one change within a list of automation envelopes. *)
   type envelope_list_op =
-    (AutomationEnvelope.t, AutomationEnvelopePatch.t) structured_change
+    (Automation.AutomationEnvelope.t, AutomationEnvelopePatch.t) structured_change
 
   type t = {
     envelope_changes : envelope_list_op list;
@@ -255,7 +255,7 @@ module AutomationPatch = struct
 
     (* Convert lists of envelopes to maps keyed by their (id, target). *)
     let to_map = List.fold_left (fun map env ->
-      let key = (env.AutomationEnvelope.id, env.AutomationEnvelope.target) in
+      let key = (env.Automation.AutomationEnvelope.id, env.Automation.AutomationEnvelope.target) in
       EnvelopeMap.add key env map
     ) EnvelopeMap.empty in
 

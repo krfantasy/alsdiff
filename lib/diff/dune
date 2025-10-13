@@ -1,5 +1,6 @@
 (library
  (name alsdiff_lib_diff)
  (modules
-   diff)
+   diff
+   clip_patch)
  (libraries alsdiff_lib_base alsdiff_lib_live))
