@@ -91,7 +91,6 @@ end
 
 module AudioClipPatch = struct
   type t = {
-    id : int flat_change;
     name : string flat_change;
     start_time : float flat_change;
     end_time : float flat_change;
@@ -104,17 +103,120 @@ module AudioClipPatch = struct
     let { Clip.AudioClip.id = old_id; name = old_name; start_time = old_start; end_time = old_end; loop = old_loop; signature = old_sig; sample_ref = old_sample } = old_clip in
     let { Clip.AudioClip.id = new_id; name = new_name; start_time = new_start; end_time = new_end; loop = new_loop; signature = new_sig; sample_ref = new_sample } = new_clip in
 
-    let id_change =
-      if old_id = new_id then `Unchanged
-      else `Modified { old = old_id; new_ = new_id }
+    (* Only compare clips with the same id *)
+    if old_id <> new_id then
+      None
+    else
+      let name_change =
+        if old_name = new_name then `Unchanged
+        else `Modified { old = old_name; new_ = new_name }
+      in
+      let start_time_change =
+        if old_start = new_start then `Unchanged
+        else `Modified { old = old_start; new_ = new_start }
+      in
+      let end_time_change =
+        if old_end = new_end then `Unchanged
+        else `Modified { old = old_end; new_ = new_end }
+      in
+      let loop_patch = LoopSectionPatch.diff old_loop new_loop in
+      let signature_change =
+        if Clip.TimeSignature.equal old_sig new_sig then `Unchanged
+        else `Modified { old = old_sig; new_ = new_sig }
+      in
+      let sample_ref_patch = SampleRefPatch.diff old_sample new_sample in
+
+      (* Check if anything changed *)
+      if name_change = `Unchanged &&
+         start_time_change = `Unchanged &&
+         end_time_change = `Unchanged &&
+         loop_patch = None &&
+         signature_change = `Unchanged &&
+         sample_ref_patch = None then
+        None
+      else
+        Some {
+          name = name_change;
+          start_time = start_time_change;
+          end_time = end_time_change;
+          loop = loop_patch;
+          signature = signature_change;
+          sample_ref = sample_ref_patch;
+        }
+end
+
+
+module MidiNotePatch = struct
+  type t = {
+    time : int flat_change;
+    duration : int flat_change;
+    velocity : int flat_change;
+    off_velocity : int flat_change;
+    note : int flat_change;
+  }
+
+  let diff (old_note : Clip.MidiNote.t) (new_note : Clip.MidiNote.t) : t option =
+    let { Clip.MidiNote.time = old_time; duration = old_duration; velocity = old_velocity; off_velocity = old_off_velocity; note = old_note } = old_note in
+    let { Clip.MidiNote.time = new_time; duration = new_duration; velocity = new_velocity; off_velocity = new_off_velocity; note = new_note } = new_note in
+
+    let time_change =
+      if old_time = new_time then `Unchanged
+      else `Modified { old = old_time; new_ = new_time }
     in
-    let name_change =
-      if old_name = new_name then `Unchanged
-      else `Modified { old = old_name; new_ = new_name }
+    let duration_change =
+      if old_duration = new_duration then `Unchanged
+      else `Modified { old = old_duration; new_ = new_duration }
     in
-    let start_time_change =
-      if old_start = new_start then `Unchanged
-      else `Modified { old = old_start; new_ = new_start }
+    let velocity_change =
+      if old_velocity = new_velocity then `Unchanged
+      else `Modified { old = old_velocity; new_ = new_velocity }
+    in
+    let off_velocity_change =
+      if old_off_velocity = new_off_velocity then `Unchanged
+      else `Modified { old = old_off_velocity; new_ = new_off_velocity }
+    in
+    let note_change =
+      if old_note = new_note then `Unchanged
+      else `Modified { old = old_note; new_ = new_note }
+    in
+
+    (* Check if anything changed *)
+    if time_change = `Unchanged &&
+       duration_change = `Unchanged &&
+       velocity_change = `Unchanged &&
+       off_velocity_change = `Unchanged &&
+       note_change = `Unchanged then
+      None
+    else
+      Some {
+        time = time_change;
+        duration = duration_change;
+        velocity = velocity_change;
+        off_velocity = off_velocity_change;
+        note = note_change;
+      }
+end
+
+module MidiClipPatch = struct
+  type t = {
+    start_time : float flat_change;
+    end_time : float flat_change;
+    loop : LoopSectionPatch.t option;
+    signature : Clip.TimeSignature.t flat_change;
+    notes : Clip.MidiNote.t flat_change list;
+  }
+
+  let diff (old_clip : Clip.MidiClip.t) (new_clip : Clip.MidiClip.t) : t option =
+    let { Clip.MidiClip.id = old_id; start_time = old_start; end_time = old_end; loop = old_loop; signature = old_sig; notes = old_notes } = old_clip in
+    let { Clip.MidiClip.id = new_id; start_time = new_start; end_time = new_end; loop = new_loop; signature = new_sig; notes = new_notes } = new_clip in
+
+    (* Only compare clips with the same id *)
+    if old_id <> new_id then
+      None
+    else
+      let start_time_change =
+        if old_start = new_start then `Unchanged
+        else `Modified { old = old_start; new_ = new_start }
     in
     let end_time_change =
       if old_end = new_end then `Unchanged
@@ -125,25 +227,45 @@ module AudioClipPatch = struct
       if Clip.TimeSignature.equal old_sig new_sig then `Unchanged
       else `Modified { old = old_sig; new_ = new_sig }
     in
-    let sample_ref_patch = SampleRefPatch.diff old_sample new_sample in
 
-    (* Check if anything changed *)
-    if id_change = `Unchanged &&
-       name_change = `Unchanged &&
-       start_time_change = `Unchanged &&
-       end_time_change = `Unchanged &&
-       loop_patch = None &&
-       signature_change = `Unchanged &&
-       sample_ref_patch = None then
-      None
-    else
-      Some {
-        id = id_change;
-        name = name_change;
-        start_time = start_time_change;
-        end_time = end_time_change;
-        loop = loop_patch;
-        signature = signature_change;
-        sample_ref = sample_ref_patch;
-      }
+    (* Use simple list diff for notes - direct implementation to avoid cross-module dependencies *)
+    let notes_change =
+      let is_equal = (=) in
+
+      (* Find removed notes (in old but not in new) *)
+      let removed = List.filter (fun old_note ->
+        not (List.exists (fun new_note -> is_equal old_note new_note) new_notes)
+      ) old_notes
+      |> List.map (fun note -> `Removed note) in
+
+      (* Find added notes (in new but not in old) *)
+      let added = List.filter (fun new_note ->
+        not (List.exists (fun old_note -> is_equal old_note new_note) old_notes)
+      ) new_notes
+      |> List.map (fun note -> `Added note) in
+
+      (* Find unchanged notes (in both with same position) *)
+      let unchanged = List.filter_map (fun old_note ->
+        List.find_opt (fun new_note -> is_equal old_note new_note) new_notes
+        |> Option.map (fun _ -> `Unchanged)
+      ) old_notes in
+
+      List.concat [removed; added; unchanged]
+    in
+
+      (* Check if anything changed *)
+      if start_time_change = `Unchanged &&
+         end_time_change = `Unchanged &&
+         loop_patch = None &&
+         signature_change = `Unchanged &&
+         notes_change = [] then
+        None
+      else
+        Some {
+          start_time = start_time_change;
+          end_time = end_time_change;
+          loop = loop_patch;
+          signature = signature_change;
+          notes = notes_change;
+        }
 end

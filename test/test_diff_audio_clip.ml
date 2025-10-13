@@ -13,12 +13,6 @@ let test_audio_clip_diff () =
 
   match patch with
   | Some p ->
-    (match p.id with
-     | `Modified { old; new_ } ->
-       Alcotest.check Alcotest.int "id old" 18 old;
-       Alcotest.check Alcotest.int "id new" 17 new_
-     | _ -> Alcotest.fail "Expected modified id");
-
     (match p.start_time with
      | `Modified { old; new_ } ->
        Alcotest.check (Alcotest.float 0.001) "start_time old" 80.0 old;
