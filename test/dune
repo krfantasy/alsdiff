@@ -36,13 +36,8 @@
  (deps automation.xml automation_old.xml))
 
 (test
- (name test_diff_list_ord)
- (modules test_diff_list_ord)
- (libraries alsdiff_lib alcotest test_utils))
-
-(test
- (name test_diff_list_myers)
- (modules test_diff_list_myers)
+ (name test_diff_list)
+ (modules test_diff_list)
  (libraries alsdiff_lib alcotest test_utils))
 
 (test

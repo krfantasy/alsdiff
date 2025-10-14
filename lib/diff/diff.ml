@@ -81,7 +81,7 @@ let diff_list_ord (type a) (module Eq : EQUALABLE with type t = a) (old_list : a
         backtrack (i - 1) j (`Removed old_arr.(i - 1) :: acc)
       else if Eq.equal old_arr.(i - 1) new_arr.(j - 1) then
         backtrack (i - 1) (j - 1) (`Unchanged :: acc)
-      else if dp.(i).(j - 1) > dp.(i - 1).(j) then
+      else if dp.(i).(j - 1) >= dp.(i - 1).(j) then
         backtrack i (j - 1) (`Added new_arr.(j - 1) :: acc)
       else
         backtrack (i - 1) j (`Removed old_arr.(i - 1) :: acc)

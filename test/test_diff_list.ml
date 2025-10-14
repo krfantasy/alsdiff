@@ -169,14 +169,147 @@ let test_myers_correctness () =
 
   ()
 
+(** Helper to create a testable for 'a flat_change list *)
+let flat_change_list_testable (type a) (elt_testable : a Alcotest.testable) : a flat_change list Alcotest.testable =
+  let pp_flat_change ppf = function
+    | `Unchanged -> Fmt.string ppf "Unchanged"
+    | `Added x -> Fmt.pf ppf "Added %a" (Alcotest.pp elt_testable) x
+    | `Removed x -> Fmt.pf ppf "Removed %a" (Alcotest.pp elt_testable) x
+    | `Modified m -> Fmt.pf ppf "Modified (%a -> %a)" (Alcotest.pp elt_testable) m.old (Alcotest.pp elt_testable) m.new_
+  in
+  let equal_flat_change a b =
+    match a, b with
+    | `Unchanged, `Unchanged -> true
+    | `Added x, `Added y -> Alcotest.equal elt_testable x y
+    | `Removed x, `Removed y -> Alcotest.equal elt_testable x y
+    | `Modified m1, `Modified m2 -> Alcotest.equal elt_testable m1.old m2.old && Alcotest.equal elt_testable m1.new_ m2.new_
+    | _ -> false
+  in
+  Alcotest.(list (testable pp_flat_change equal_flat_change))
+
+let int_fc_list = flat_change_list_testable Alcotest.int
+let string_fc_list = flat_change_list_testable Alcotest.string
+
+(** Test the sequence-based diff function *)
+let test_diff_list_ord_basic () =
+  (* Test with simple integer lists *)
+  let (module IntEq) = (module IntEq : EQUALABLE with type t = int) in
+
+  (* Test case 1: Empty lists *)
+  let result1 = diff_list_ord (module IntEq) [] [] in
+  check int_fc_list "empty lists" [] result1;
+
+  (* Test case 2: Adding elements *)
+  let result2 = diff_list_ord (module IntEq) [] [1; 2; 3] in
+  check int_fc_list "add elements" [`Added 1; `Added 2; `Added 3] result2;
+
+  (* Test case 3: Removing elements *)
+  let result3 = diff_list_ord (module IntEq) [1; 2; 3] [] in
+  check int_fc_list "remove elements" [`Removed 1; `Removed 2; `Removed 3] result3;
+
+  (* Test case 4: No changes *)
+  let result4 = diff_list_ord (module IntEq) [1; 2; 3] [1; 2; 3] in
+  check int_fc_list "no changes" [`Unchanged; `Unchanged; `Unchanged] result4;
+
+  (* Test case 5: Mixed changes *)
+  let result5 = diff_list_ord (module IntEq) [1; 2; 3] [1; 4; 3] in
+  check int_fc_list "mixed changes" [`Unchanged; `Removed 2; `Added 4; `Unchanged] result5;
+
+  ()
+
+(** Additional tests for diff_list_ord *)
+let test_diff_list_ord_advanced () =
+  (* Test with simple integer lists *)
+  let (module IntEq) = (module IntEq : EQUALABLE with type t = int) in
+
+  (* Test case 1: No changes - verify all unchanged *)
+  let result1 = diff_list_ord (module IntEq) [1; 2; 3; 4] [1; 2; 3; 4] in
+  check int_fc_list "ord all unchanged" [`Unchanged; `Unchanged; `Unchanged; `Unchanged] result1;
+
+  (* Test case 2: Replacement in middle *)
+  let result2 = diff_list_ord (module IntEq) [1; 2; 3] [1; 9; 3] in
+  check int_fc_list "ord middle replacement" [`Unchanged; `Removed 2; `Added 9; `Unchanged] result2;
+
+  (* Test case 3: Multiple changes *)
+  let result3 = diff_list_ord (module IntEq) [1; 2; 3; 4] [1; 5; 6; 4] in
+  check int_fc_list "ord multiple changes" [`Unchanged; `Removed 2; `Removed 3; `Added 5; `Added 6; `Unchanged] result3;
+
+  ()
+
+(** Test diff_list_ord with different data types *)
+let test_diff_list_ord_strings () =
+  (* Test with string lists *)
+  let module StringEq = struct
+    type t = string
+    let equal = String.equal
+  end in
+
+  let (module StrEq) = (module StringEq : EQUALABLE with type t = string) in
+
+  (* Test case 1: Basic string diffing *)
+  let result1 = diff_list_ord (module StrEq) ["a"; "b"; "c"] ["a"; "x"; "c"] in
+  check string_fc_list "ord strings replacement" [`Unchanged; `Removed "b"; `Added "x"; `Unchanged] result1;
+
+  (* Test case 2: String addition *)
+  let result2 = diff_list_ord (module StrEq) ["hello"] ["hello"; "world"] in
+  check string_fc_list "ord strings add" [`Unchanged; `Added "world"] result2;
+
+  (* Test case 3: String removal *)
+  let result3 = diff_list_ord (module StrEq) ["foo"; "bar"; "baz"] ["foo"] in
+  check string_fc_list "ord strings remove" [`Unchanged; `Removed "bar"; `Removed "baz"] result3;
+
+  ()
+
+(** Test edge cases for diff_list_ord *)
+let test_diff_list_ord_edge_cases () =
+  let (module IntEq) = (module IntEq : EQUALABLE with type t = int) in
+
+  (* Test case 1: Addition at the beginning *)
+  let result1 = diff_list_ord (module IntEq) [1; 2; 3] [9; 1; 2; 3] in
+  check int_fc_list "add at beginning" [`Added 9; `Unchanged; `Unchanged; `Unchanged] result1;
+
+  (* Test case 2: Addition at the end *)
+  let result2 = diff_list_ord (module IntEq) [1; 2; 3] [1; 2; 3; 9] in
+  check int_fc_list "add at end" [`Unchanged; `Unchanged; `Unchanged; `Added 9] result2;
+
+  (* Test case 3: Removal from the beginning *)
+  let result3 = diff_list_ord (module IntEq) [9; 1; 2; 3] [1; 2; 3] in
+  check int_fc_list "remove from beginning" [`Removed 9; `Unchanged; `Unchanged; `Unchanged] result3;
+
+  (* Test case 4: Removal from the end *)
+  let result4 = diff_list_ord (module IntEq) [1; 2; 3; 9] [1; 2; 3] in
+  check int_fc_list "remove from end" [`Unchanged; `Unchanged; `Unchanged; `Removed 9] result4;
+
+  (* Test case 5: Duplicate elements *)
+  let result5 = diff_list_ord (module IntEq) [1; 1; 1] [1; 1] in
+  check int_fc_list "duplicate elements" [`Removed 1; `Unchanged; `Unchanged] result5;
+
+  (* Test case 6: Reordering *)
+  let result6 = diff_list_ord (module IntEq) [1; 2; 3] [3; 2; 1] in
+  check int_fc_list "reordering" [`Removed 1; `Removed 2; `Unchanged; `Added 2; `Added 1] result6;
+
+  (* Test case 7: Completely different lists *)
+  let result7 = diff_list_ord (module IntEq) [1; 2; 3] [4; 5; 6] in
+  check int_fc_list "completely different" [`Removed 1; `Removed 2; `Removed 3; `Added 4; `Added 5; `Added 6] result7;
+
+  ()
+
 (** Alcotest test suite setup. *)
 let () =
-  run "Diff List Myers" [
-    "diff-list-myers-basic", [ test_case "Test basic Myers functionality" `Quick test_diff_list_myers_basic ];
-    "diff-list-myers-strings", [ test_case "Test Myers with strings" `Quick test_diff_list_myers_strings ];
-    "diff-list-myers-edge-cases", [ test_case "Test edge cases" `Quick test_diff_list_myers_edge_cases ];
-    "diff-list-myers-optimal", [ test_case "Test optimal edit distance" `Quick test_diff_list_myers_optimal ];
-    "diff-list-myers-vs-lcs", [ test_case "Compare with LCS algorithm" `Quick test_diff_list_myers_vs_lcs ];
-    "diff-list-myers-custom", [ test_case "Test custom equality" `Quick test_diff_list_myers_custom ];
-    "diff-list-myers-correctness", [ test_case "Test correctness" `Quick test_myers_correctness ];
+  run "Diff List Algorithms" [
+    "Myers Diff", [
+      test_case "Test basic Myers functionality" `Quick test_diff_list_myers_basic;
+      test_case "Test Myers with strings" `Quick test_diff_list_myers_strings;
+      test_case "Test edge cases" `Quick test_diff_list_myers_edge_cases;
+      test_case "Test optimal edit distance" `Quick test_diff_list_myers_optimal;
+      test_case "Compare with LCS algorithm" `Quick test_diff_list_myers_vs_lcs;
+      test_case "Test custom equality" `Quick test_diff_list_myers_custom;
+      test_case "Test correctness" `Quick test_myers_correctness;
+    ];
+    "Ordered Diff (LCS)", [
+      test_case "Test basic sequence-based diffing" `Quick test_diff_list_ord_basic;
+      test_case "Test advanced cases" `Quick test_diff_list_ord_advanced;
+      test_case "Test with strings" `Quick test_diff_list_ord_strings;
+      test_case "Test edge cases" `Quick test_diff_list_ord_edge_cases;
+    ];
   ]
