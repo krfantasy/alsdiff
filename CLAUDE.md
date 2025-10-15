@@ -9,9 +9,10 @@ This is an OCaml project using Dune build system:
 - `dune runtest` - Run all tests
 - `dune runtest --force` - Force rerun all tests
 - `dune exec alsdiff` - Run the main executable
-- `dune test test_upath` - Run specific test (Upath tests)
-- `dune test test_diff_list_myers` - Run Myers diffing algorithm tests
-- `dune test test_diff_automation` - Run automation diffing tests
+- `dune exec test/test_upath.exe` - Run specific test `test/test_upath.ml` (Upath tests)
+- `dune exec test/test_diff_list.exe` - Run list diffing tests
+- `dune exec test/test_diff_list_myers.exe` - Run Myers diffing algorithm tests
+- `dune exec test/test_diff_automation.exe` - Run automation diffing tests
 
 ## Project Structure
 
@@ -25,21 +26,32 @@ This is an OCaml project using Dune build system:
   - `lib/live/` - Ableton Live specific modules:
     - `automation.ml` - Automation envelope handling
     - `clip.ml` - Clip and mixer functionality
+    - `track.ml` - Track handling and management
+    - `device.ml` - Device and plugin functionality
   - `lib/diff/` - Diffing algorithms:
     - `diff.ml` - Core diffing algorithms including Myers O(ND) implementation
+    - `clip_patch.ml` - Clip patching and modification handling
+    - `track_patch.ml` - Track and mixer patching functionality
+    - `automation_patch.ml` - Automation envelope patching functionality
   - `lib/output/` - Output formatting:
     - `output.ml` - Output interface definitions
     - `text_output.ml` - Plain text output rendering
 - `test/` - Test suites (all use specific module opens for cleaner code):
   - `test_upath.ml` - Tests for XPath-like functionality
   - `test_xml.ml` - Tests for XML parsing
-  - `test_live.ml` - Tests for Live set functionality
   - `test_wildcard.ml` - Tests for wildcard matching
+  - `test_wildcard_debug.ml` - Debug tests for wildcard matching
   - `test_complex.ml` - Complex integration tests
+  - `test_audio_clip.ml` - Tests for audio clip functionality
+  - `test_midi_clip.ml` - Tests for MIDI clip functionality
   - `test_diff_automation.ml` - Tests for diffing automation envelopes
+  - `test_diff_list.ml` - Tests for list diffing functionality
   - `test_diff_list_ord.ml` - Tests for ordered list diffing
   - `test_diff_list_myers.ml` - Tests for Myers diffing algorithm
   - `test_diff_mixer.ml` - Tests for mixer diffing functionality
+  - `test_diff_audio_clip.ml` - Tests for audio clip diffing
+  - `test_diff_midi_clip.ml` - Tests for MIDI clip diffing
+  - `test_clip_patch.ml` - Tests for clip patching functionality
   - `utils.ml` - Shared test utilities
 
 ## Key Dependencies
@@ -97,9 +109,14 @@ open Alsdiff_lib_base.Upath
 (* Live modules *)
 open Alsdiff_lib_live.Automation
 open Alsdiff_lib_live.Clip
+open Alsdiff_lib_live.Track
+open Alsdiff_lib_live.Device
 
 (* Diff modules *)
 open Alsdiff_lib_diff.Diff
+open Alsdiff_lib_diff.Clip_patch
+open Alsdiff_lib_diff.Track_patch
+open Alsdiff_lib_diff.Automation_patch
 
 (* Output modules *)
 open Alsdiff_lib_output.Text_output.TextOutput
@@ -123,7 +140,7 @@ The following modules have been refactored into the new library structure:
 - `dune utop . -- -emacs` - Load this library into Utop REPL for Emacs utop-mode
 
 ## Git commit message convention
-Always adding the texts inside the code block in the end of git commit message,
+Always adding the texts inside the code block to the end of git commit message,
 ```
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

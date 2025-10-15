@@ -14,12 +14,6 @@
  (libraries alsdiff_lib alcotest test_utils))
 
 (test
- (name test_live)
- (modules test_live)
- (libraries alsdiff_lib alcotest test_utils)
- (deps automation.xml mixer.xml))
-
-(test
  (name test_wildcard)
  (modules test_wildcard)
  (libraries alsdiff_lib alcotest test_utils))
