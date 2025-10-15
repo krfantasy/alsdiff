@@ -2,5 +2,7 @@
  (name alsdiff_lib_diff)
  (modules
    diff
-   clip_patch)
+   automation_patch
+   clip_patch
+   track_patch)
  (libraries alsdiff_lib_base alsdiff_lib_live))

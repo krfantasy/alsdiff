@@ -69,3 +69,9 @@
  (modules test_diff_audio_clip)
  (libraries alsdiff_lib alcotest test_utils)
  (deps audio_clip.xml audio_clip_old.xml))
+
+(test
+ (name test_diff_midi_clip)
+ (modules test_diff_midi_clip)
+ (libraries alsdiff_lib alcotest test_utils)
+ (deps midi_clip.xml midi_clip_old.xml))

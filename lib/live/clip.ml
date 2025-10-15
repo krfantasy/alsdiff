@@ -25,6 +25,7 @@ end
 module MidiClip = struct
   type t = {
     id : int;
+    name : string;
     start_time : float;
     end_time : float;
     loop : LoopSection.t option;
@@ -36,7 +37,7 @@ module MidiClip = struct
     match xml with
     | Xml.Element { name = "MidiClip"; _ } ->
       let id = Xml.get_int_attr "Id" xml in
-      let _name =
+      let name =
         match Upath.find xml "/Name@Value" with
         | Some (_, xml_elem) -> Xml.get_attr "Value" xml_elem
         | _ -> ""
@@ -128,7 +129,7 @@ module MidiClip = struct
         | _ -> []
       in
 
-      { id; start_time; end_time; loop; signature; notes }
+      { id; name; start_time; end_time; loop; signature; notes }
     | _ -> failwith "Expected MidiClip element"
 end
 

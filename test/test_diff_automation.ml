@@ -1,8 +1,8 @@
 open Alcotest
 open Alsdiff_lib_base
 open Alsdiff_lib_live
-open Alsdiff_lib_diff.Diff
-open Alsdiff_lib_output.Text_output.TextOutput
+open Alsdiff_lib_diff
+open Alsdiff_lib_output
 
 (** Helper to load an Automation.t from a file path. *)
 let load_automation_from_file (path : string) : Automation.t =
@@ -21,8 +21,8 @@ let test_diff_logic () =
   let new_automation = load_automation_from_file "automation.xml" in
 
   (* 2. Compute the diff between the old and new states. *)
-  let patch = AutomationPatch.diff old_automation new_automation in
-  let changes = patch.envelope_changes in
+  let patch = Automation_patch.diff old_automation new_automation in
+  let changes = patch.Automation_patch.envelope_changes in
 
   (* 3. Assert the expected outcomes. *)
   check int "total changes" 5 (List.length changes);
@@ -82,10 +82,10 @@ let test_text_output () =
   let new_automation = load_automation_from_file "automation.xml" in
 
   (* 2. Compute the diff between the old and new states. *)
-  let patch = AutomationPatch.diff old_automation new_automation in
+  let patch = Automation_patch.diff old_automation new_automation in
 
   (* 3. Generate the text output using TextOutput. *)
-  let text_output = render_automation_patch patch in
+  let text_output = Text_output.render_automation_patch patch in
 
   (* 4. Define the expected text output. *)
   let expected_lines = [

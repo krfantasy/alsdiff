@@ -1,6 +1,6 @@
 open Alsdiff_lib_live
 
-(* Re-export the flat_change type from diff.ml *)
+(* Use the same type definitions as in diff.ml to avoid conflicts *)
 type 'a modified = { old : 'a; new_ : 'a }
 
 type 'a flat_change = [
@@ -9,6 +9,56 @@ type 'a flat_change = [
   | `Removed of 'a
   | `Modified of 'a modified
 ]
+
+(* Equality module interface for local diff implementation *)
+module type EQUALABLE = sig
+  type t
+  val equal : t -> t -> bool
+end
+
+(* Local implementation of ordered diffing (similar to diff_list_ord but without external dependency) *)
+let diff_list_ord_local (type a) (module Eq : EQUALABLE with type t = a) (old_list : a list) (new_list : a list) : a flat_change list =
+  (* Quick optimization: identical lists return empty *)
+  if old_list = new_list then
+    []
+  else
+    let old_len = List.length old_list in
+    let new_len = List.length new_list in
+
+    (* Convert lists to arrays for efficient indexing *)
+    let old_arr = Array.of_list old_list in
+    let new_arr = Array.of_list new_list in
+
+    (* Create DP table for longest common subsequence *)
+    let dp = Array.make_matrix (old_len + 1) (new_len + 1) 0 in
+
+    (* Fill DP table *)
+    for i = 1 to old_len do
+      for j = 1 to new_len do
+        if Eq.equal old_arr.(i - 1) new_arr.(j - 1) then
+          dp.(i).(j) <- dp.(i - 1).(j - 1) + 1
+        else
+          dp.(i).(j) <- max dp.(i - 1).(j) dp.(i).(j - 1)
+      done
+    done;
+
+    (* Convert DP table back to diff operations *)
+    let rec backtrack i j acc =
+      if i = 0 && j = 0 then
+        acc
+      else if i = 0 then
+        backtrack i (j - 1) (`Added new_arr.(j - 1) :: acc)
+      else if j = 0 then
+        backtrack (i - 1) j (`Removed old_arr.(i - 1) :: acc)
+      else if Eq.equal old_arr.(i - 1) new_arr.(j - 1) then
+        backtrack (i - 1) (j - 1) (`Unchanged :: acc)
+      else if dp.(i).(j - 1) >= dp.(i - 1).(j) then
+        backtrack i (j - 1) (`Added new_arr.(j - 1) :: acc)
+      else
+        backtrack (i - 1) j (`Removed old_arr.(i - 1) :: acc)
+    in
+
+    backtrack old_len new_len []
 
 module LoopSectionPatch = struct
   type t = {
@@ -199,6 +249,7 @@ end
 
 module MidiClipPatch = struct
   type t = {
+    name : string flat_change;
     start_time : float flat_change;
     end_time : float flat_change;
     loop : LoopSectionPatch.t option;
@@ -207,13 +258,17 @@ module MidiClipPatch = struct
   }
 
   let diff (old_clip : Clip.MidiClip.t) (new_clip : Clip.MidiClip.t) : t option =
-    let { Clip.MidiClip.id = old_id; start_time = old_start; end_time = old_end; loop = old_loop; signature = old_sig; notes = old_notes } = old_clip in
-    let { Clip.MidiClip.id = new_id; start_time = new_start; end_time = new_end; loop = new_loop; signature = new_sig; notes = new_notes } = new_clip in
+    let { Clip.MidiClip.id = old_id; name = old_name; start_time = old_start; end_time = old_end; loop = old_loop; signature = old_sig; notes = old_notes } = old_clip in
+    let { Clip.MidiClip.id = new_id; name = new_name; start_time = new_start; end_time = new_end; loop = new_loop; signature = new_sig; notes = new_notes } = new_clip in
 
     (* Only compare clips with the same id *)
     if old_id <> new_id then
       None
     else
+      let name_change =
+        if old_name = new_name then `Unchanged
+        else `Modified { old = old_name; new_ = new_name }
+      in
       let start_time_change =
         if old_start = new_start then `Unchanged
         else `Modified { old = old_start; new_ = new_start }
@@ -228,33 +283,19 @@ module MidiClipPatch = struct
       else `Modified { old = old_sig; new_ = new_sig }
     in
 
-    (* Use simple list diff for notes - direct implementation to avoid cross-module dependencies *)
+    (* Use local diff_list_ord for notes - cleaner and more consistent *)
     let notes_change =
-      let is_equal = (=) in
-
-      (* Find removed notes (in old but not in new) *)
-      let removed = List.filter (fun old_note ->
-        not (List.exists (fun new_note -> is_equal old_note new_note) new_notes)
-      ) old_notes
-      |> List.map (fun note -> `Removed note) in
-
-      (* Find added notes (in new but not in old) *)
-      let added = List.filter (fun new_note ->
-        not (List.exists (fun old_note -> is_equal old_note new_note) old_notes)
-      ) new_notes
-      |> List.map (fun note -> `Added note) in
-
-      (* Find unchanged notes (in both with same position) *)
-      let unchanged = List.filter_map (fun old_note ->
-        List.find_opt (fun new_note -> is_equal old_note new_note) new_notes
-        |> Option.map (fun _ -> `Unchanged)
-      ) old_notes in
-
-      List.concat [removed; added; unchanged]
+      let module MidiNoteEq = struct
+        type t = Clip.MidiNote.t
+        let equal = (=)
+      end in
+      let (module Eq) = (module MidiNoteEq : EQUALABLE with type t = Clip.MidiNote.t) in
+      diff_list_ord_local (module Eq) old_notes new_notes
     in
 
       (* Check if anything changed *)
-      if start_time_change = `Unchanged &&
+      if name_change = `Unchanged &&
+         start_time_change = `Unchanged &&
          end_time_change = `Unchanged &&
          loop_patch = None &&
          signature_change = `Unchanged &&
@@ -262,6 +303,7 @@ module MidiClipPatch = struct
         None
       else
         Some {
+          name = name_change;
           start_time = start_time_change;
           end_time = end_time_change;
           loop = loop_patch;
