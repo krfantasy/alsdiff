@@ -1,64 +1,8 @@
+open Alsdiff_lib_base.Equality
 open Alsdiff_lib_live
 
-(* Use the same type definitions as in diff.ml to avoid conflicts *)
-type 'a modified = { old : 'a; new_ : 'a }
-
-type 'a flat_change = [
-  | `Unchanged
-  | `Added of 'a
-  | `Removed of 'a
-  | `Modified of 'a modified
-]
-
-(* Equality module interface for local diff implementation *)
-module type EQUALABLE = sig
-  type t
-  val equal : t -> t -> bool
-end
-
-(* Local implementation of ordered diffing (similar to diff_list_ord but without external dependency) *)
-let diff_list_ord_local (type a) (module Eq : EQUALABLE with type t = a) (old_list : a list) (new_list : a list) : a flat_change list =
-  (* Quick optimization: identical lists return empty *)
-  if old_list = new_list then
-    []
-  else
-    let old_len = List.length old_list in
-    let new_len = List.length new_list in
-
-    (* Convert lists to arrays for efficient indexing *)
-    let old_arr = Array.of_list old_list in
-    let new_arr = Array.of_list new_list in
-
-    (* Create DP table for longest common subsequence *)
-    let dp = Array.make_matrix (old_len + 1) (new_len + 1) 0 in
-
-    (* Fill DP table *)
-    for i = 1 to old_len do
-      for j = 1 to new_len do
-        if Eq.equal old_arr.(i - 1) new_arr.(j - 1) then
-          dp.(i).(j) <- dp.(i - 1).(j - 1) + 1
-        else
-          dp.(i).(j) <- max dp.(i - 1).(j) dp.(i).(j - 1)
-      done
-    done;
-
-    (* Convert DP table back to diff operations *)
-    let rec backtrack i j acc =
-      if i = 0 && j = 0 then
-        acc
-      else if i = 0 then
-        backtrack i (j - 1) (`Added new_arr.(j - 1) :: acc)
-      else if j = 0 then
-        backtrack (i - 1) j (`Removed old_arr.(i - 1) :: acc)
-      else if Eq.equal old_arr.(i - 1) new_arr.(j - 1) then
-        backtrack (i - 1) (j - 1) (`Unchanged :: acc)
-      else if dp.(i).(j - 1) >= dp.(i - 1).(j) then
-        backtrack i (j - 1) (`Added new_arr.(j - 1) :: acc)
-      else
-        backtrack (i - 1) j (`Removed old_arr.(i - 1) :: acc)
-    in
-
-    backtrack old_len new_len []
+(* Include the common types from Diff module *)
+include Diff
 
 module LoopSectionPatch = struct
   type t = {
@@ -283,14 +227,14 @@ module MidiClipPatch = struct
       else `Modified { old = old_sig; new_ = new_sig }
     in
 
-    (* Use local diff_list_ord for notes - cleaner and more consistent *)
+    (* Use diff_list_ord for notes - cleaner and more consistent *)
     let notes_change =
       let module MidiNoteEq = struct
         type t = Clip.MidiNote.t
         let equal = (=)
       end in
       let (module Eq) = (module MidiNoteEq : EQUALABLE with type t = Clip.MidiNote.t) in
-      diff_list_ord_local (module Eq) old_notes new_notes
+      diff_list_ord (module Eq) old_notes new_notes
     in
 
       (* Check if anything changed *)

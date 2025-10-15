@@ -241,12 +241,12 @@ module AudioClip = struct
 end
 
 
-type clip =
+type t =
   | AudioClip of AudioClip.t
   | MidiClip of MidiClip.t
 
 
-let create xml : clip =
+let create xml : t =
   match xml with
   | Xml.Element { name; _ } when name = "AudioClip" ->
     AudioClip (AudioClip.create xml)
