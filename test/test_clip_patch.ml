@@ -1,6 +1,6 @@
-open Alsdiff_lib_base.Xml
-open Alsdiff_lib_live.Clip
-open Alsdiff_lib_diff.Clip_patch
+open Alsdiff_base.Xml
+open Alsdiff_live.Clip
+open Alsdiff_diff.Clip_patch
 
 let test_identical_clips () =
   (* Read the audio_clip.xml file twice *)

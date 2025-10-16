@@ -1,5 +1,5 @@
-open Alsdiff_lib_base.Equality
-open Alsdiff_lib_live
+open Alsdiff_base.Equality
+open Alsdiff_live
 
 (* Include the common types from Diff module *)
 include Diff

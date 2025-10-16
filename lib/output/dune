@@ -1,9 +1,9 @@
 (library
- (name alsdiff_lib_output)
+ (name alsdiff_output)
  (modules
    output
    text_output)
  (libraries
-   alsdiff_lib_base
-   alsdiff_lib_live
-   alsdiff_lib_diff))
+   alsdiff_base
+   alsdiff_live
+   alsdiff_diff))

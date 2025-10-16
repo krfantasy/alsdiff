@@ -133,10 +133,10 @@ The `Diff` module implements multiple diffing algorithms:
 
 The project is organized into four main libraries:
 
-1.  **alsdiff_lib_base** (`lib/base/`) - Core functionality
-2.  **alsdiff_lib_live** (`lib/live/`) - Ableton Live specific types and logic
-3.  **alsdiff_lib_diff** (`lib/diff/`) - Diffing algorithms
-4.  **alsdiff_lib_output** (`lib/output/`) - Output formatting
+1.  **alsdiff_base** (`lib/base/`) - Core functionality
+2.  **alsdiff_live** (`lib/live/`) - Ableton Live specific types and logic
+3.  **alsdiff_diff** (`lib/diff/`) - Diffing algorithms
+4.  **alsdiff_output** (`lib/output/`) - Output formatting
 
 ### Module Access Patterns
 
@@ -144,23 +144,23 @@ When working with the libraries, use specific module opens for cleaner code:
 
 ```ocaml
 (* Base modules *)
-open Alsdiff_lib_base.Xml
-open Alsdiff_lib_base.Upath
+open Alsdiff_base.Xml
+open Alsdiff_base.Upath
 
 (* Live modules *)
-open Alsdiff_lib_live.Automation
-open Alsdiff_lib_live.Clip
-open Alsdiff_lib_live.Track
-open Alsdiff_lib_live.Device
+open Alsdiff_live.Automation
+open Alsdiff_live.Clip
+open Alsdiff_live.Track
+open Alsdiff_live.Device
 
 (* Diff modules *)
-open Alsdiff_lib_diff.Diff
-open Alsdiff_lib_diff.Clip_patch
-open Alsdiff_lib_diff.Automation_patch
-open Alsdiff_lib_diff.Track_patch
+open Alsdiff_diff.Diff
+open Alsdiff_diff.Clip_patch
+open Alsdiff_diff.Automation_patch
+open Alsdiff_diff.Track_patch
 
 (* Output modules *)
-open Alsdiff_lib_output.Text_output.TextOutput
+open Alsdiff_output.Text_output.TextOutput
 ```
 
 This allows you to write `Automation.t` instead of `Alsdiff_lib_live.Automation.Automation.t` and `Xml.read_file` instead of `Alsdiff_lib_base.Xml.read_file`.

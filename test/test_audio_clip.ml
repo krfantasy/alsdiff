@@ -1,5 +1,5 @@
-open Alsdiff_lib_base.Xml
-open Alsdiff_lib_live.Clip
+open Alsdiff_base.Xml
+open Alsdiff_live.Clip
 
 let test_create_audio_clip () =
   (* Read the audio_clip.xml file *)

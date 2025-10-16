@@ -1,4 +1,4 @@
-open Alsdiff_lib_diff
+open Alsdiff_diff
 
 
 (** The interface for modules that can render automation patches into a specific format. *)

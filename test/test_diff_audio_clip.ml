@@ -1,8 +1,8 @@
 open Alcotest
-open Alsdiff_lib_base
-open Alsdiff_lib_live.Clip
-open Alsdiff_lib_diff.Clip_patch
-open Alsdiff_lib_output
+open Alsdiff_base
+open Alsdiff_live.Clip
+open Alsdiff_diff.Clip_patch
+open Alsdiff_output
 
 (** Helper to load an AudioClip.t from a file path. *)
 let load_audio_clip_from_file (path : string) : AudioClip.t =

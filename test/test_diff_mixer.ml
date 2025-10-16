@@ -1,7 +1,7 @@
-open Alsdiff_lib_base
-open Alsdiff_lib_live.Track
-open Alsdiff_lib_diff
-open Alsdiff_lib_output
+open Alsdiff_base
+open Alsdiff_live.Track
+open Alsdiff_diff
+open Alsdiff_output
 
 let test_mixer_diff () =
   (* Load the old mixer XML *)

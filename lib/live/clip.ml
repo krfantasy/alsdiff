@@ -1,4 +1,4 @@
-open Alsdiff_lib_base
+open Alsdiff_base
 
 module TimeSignature = struct
   type t = { numer : int; denom : int } [@@deriving eq]

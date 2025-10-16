@@ -1,4 +1,4 @@
-open Alsdiff_lib_live
+open Alsdiff_live
 open Diff
 
 module AutomationEnvelopePatch = struct

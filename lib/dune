@@ -1,3 +1,3 @@
 (library
  (name alsdiff_lib)
- (libraries alsdiff_lib_base alsdiff_lib_live alsdiff_lib_diff alsdiff_lib_output))
+ (libraries alsdiff_base alsdiff_live alsdiff_diff alsdiff_output))

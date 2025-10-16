@@ -1,11 +1,11 @@
-open Alsdiff_lib_live.Automation
-open Alsdiff_lib_live.Track
-open Alsdiff_lib_live.Clip
-open Alsdiff_lib_diff.Diff
-open Alsdiff_lib_diff
+open Alsdiff_live.Automation
+open Alsdiff_live.Track
+open Alsdiff_live.Clip
+open Alsdiff_diff.Diff
+open Alsdiff_diff
 
 (* Import Clip_patch with an alias to avoid conflicts *)
-module CP = Alsdiff_lib_diff.Clip_patch
+module CP = Alsdiff_diff.Clip_patch
 
 type t = string
 
@@ -23,7 +23,7 @@ let render_event_change change =
         m.old.EnvelopeEvent.time m.old.EnvelopeEvent.value m.new_.EnvelopeEvent.value
 
 let render_envelope_patch (patch : Automation_patch.AutomationEnvelopePatch.t) =
-  let open Alsdiff_lib_diff.Automation_patch in
+  let open Alsdiff_diff.Automation_patch in
   let header =
     Printf.sprintf "  ~ Patched Envelope (Id: %d, Target: %d):"
       patch.AutomationEnvelopePatch.id patch.AutomationEnvelopePatch.target

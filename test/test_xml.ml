@@ -1,4 +1,4 @@
-open Alsdiff_lib_base.Xml
+open Alsdiff_base.Xml
 open Test_utils.Utils
 
 let test_read_string () =

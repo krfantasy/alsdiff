@@ -1,7 +1,7 @@
-open Alsdiff_lib_base.Xml
-open Alsdiff_lib_live.Clip.MidiClip
-open Alsdiff_lib_live.Clip.TimeSignature
-open Alsdiff_lib_live.Clip.LoopSection
+open Alsdiff_base.Xml
+open Alsdiff_live.Clip.MidiClip
+open Alsdiff_live.Clip.TimeSignature
+open Alsdiff_live.Clip.LoopSection
 
 let test_midi_clip_parsing () =
   (* Read the midi_clip.xml file *)

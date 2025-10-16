@@ -1,4 +1,4 @@
-open Alsdiff_lib_base
+open Alsdiff_base
 
 type track_ident = {
   id : int;
@@ -23,10 +23,10 @@ module Send = struct
 
   let equal s1 s2 = s1.target = s2.target && s1.amount = s2.amount
 
-  let create (xml : Alsdiff_lib_base.Xml.t) : t =
+  let create (xml : Alsdiff_base.Xml.t) : t =
     let amount =
       match Upath.find xml "/Manual@Value" with
-      | Some (_, xml_elem) -> Alsdiff_lib_base.Xml.get_float_attr "Value" xml_elem
+      | Some (_, xml_elem) -> Alsdiff_base.Xml.get_float_attr "Value" xml_elem
       | _ -> 0.0
     in
     (* As mentioned in TODO.org, the target track's ID is currently unknown *)
@@ -42,16 +42,16 @@ module Mixer = struct
     sends : Send.t list;
   } [@@deriving eq]
 
-  let create (xml : Alsdiff_lib_base.Xml.t) : t =
+  let create (xml : Alsdiff_base.Xml.t) : t =
     let get_float_attr path attr_name =
       match Upath.find xml (path ^ "/Manual@" ^ attr_name) with
-      | Some (_, xml_elem) -> Alsdiff_lib_base.Xml.get_float_attr "Value" xml_elem
+      | Some (_, xml_elem) -> Alsdiff_base.Xml.get_float_attr "Value" xml_elem
       | _ -> failwith ("Cannot find " ^ path)
     in
     let get_bool_attr path attr_name =
       match Upath.find xml (path ^ "/Manual@" ^ attr_name) with
       | Some (_, xml_elem) ->
-        Option.value ~default:false (Alsdiff_lib_base.Xml.get_bool_attr_opt "Value" xml_elem)
+        Option.value ~default:false (Alsdiff_base.Xml.get_bool_attr_opt "Value" xml_elem)
       | None -> failwith ("Cannot find " ^ path)
     in
     let volume = get_float_attr "/Volume" "Value" in
@@ -60,7 +60,7 @@ module Mixer = struct
     let solo =
       match Upath.find xml "/SoloSink@Value" with
       | Some (_, xml_elem) ->
-        Option.value ~default:false (Alsdiff_lib_base.Xml.get_bool_attr_opt "Value" xml_elem)
+        Option.value ~default:false (Alsdiff_base.Xml.get_bool_attr_opt "Value" xml_elem)
       | None -> false
     in
     let sends =

@@ -1,4 +1,4 @@
-open Alsdiff_lib_base.Xml
+open Alsdiff_base.Xml
 
 let rec xml_to_string = function
   | Element {name; attrs; childs} ->
