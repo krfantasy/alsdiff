@@ -38,7 +38,7 @@ module MidiClip = struct
     | Xml.Element { name = "MidiClip"; _ } ->
       let id = Xml.get_int_attr "Id" xml in
       let name =
-        match Upath.find xml "/Name@Value" with
+        match Upath.find "/Name@Value" xml with
         | Some (_, xml_elem) -> Xml.get_attr "Value" xml_elem
         | _ -> ""
       in
@@ -46,27 +46,27 @@ module MidiClip = struct
 
       (* Extract end time from CurrentEnd *)
       let end_time =
-        match Upath.find xml "/CurrentEnd@Value" with
+        match Upath.find "/CurrentEnd@Value" xml with
         | Some (_, xml_elem) -> Xml.get_float_attr "Value" xml_elem
         | _ -> start_time  (* fallback to start_time if no end time found *)
       in
 
       (* Extract loop information *)
       let loop =
-        match Upath.find xml "/Loop" with
+        match Upath.find "/Loop" xml with
         | Some (_, _) ->
           let start =
-            match Upath.find xml "/Loop/LoopStart@Value" with
+            match Upath.find "/Loop/LoopStart@Value" xml with
             | Some (_, xml_elem) -> Xml.get_float_attr "Value" xml_elem
             | _ -> 0.0
           in
           let end_ =
-            match Upath.find xml "/Loop/LoopEnd@Value" with
+            match Upath.find "/Loop/LoopEnd@Value" xml with
             | Some (_, xml_elem) -> Xml.get_float_attr "Value" xml_elem
             | _ -> 0.0
           in
           let on =
-            match Upath.find xml "/Loop/LoopOn@Value" with
+            match Upath.find "/Loop/LoopOn@Value" xml with
             | Some (_, xml_elem) ->
               Option.value ~default:false (Xml.get_bool_attr_opt "Value" xml_elem)
             | None -> false
@@ -77,15 +77,15 @@ module MidiClip = struct
 
       (* Extract time signature *)
       let signature =
-        match Upath.find xml "/TimeSignature/TimeSignatures/RemoteableTimeSignature" with
+        match Upath.find "/TimeSignature/TimeSignatures/RemoteableTimeSignature" xml with
         | Some (_, _) ->
           let numer =
-            match Upath.find xml "/TimeSignature/TimeSignatures/RemoteableTimeSignature/Numerator@Value" with
+            match Upath.find "/TimeSignature/TimeSignatures/RemoteableTimeSignature/Numerator@Value" xml with
             | Some (_, xml_elem) -> Xml.get_int_attr "Value" xml_elem
             | _ -> 4
           in
           let denom =
-            match Upath.find xml "/TimeSignature/TimeSignatures/RemoteableTimeSignature/Denominator@Value" with
+            match Upath.find "/TimeSignature/TimeSignatures/RemoteableTimeSignature/Denominator@Value" xml with
             | Some (_, xml_elem) -> Xml.get_int_attr "Value" xml_elem
             | _ -> 4
           in
@@ -95,7 +95,7 @@ module MidiClip = struct
 
       (* Extract MIDI notes from KeyTracks *)
       let notes =
-        match Upath.find xml "/Notes/KeyTracks" with
+        match Upath.find "/Notes/KeyTracks" xml with
         | Some (_, key_tracks_elem) ->
           (match key_tracks_elem with
            | Xml.Element { childs = key_track_elements; _ } ->
@@ -104,7 +104,7 @@ module MidiClip = struct
                | Xml.Element { name = "KeyTrack"; _ } ->
                  (* Get notes from this KeyTrack *)
                  let track_notes =
-                   match Upath.find key_track "/Notes" with
+                   match Upath.find "/Notes" key_track with
                    | Some (_, notes_elem) ->
                      (match notes_elem with
                       | Xml.Element { childs = notes_childs; _ } ->
@@ -161,7 +161,7 @@ module AudioClip = struct
     | Xml.Element { name = "AudioClip"; _ } ->
       let id = Xml.get_int_attr "Id" xml in
       let name =
-        match Upath.find xml "/Name@Value" with
+        match Upath.find "/Name@Value" xml with
         | Some (_, xml_elem) -> Xml.get_attr "Value" xml_elem
         | _ -> ""
       in
@@ -169,7 +169,7 @@ module AudioClip = struct
 
       (* Extract end time from CurrentEnd *)
       let end_time =
-        match Upath.find xml "/CurrentEnd@Value" with
+        match Upath.find "/CurrentEnd@Value" xml with
         | Some (_, xml_elem) -> Xml.get_float_attr "Value" xml_elem
         | _ -> start_time  (* fallback to start_time if no end time found *)
       in
@@ -177,20 +177,20 @@ module AudioClip = struct
       (* Extract loop information *)
       (* TODO: what the fuck does `StartRelative` means in the `Loop` element *)
       let loop =
-        match Upath.find xml "/Loop" with
+        match Upath.find "/Loop" xml with
         | Some (_, _) ->
           let start =
-            match Upath.find xml "/Loop/LoopStart@Value" with
+            match Upath.find "/Loop/LoopStart@Value" xml with
             | Some (_, xml_elem) -> Xml.get_float_attr "Value" xml_elem
             | _ -> 0.0
           in
           let end_ =
-            match Upath.find xml "/Loop/LoopEnd@Value" with
+            match Upath.find "/Loop/LoopEnd@Value" xml with
             | Some (_, xml_elem) -> Xml.get_float_attr "Value" xml_elem
             | _ -> 0.0
           in
           let on =
-            match Upath.find xml "/Loop/LoopOn@Value" with
+            match Upath.find "/Loop/LoopOn@Value" xml with
             | Some (_, xml_elem) ->
               Option.value ~default:false (Xml.get_bool_attr_opt "Value" xml_elem)
             | None -> false
@@ -202,15 +202,15 @@ module AudioClip = struct
       (* Extract time signature *)
       (* TODO: support time signature automation *)
       let signature =
-        match Upath.find xml "/TimeSignature/TimeSignatures/RemoteableTimeSignature" with
+        match Upath.find "/TimeSignature/TimeSignatures/RemoteableTimeSignature" xml with
         | Some (_, _) ->
           let numer =
-            match Upath.find xml "/TimeSignature/TimeSignatures/RemoteableTimeSignature/Numerator@Value" with
+            match Upath.find "/TimeSignature/TimeSignatures/RemoteableTimeSignature/Numerator@Value" xml with
             | Some (_, xml_elem) -> Xml.get_int_attr "Value" xml_elem
             | _ -> 4
           in
           let denom =
-            match Upath.find xml "/TimeSignature/TimeSignatures/RemoteableTimeSignature/Denominator@Value" with
+            match Upath.find "/TimeSignature/TimeSignatures/RemoteableTimeSignature/Denominator@Value" xml with
             | Some (_, xml_elem) -> Xml.get_int_attr "Value" xml_elem
             | _ -> 4
           in
@@ -220,17 +220,17 @@ module AudioClip = struct
 
       (* Extract sample reference *)
       let last_modified_date =
-        match Upath.find xml "/SampleRef/LastModDate@Value" with
+        match Upath.find "/SampleRef/LastModDate@Value" xml with
         | Some (_, xml_elem) -> Xml.get_attr "Value" xml_elem |> Int64.of_string
         | _ -> 0L
       in
       let file_path =
-        match Upath.find xml "/SampleRef/FileRef/Path@Value" with
+        match Upath.find "/SampleRef/FileRef/Path@Value" xml with
         | Some (_, xml_elem) -> Xml.get_attr "Value" xml_elem
         | _ -> ""
       in
       let crc =
-        match Upath.find xml "/SampleRef/FileRef/OriginalCrc@Value" with
+        match Upath.find "/SampleRef/FileRef/OriginalCrc@Value" xml with
         | Some (_, xml_elem) -> Xml.get_attr "Value" xml_elem
         | _ -> "0"
       in

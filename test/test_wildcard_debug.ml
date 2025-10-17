@@ -34,7 +34,7 @@ let () =
 
   (* Test just matching direct children of root *)
   Printf.printf "Direct children of root:\n";
-  let result1 = find_all sample_xml "/root/*" in
+  let result1 = find_all "/root/*" sample_xml in
   (match result1 with
    | [] -> Printf.printf "  No matches found\n"
    | matches ->
@@ -44,7 +44,7 @@ let () =
 
   (* Test the full path with single wildcard *)
   Printf.printf "Full path /root/*/child:\n";
-  let result2 = find_all sample_xml "/root/*/child" in
+  let result2 = find_all "/root/*/child" sample_xml in
   (match result2 with
    | [] -> Printf.printf "  No matches found\n"
    | matches ->

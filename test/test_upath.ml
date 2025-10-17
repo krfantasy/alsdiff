@@ -46,7 +46,7 @@ let sample_xml =
 let find_path_testable = Alcotest.(option (pair string xml_testable))
 
 let test_find_path path_str expected () =
-  let result = find sample_xml path_str in
+  let result = find path_str sample_xml in
   Alcotest.check find_path_testable ("find_path " ^ path_str) expected result
 
 let test_cases =
@@ -78,7 +78,7 @@ let test_find_all path_str expected () =
       else String.compare (xml_to_string x1) (xml_to_string x2)
     ) l
   in
-  let result = find_all sample_xml path_str |> sort_results in
+  let result = find_all path_str sample_xml |> sort_results in
   let expected = expected |> sort_results in
   Alcotest.check filter_path_testable ("filter_path " ^ path_str) expected result
 
@@ -142,7 +142,7 @@ let sample_xml_nested =
   }
 
 let test_find_path_nested path_str expected () =
-  let result = find sample_xml_nested path_str in
+  let result = find path_str sample_xml_nested in
   Alcotest.check find_path_testable ("find_path_nested " ^ path_str) expected result
 
 let nested_test_cases = [
@@ -171,7 +171,7 @@ let test_find_all_nested path_str expected () =
       else String.compare (xml_to_string x1) (xml_to_string x2)
     ) l
   in
-  let result = find_all sample_xml_nested path_str |> sort_results in
+  let result = find_all path_str sample_xml_nested |> sort_results in
   let expected = expected |> sort_results in
   Alcotest.check filter_path_testable ("find_all_nested " ^ path_str) expected result
 

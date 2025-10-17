@@ -23,12 +23,13 @@ module AutomationEnvelope = struct
   let create (xml : Alsdiff_base.Xml.t) : t =
     let id = Alsdiff_base.Xml.get_int_attr "Id" xml in
     let target =
-      match Upath.find xml "/EnvelopeTarget/PointeeId@Value" with
+      match Upath.find "/EnvelopeTarget/PointeeId@Value" xml with
       | Some (_, xml_elem) -> Alsdiff_base.Xml.get_int_attr "Value" xml_elem
       | _ -> failwith "Cannot find target"
     in
     let events =
-      Upath.find_all xml "/Automation/Events/FloatEvent"
+      xml
+      |> Upath.find_all "/Automation/Events/FloatEvent"
       |> List.map (fun (_, event) -> EnvelopeEvent.create event)
     in
     { id; target; events }
@@ -41,7 +42,8 @@ type t = {
 
 let create (xml : Alsdiff_base.Xml.t) : t =
   let envelopes =
-    Upath.find_all xml "/Envelopes/AutomationEnvelope"
+    xml
+    |> Upath.find_all "/Envelopes/AutomationEnvelope"
     |> List.map (fun (_, envelope) -> AutomationEnvelope.create envelope)
   in
   { automation_envelopes = envelopes }

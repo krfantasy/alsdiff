@@ -40,7 +40,7 @@ let sort_results l =
   ) l
 
 let test_wildcard_behavior path_str expected () =
-  let result = find_all sample_xml path_str |> sort_results in
+  let result = find_all path_str sample_xml |> sort_results in
   let expected = expected |> sort_results in
   Alcotest.check wildcard_testable ("wildcard test " ^ path_str) expected result
 

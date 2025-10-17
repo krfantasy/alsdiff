@@ -227,10 +227,12 @@ let find_all_seq (tree : Xml.t) (path : string) : (string * Xml.t) Seq.t =
     )
   |> Seq.memoize
 
+
 (** Find all XML elements in [tree] that match the [path]. *)
-let find_all (tree : Xml.t) (path : string) : (string * Xml.t) list =
+let find_all (path : string) (tree : Xml.t) : (string * Xml.t) list =
   find_all_seq tree path |> List.of_seq
 
+
 (** Find the first XML element in [tree] that matches the [path]. *)
-let find (tree : Xml.t) (path : string) : (string * Xml.t) option =
+let find (path : string) (tree : Xml.t) : (string * Xml.t) option =
   find_all_seq tree path |> Seq.uncons |> Option.map fst

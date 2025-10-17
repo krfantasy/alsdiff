@@ -25,7 +25,7 @@ module Send = struct
 
   let create (xml : Alsdiff_base.Xml.t) : t =
     let amount =
-      match Upath.find xml "/Manual@Value" with
+      match Upath.find "/Manual@Value" xml with
       | Some (_, xml_elem) -> Alsdiff_base.Xml.get_float_attr "Value" xml_elem
       | _ -> 0.0
     in
@@ -44,12 +44,12 @@ module Mixer = struct
 
   let create (xml : Alsdiff_base.Xml.t) : t =
     let get_float_attr path attr_name =
-      match Upath.find xml (path ^ "/Manual@" ^ attr_name) with
+      match Upath.find (path ^ "/Manual@" ^ attr_name) xml with
       | Some (_, xml_elem) -> Alsdiff_base.Xml.get_float_attr "Value" xml_elem
       | _ -> failwith ("Cannot find " ^ path)
     in
     let get_bool_attr path attr_name =
-      match Upath.find xml (path ^ "/Manual@" ^ attr_name) with
+      match Upath.find (path ^ "/Manual@" ^ attr_name) xml with
       | Some (_, xml_elem) ->
         Option.value ~default:false (Alsdiff_base.Xml.get_bool_attr_opt "Value" xml_elem)
       | None -> failwith ("Cannot find " ^ path)
@@ -58,13 +58,14 @@ module Mixer = struct
     let pan = get_float_attr "/Pan" "Value" in
     let mute = get_bool_attr "/On" "Value" in
     let solo =
-      match Upath.find xml "/SoloSink@Value" with
+      match Upath.find "/SoloSink@Value" xml with
       | Some (_, xml_elem) ->
         Option.value ~default:false (Alsdiff_base.Xml.get_bool_attr_opt "Value" xml_elem)
       | None -> false
     in
     let sends =
-      Upath.find_all xml "/Sends/TrackSendHolder/Send"
+      xml
+      |> Upath.find_all "/Sends/TrackSendHolder/Send"
       |> List.map (fun (_, send_node) -> Send.create send_node)
     in
     { volume; pan; mute; solo; sends }

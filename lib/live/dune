@@ -1,6 +1,7 @@
 (library
  (name alsdiff_live)
  (modules
+   context
    automation
    clip
    device
