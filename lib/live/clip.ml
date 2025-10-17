@@ -35,7 +35,7 @@ module MidiClip = struct
 
   let create (xml : Xml.t) : t =
     match xml with
-    | Xml.Element { name = "MidiClip"; _ } ->
+    | Xml.Element { name = "MidiClip"; parent = _; _ } ->
       let id = Xml.get_int_attr "Id" xml in
       let name =
         match Upath.find "/Name@Value" xml with
@@ -98,19 +98,19 @@ module MidiClip = struct
         match Upath.find "/Notes/KeyTracks" xml with
         | Some (_, key_tracks_elem) ->
           (match key_tracks_elem with
-           | Xml.Element { childs = key_track_elements; _ } ->
+           | Xml.Element { childs = key_track_elements; parent = _; _ } ->
              List.fold_left (fun acc key_track ->
                match key_track with
-               | Xml.Element { name = "KeyTrack"; _ } ->
+               | Xml.Element { name = "KeyTrack"; parent = _; _ } ->
                  (* Get notes from this KeyTrack *)
                  let track_notes =
                    match Upath.find "/Notes" key_track with
                    | Some (_, notes_elem) ->
                      (match notes_elem with
-                      | Xml.Element { childs = notes_childs; _ } ->
+                      | Xml.Element { childs = notes_childs; parent = _; _ } ->
                         List.fold_left (fun note_acc note ->
                           match note with
-                          | Xml.Element { name = "MidiNoteEvent"; attrs = _; childs = _ } ->
+                          | Xml.Element { name = "MidiNoteEvent"; attrs = _; childs = _; parent = _ } ->
                             let time = Xml.get_float_attr "Time" note |> int_of_float in
                             let duration = Xml.get_float_attr "Duration" note |> int_of_float in
                             let velocity = Xml.get_int_attr "Velocity" note in
@@ -158,7 +158,7 @@ module AudioClip = struct
 
   let create (xml : Xml.t) : t =
     match xml with
-    | Xml.Element { name = "AudioClip"; _ } ->
+    | Xml.Element { name = "AudioClip"; parent = _; _ } ->
       let id = Xml.get_int_attr "Id" xml in
       let name =
         match Upath.find "/Name@Value" xml with
@@ -248,8 +248,8 @@ type t =
 
 let create xml : t =
   match xml with
-  | Xml.Element { name; _ } when name = "AudioClip" ->
+  | Xml.Element { name; parent = _; _ } when name = "AudioClip" ->
     AudioClip (AudioClip.create xml)
-  | Xml.Element { name; _ } when name = "MidiClip" ->
+  | Xml.Element { name; parent = _; _ } when name = "MidiClip" ->
     MidiClip (MidiClip.create xml)
   | _ -> raise (Invalid_argument "Invalid XML")

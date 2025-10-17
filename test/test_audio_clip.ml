@@ -3,7 +3,7 @@ open Alsdiff_live.Clip
 
 let test_create_audio_clip () =
   (* Read the audio_clip.xml file *)
-  let (_, xml) = read_file "audio_clip.xml" in
+  let xml = read_file "audio_clip.xml" in
 
   (* Create audio clip from the XML *)
   let audio_clip = AudioClip.create xml in

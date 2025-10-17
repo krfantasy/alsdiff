@@ -9,21 +9,24 @@ let sample_xml =
         name = "a";
         attrs = [("id", "1")];
         childs = [
-          Element { name = "b"; attrs = []; childs = [Data "hello"] };
-          Element { name = "c"; attrs = [("val", "test")]; childs = [] };
-        ]
+          Element { name = "b"; attrs = []; childs = [Data {value = "hello"; parent = None}]; parent = None };
+          Element { name = "c"; attrs = [("val", "test")]; childs = []; parent = None };
+        ];
+        parent = None
       };
       Element {
         name = "a";
         attrs = [("id", "2")];
         childs = [
-          Element { name = "d"; attrs = []; childs = [] };
+          Element { name = "d"; attrs = []; childs = []; parent = None };
           Element {
             name = "b";
             attrs = [("lang", "en")];
-            childs = [Data "world"]
+            childs = [Data {value = "world"; parent = None}];
+            parent = None
           };
-        ]
+        ];
+        parent = None
       };
       Element {
         name = "e";
@@ -33,12 +36,15 @@ let sample_xml =
             name = "f";
             attrs = [];
             childs = [
-              Element { name = "b"; attrs = []; childs = [] }
-            ]
+              Element { name = "b"; attrs = []; childs = []; parent = None }
+            ];
+            parent = None
           }
-        ]
+        ];
+        parent = None
       }
-    ]
+    ];
+    parent = None
   }
 
 let () =

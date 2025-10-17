@@ -6,7 +6,7 @@ open Alsdiff_output
 
 (** Helper to load an Automation.t from a file path. *)
 let load_automation_from_file (path : string) : Automation.t =
-  let (_, xml) = Xml.read_file path in
+  let xml = Xml.read_file path in
   let envelopes_element =
     match xml with
     | Element { name = "AutomationEnvelopes"; _ } as envelopes -> envelopes

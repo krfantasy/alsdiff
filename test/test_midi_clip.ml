@@ -5,7 +5,7 @@ open Alsdiff_live.Clip.LoopSection
 
 let test_midi_clip_parsing () =
   (* Read the midi_clip.xml file *)
-  let (_, xml) = read_file "midi_clip.xml" in
+  let xml = read_file "midi_clip.xml" in
 
   (* Create midi clip from the XML *)
   let midi_clip = create xml in

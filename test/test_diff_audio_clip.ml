@@ -6,7 +6,7 @@ open Alsdiff_output
 
 (** Helper to load an AudioClip.t from a file path. *)
 let load_audio_clip_from_file (path : string) : AudioClip.t =
-  let (_, xml) = Xml.read_file path in
+  let xml = Xml.read_file path in
   let clip_element =
     match xml with
     | Element { name = "AudioClip"; _ } as clip -> clip

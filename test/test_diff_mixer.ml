@@ -5,11 +5,11 @@ open Alsdiff_output
 
 let test_mixer_diff () =
   (* Load the old mixer XML *)
-  let (_, old_xml) = Xml.read_file "mixer_old.xml" in
+  let old_xml = Xml.read_file "mixer_old.xml" in
   let old_mixer = Mixer.create old_xml in
 
   (* Load the new mixer XML *)
-  let (_, new_xml) = Xml.read_file "mixer.xml" in
+  let new_xml = Xml.read_file "mixer.xml" in
   let new_mixer = Mixer.create new_xml in
 
   (* Diff the mixers *)
