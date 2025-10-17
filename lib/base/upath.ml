@@ -170,7 +170,11 @@ let find_all_seq (tree : Xml.t) (path : string) : (string * Xml.t) Seq.t =
       Seq.map (fun child -> {path_to_parent=new_path; node=child}) (List.to_seq childs)
     | Xml.Data _ -> Seq.empty
   in
-  let rec find_all (p: path_component list) (nodes: search_node Seq.t) : search_node Seq.t =
+  (* Recursively finds matches for a path.
+      IMPORTANT: This function has a specific behavior. For each component of the path,
+      it searches within the *children* of the nodes from the previous step.
+      This is why the initial call needs to be handled carefully. *)
+  let rec find_path_in_children (p: path_component list) (nodes: search_node Seq.t) : search_node Seq.t =
     match p with
     | [] -> nodes
     | c :: rest ->
@@ -178,7 +182,7 @@ let find_all_seq (tree : Xml.t) (path : string) : (string * Xml.t) Seq.t =
       | Tag _ | SingleWildcard ->
           let children = Seq.flat_map children_of nodes in
           let matched_children = Seq.filter (fun sn -> match_component sn.node c) children in
-          find_all rest matched_children
+          find_path_in_children rest matched_children
       | Index (i, tag_opt) ->
           let children = Seq.flat_map children_of nodes in
           let filtered_children =
@@ -192,31 +196,40 @@ let find_all_seq (tree : Xml.t) (path : string) : (string * Xml.t) Seq.t =
                 ) children
           in
           (match Seq.drop i filtered_children |> Seq.uncons with
-          | Some (n, _) -> find_all rest (Seq.return n)
+          | Some (n, _) -> find_path_in_children rest (Seq.return n)
           | None -> Seq.empty)
       | MultiWildcard ->
-          (* MultiWildcard matches any number of intermediate elements, so we need to collect
-           * all descendant nodes (including the current nodes) and apply the rest of the path *)
-          let rec collect_all_descendants acc current_nodes =
-            if Seq.is_empty current_nodes then acc
-            else
-              let current_nodes_list = List.of_seq current_nodes in
-              let all_nodes = Seq.append acc (List.to_seq current_nodes_list) in
-              let next_level = Seq.flat_map children_of current_nodes in
-              collect_all_descendants all_nodes next_level
+          (* MultiWildcard matches any number of intermediate elements.
+             To do this without consuming memory, we create a fully lazy sequence of all descendants
+             and then continue the search from there. *)
+          let collect_all_descendants nodes_to_scan =
+            let rec aux worklist () =
+              match worklist () with
+              | Seq.Nil -> Seq.Nil
+              | Seq.Cons(hd, tl) ->
+                  let children = children_of hd in
+                  Seq.Cons(hd, aux (Seq.append tl children))
+            in
+            aux nodes_to_scan
           in
-          find_all rest (collect_all_descendants Seq.empty nodes)
+          find_path_in_children rest (collect_all_descendants nodes)
   in
   let initial_node = { path_to_parent = ""; node = tree } in
   let result_seq =
     match parsed_path with
     | (Tag(name, _) as first) :: rest ->
         if name = (match tree with Xml.Element {name=n;_} -> n | _ -> "") && match_component tree first then
-          find_all rest (Seq.return initial_node)
+          (* The first path component matches the root `tree` itself.
+             So, we start searching for the rest of the path within the children of `tree`. *)
+          find_path_in_children rest (Seq.return initial_node)
         else
-          find_all parsed_path (Seq.return initial_node)
+          (* The first path component does not match the root `tree`.
+             Per design, we now search for the *entire* path within the children of `tree`. *)
+          find_path_in_children parsed_path (Seq.return initial_node)
     | _ ->
-        find_all parsed_path (Seq.return initial_node)
+        (* The path does not start with a Tag.
+           Per design, we search for the *entire* path within the children of `tree`. *)
+        find_path_in_children parsed_path (Seq.return initial_node)
   in
   result_seq |> Seq.map (fun {path_to_parent; node} ->
       let final_path = match node with
