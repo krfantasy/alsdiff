@@ -11,8 +11,9 @@ let sample_xml =
         name = "parent1";
         attrs = [];
         childs = [
-          Element { name = "child"; attrs = []; childs = [Data "direct_child"] }
-        ]
+          Element { name = "child"; attrs = []; childs = [Data {value = "direct_child"; parent = None}]; parent = None }
+        ];
+        parent = None;
       };
       Element {
         name = "parent2";
@@ -22,12 +23,15 @@ let sample_xml =
             name = "intermediate";
             attrs = [];
             childs = [
-              Element { name = "child"; attrs = []; childs = [Data "deep_child"] }
-            ]
+              Element { name = "child"; attrs = []; childs = [Data {value = "deep_child"; parent = None}]; parent = None }
+            ];
+            parent = None;
           }
-        ]
+        ];
+        parent = None;
       }
-    ]
+    ];
+    parent = None;
   }
 
 let wildcard_testable = Alcotest.(list (pair string xml_testable))
@@ -48,12 +52,12 @@ let test_cases =
   [
     ("/root/*/child",
       [
-        ("/root/parent1/child", Element { name = "child"; attrs = []; childs = [Data "direct_child"] });
+        ("/root/parent1/child", Element { name = "child"; attrs = []; childs = [Data {value = "direct_child"; parent = None}]; parent = None });
       ]);
     ("/root/**/child",
       [
-        ("/root/parent1/child", Element { name = "child"; attrs = []; childs = [Data "direct_child"] });
-        ("/root/parent2/intermediate/child", Element { name = "child"; attrs = []; childs = [Data "deep_child"] });
+        ("/root/parent1/child", Element { name = "child"; attrs = []; childs = [Data {value = "direct_child"; parent = None}]; parent = None });
+        ("/root/parent2/intermediate/child", Element { name = "child"; attrs = []; childs = [Data {value = "deep_child"; parent = None}]; parent = None });
       ]);
   ]
 

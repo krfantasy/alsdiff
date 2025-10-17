@@ -1,6 +1,14 @@
 type t =
-  | Element of { name: string; attrs: (string * string) list; childs: t list }
-  | Data of string
+  | Element of {
+      name: string;
+      attrs: (string * string) list;
+      mutable childs: t list;
+      mutable parent : t option;
+    }
+  | Data of {
+      value : string;
+      mutable parent : t option;
+    }
 
 let get_attr name xml =
   match xml with
@@ -42,15 +50,69 @@ module Parser = struct
       name = get_name tag;
       attrs = get_attrs tag;
       childs = childs;
+      parent = None;
     }
 
-  let make_data d = Data d
+  let make_data d = Data { value = d; parent = None }
+
+  let rec setup_parent_links (node: t) (parent: t option) =
+    match node with
+    | Element element ->
+      element.parent <- parent;
+      List.iter (fun child -> setup_parent_links child (Some node)) element.childs
+    | Data data -> data.parent <- parent
+
 end
+
+let parse_with_parent_links input =
+  let parent_stack : t Stack.t = Stack.create() in
+
+  let rec parse_tree () =
+    match Xmlm.input input with
+    | `El_start tag ->
+        let current_parent = try Some (Stack.top parent_stack) with Stack.Empty -> None in
+        let element = Element {
+          name = Parser.get_name tag;
+          attrs = Parser.get_attrs tag;
+          childs = [];  (* temporary empty list *)
+          parent = current_parent;
+        } in
+        (* Set as parent for subsequent children *)
+        Stack.push element parent_stack;
+        (* Parse children *)
+        let rec parse_children acc =
+          match Xmlm.peek input with
+          | `El_end ->
+              ignore (Xmlm.input input); (* consume El_end *)
+              ignore (Stack.pop parent_stack);
+              List.rev acc
+          | `Data d ->
+              ignore (Xmlm.input input); (* consume data signal *)
+              let data_node = Data { value = d; parent = Some element } in
+              parse_children (data_node :: acc)
+          | `El_start _ ->
+              let child = parse_tree () in
+              parse_children (child :: acc)
+          | _ -> failwith "Unexpected signal during parsing"
+        in
+        let childs = parse_children [] in
+        (* Update the childs field using mutable update *)
+        (match element with
+         | Element el -> el.childs <- childs
+         | _ -> ());
+        element
+    | `Data d ->
+        let parent = try Some (Stack.top parent_stack) with Stack.Empty -> None in
+        Data { value = d; parent = parent }
+    | _ -> failwith ("Unexpected signal during XML parsing")
+  in
+
+  parse_tree ()
 
 let read_file filename =
   let i = Xmlm.make_input ~strip:true (`Channel (In_channel.open_text filename)) in
-  Xmlm.input_doc_tree ~el:Parser.make_element ~data:Parser.make_data i
+  parse_with_parent_links i
 
 let read_string s =
   let i = Xmlm.make_input ~strip:true (`String (0, s)) in
-  Xmlm.input_doc_tree ~el:Parser.make_element ~data:Parser.make_data i
+  parse_with_parent_links i

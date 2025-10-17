@@ -118,7 +118,7 @@ end
 
 let match_attributes (tree : Xml.t) (pattrs : attribute list) : bool =
   match tree with
-  | Xml.Element { attrs; _ } ->
+  | Xml.Element { attrs; parent = _; _ } ->
     let match_attribute attrs k v =
       try
         let x = List.assoc k attrs in
@@ -135,7 +135,7 @@ let match_attributes (tree : Xml.t) (pattrs : attribute list) : bool =
 let match_component tree = function
   | Tag (name, attrs) ->
     (match tree with
-     | Xml.Element { name=tag; _ } when tag = name -> match_attributes tree attrs
+     | Xml.Element { name=tag; parent = _; _ } when tag = name -> match_attributes tree attrs
      | _ -> false)
   | SingleWildcard ->
     (match tree with
@@ -165,7 +165,7 @@ let find_all_seq (tree : Xml.t) (path : string) : (string * Xml.t) Seq.t =
   in
   let children_of n =
     match n.node with
-    | Xml.Element {childs; name; _} ->
+    | Xml.Element {childs; name; parent = _; _} ->
       let new_path = n.path_to_parent ^ "/" ^ name in
       Seq.map (fun child -> {path_to_parent=new_path; node=child}) (List.to_seq childs)
     | Xml.Data _ -> Seq.empty
@@ -191,7 +191,7 @@ let find_all_seq (tree : Xml.t) (path : string) : (string * Xml.t) Seq.t =
             | Some tag ->
               Seq.filter (fun sn ->
                   match sn.node with
-                  | Xml.Element { name = t; _ } -> t = tag
+                  | Xml.Element { name = t; parent = _; _ } -> t = tag
                   | _ -> false
                 ) children
           in
@@ -218,7 +218,7 @@ let find_all_seq (tree : Xml.t) (path : string) : (string * Xml.t) Seq.t =
   let result_seq =
     match parsed_path with
     | (Tag(name, _) as first) :: rest ->
-        if name = (match tree with Xml.Element {name=n;_} -> n | _ -> "") && match_component tree first then
+        if name = (match tree with Xml.Element {name=n; parent = _; _} -> n | _ -> "") && match_component tree first then
           (* The first path component matches the root `tree` itself.
              So, we start searching for the rest of the path within the children of `tree`. *)
           find_path_in_children rest (Seq.return initial_node)
@@ -233,7 +233,7 @@ let find_all_seq (tree : Xml.t) (path : string) : (string * Xml.t) Seq.t =
   in
   result_seq |> Seq.map (fun {path_to_parent; node} ->
       let final_path = match node with
-        | Xml.Element {name; _} -> path_to_parent ^ "/" ^ name
+        | Xml.Element {name; parent = _; _} -> path_to_parent ^ "/" ^ name
         | Xml.Data _ -> path_to_parent
       in
       (final_path, node)
