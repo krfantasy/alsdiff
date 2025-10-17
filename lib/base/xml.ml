@@ -104,7 +104,12 @@ let parse_with_parent_links input =
     | `Data d ->
         let parent = try Some (Stack.top parent_stack) with Stack.Empty -> None in
         Data { value = d; parent = parent }
-    | _ -> failwith ("Unexpected signal during XML parsing")
+    | `El_end ->
+        (* Handle end tag at root level - this can happen with empty elements *)
+        failwith "Unexpected end tag at root level"
+    | `Dtd _ ->
+        (* Skip DTD declarations and continue parsing *)
+        parse_tree ()
   in
 
   parse_tree ()

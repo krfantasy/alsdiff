@@ -4,23 +4,13 @@ open Test_utils.Utils
 let test_read_string () =
   let xml_str = "<root><a id=\"1\"><b>hello</b><c val=\"test\"/></a></root>" in
   let parsed = read_string xml_str in
-  let expected = Element {
-    name = "root";
-    attrs = [];
-    childs = [
-      Element {
-        name = "a";
-        attrs = [("id", "1")];
-        childs = [
-          Element { name = "b"; attrs = []; childs = [Data {value = "hello"; parent = None}]; parent = None };
-          Element { name = "c"; attrs = [("val", "test")]; childs = []; parent = None };
-        ];
-        parent = None;
-      }
-    ];
-    parent = None;
-  } in
-  Alcotest.check xml_testable "read_string" expected parsed
+
+  (* For this test, we'll verify that parsing produces the expected string representation *)
+  (* We use string comparison instead of structural equality to avoid circular parent reference issues *)
+  let expected_str = "<root><a id=\"1\"><b>hello</b><c val=\"test\"></c></a></root>" in
+  let actual_str = xml_to_string parsed in
+
+  Alcotest.(check string) "read_string" expected_str actual_str
 
 let () =
   Alcotest.run "Xml" [
