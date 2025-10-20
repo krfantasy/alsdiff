@@ -31,6 +31,7 @@ let sample_xml =
         name = "e";
         attrs = [];
         childs = [
+          Element { name = "child"; attrs = [("id", "e-child")]; childs = [] };
           Element {
             name = "f";
             attrs = [];
@@ -39,7 +40,15 @@ let sample_xml =
             ]
           }
         ]
-      }
+      };
+      Element {
+        name = "special";
+        attrs = [("type", "magic")];
+        childs = [
+          Element { name = "child"; attrs = [("id", "s-child")]; childs = [] }
+        ]
+      };
+      Element { name = "child"; attrs = [("type", "magic")]; childs = [] }
     ]
   }
 
@@ -66,6 +75,20 @@ let test_cases =
     ("/root/a[2]/b", None);
     ("/**/b@lang=\"en\"", Some ("/root/a/b", Element { name = "b"; attrs = [("lang", "en")]; childs = [Data "world"] }));
     ("/**/b@lang=\"fr\"", None);
+    (* Tests for wildcard with attributes *)
+    ("/*@id", Some ("/root/a", Element { name = "a"; attrs = [("id", "1")]; childs = [Element { name = "b"; attrs = []; childs = [Data "hello"] }; Element { name = "c"; attrs = [("val", "test")]; childs = [] }] }));
+    ("/*@id=\"2\"", Some ("/root/a", Element { name = "a"; attrs = [("id", "2")]; childs = [Element { name = "d"; attrs = []; childs = [] }; Element { name = "b"; attrs = [("lang", "en")]; childs = [Data "world"] }] }));
+    ("/*@type", Some ("/root/special", Element { name = "special"; attrs = [("type", "magic")]; childs = [Element { name = "child"; attrs = [("id", "s-child")]; childs = [] }] }));
+    ("/*@type=\"magic\"", Some ("/root/special", Element { name = "special"; attrs = [("type", "magic")]; childs = [Element { name = "child"; attrs = [("id", "s-child")]; childs = [] }] }));
+    ("/*@type=\"nonexistent\"", None);
+    (* Tests for multi wildcard with attributes *)
+    ("/**@id", Some ("/root/a", Element { name = "a"; attrs = [("id", "1")]; childs = [Element { name = "b"; attrs = []; childs = [Data "hello"] }; Element { name = "c"; attrs = [("val", "test")]; childs = [] }] }));
+    ("/**@id=\"2\"", Some ("/root/a", Element { name = "a"; attrs = [("id", "2")]; childs = [Element { name = "d"; attrs = []; childs = [] }; Element { name = "b"; attrs = [("lang", "en")]; childs = [Data "world"] }] }));
+    ("/**@type", Some ("/root/special", Element { name = "special"; attrs = [("type", "magic")]; childs = [Element { name = "child"; attrs = [("id", "s-child")]; childs = [] }] }));
+    ("/**@type=\"magic\"", Some ("/root/special", Element { name = "special"; attrs = [("type", "magic")]; childs = [Element { name = "child"; attrs = [("id", "s-child")]; childs = [] }] }));
+    ("/**@type=\"nonexistent\"", None);
+    (* Tests for multi wildcard with attributes followed by more path components *)
+    ("/**@type/child", Some ("/root/special/child", Element { name = "child"; attrs = [("id", "s-child")]; childs = [] }));
   ]
 
 let filter_path_testable = Alcotest.(list (pair string xml_testable))
@@ -110,6 +133,42 @@ let filter_test_cases =
         ("/root/a/b", Element { name = "b"; attrs = [("lang", "en")]; childs = [Data "world"] });
         ("/root/e/f/b", Element { name = "b"; attrs = []; childs = [] });
       ]);
+    (* Tests for wildcard with attributes in find_all *)
+    ("/*@id",
+      [
+        ("/root/a", Element { name = "a"; attrs = [("id", "1")]; childs = [Element { name = "b"; attrs = []; childs = [Data "hello"] }; Element { name = "c"; attrs = [("val", "test")]; childs = [] }] });
+        ("/root/a", Element { name = "a"; attrs = [("id", "2")]; childs = [Element { name = "d"; attrs = []; childs = [] }; Element { name = "b"; attrs = [("lang", "en")]; childs = [Data "world"] }] });
+      ]);
+    ("/*@type",
+      [
+        ("/root/special", Element { name = "special"; attrs = [("type", "magic")]; childs = [Element { name = "child"; attrs = [("id", "s-child")]; childs = [] }] });
+        ("/root/child", Element { name = "child"; attrs = [("type", "magic")]; childs = [] });
+      ]);
+    (* Tests for multi wildcard with attributes in find_all *)
+    ("/**@id",
+      [
+        ("/root/a", Element { name = "a"; attrs = [("id", "1")]; childs = [Element { name = "b"; attrs = []; childs = [Data "hello"] }; Element { name = "c"; attrs = [("val", "test")]; childs = [] }] });
+        ("/root/a", Element { name = "a"; attrs = [("id", "2")]; childs = [Element { name = "d"; attrs = []; childs = [] }; Element { name = "b"; attrs = [("lang", "en")]; childs = [Data "world"] }] });
+        ("/root/e/child", Element { name = "child"; attrs = [("id", "e-child")]; childs = [] });
+        ("/root/special/child", Element { name = "child"; attrs = [("id", "s-child")]; childs = [] });
+      ]);
+    ("/**@type",
+      [
+        ("/root/special", Element { name = "special"; attrs = [("type", "magic")]; childs = [Element { name = "child"; attrs = [("id", "s-child")]; childs = [] }] });
+        ("/root/child", Element { name = "child"; attrs = [("type", "magic")]; childs = [] });
+      ]);
+    (* Edge cases for multi wildcard with attributes *)
+    ("/**@type/child",
+      [
+        ("/root/special/child", Element { name = "child"; attrs = [("id", "s-child")]; childs = [] });
+      ]);
+    ("/**/child",
+      [
+        ("/root/e/child", Element { name = "child"; attrs = [("id", "e-child")]; childs = [] });
+        ("/root/special/child", Element { name = "child"; attrs = [("id", "s-child")]; childs = [] });
+        ("/root/child", Element { name = "child"; attrs = [("type", "magic")]; childs = [] });
+      ]);
+    ("/**@lang/nonexistent", []);
   ]
 
 let sample_xml_nested =

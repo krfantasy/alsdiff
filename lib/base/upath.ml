@@ -4,6 +4,7 @@
     - Indexing with optional Tag name (e.g., `[0]`, `[1]`, `tag[3]`)
     - Single wildcard (`*`) for single level matching
     - Multi wildcard (`**`) for multiple levels matching
+    - Wildcards with optional attributes (e.g., `*@attr="value"`, `**@attr`)
     - Paths separated by `/` (e.g., `/tag1/tag2@attr="value"/*/tag3/**/tag4`)
 
     Does not support:
@@ -14,6 +15,7 @@
 
     Example usage:
     let result = parse_path "/bookstore/book@category=\"cooking\"/title"
+    let wildcard_with_attr = parse_path "//*[@type=\"magic\"]"
 *)
 
 
@@ -29,8 +31,8 @@ type attribute = {
 type path_component =
   | Tag of string * attribute list
   | Index of int * string option
-  | SingleWildcard
-  | MultiWildcard
+  | SingleWildcard of attribute list
+  | MultiWildcard of attribute list
 
 type path = path_component list
 
@@ -94,8 +96,16 @@ struct
         (option None (identifier >>| Option.some))
         (char '[' *> integer <* char ']')
     in
-    let p_single_wildcard = char '*' *> return SingleWildcard in
-    let p_multi_wildcard = string "**" *> return MultiWildcard in
+    let p_single_wildcard =
+      lift2 (fun _ attrs -> SingleWildcard attrs)
+        (char '*')
+        (many p_attribute)
+    in
+    let p_multi_wildcard =
+      lift2 (fun _ attrs -> MultiWildcard attrs)
+        (string "**")
+        (many p_attribute)
+    in
     let p_tag =
       lift2 (fun name attrs -> Tag (name, attrs))
         identifier
@@ -138,12 +148,15 @@ let match_component tree = function
     (match tree with
      | Xml.Element { name=tag; _ } when tag = name -> match_attributes tree attrs
      | _ -> false)
-  | SingleWildcard ->
+  | SingleWildcard attrs ->
     (match tree with
-     | Xml.Element _ -> true
+     | Xml.Element _ -> match_attributes tree attrs
      | Xml.Data _ -> false)
   | Index _ -> false
-  | MultiWildcard -> true
+  | MultiWildcard attrs ->
+    (match tree with
+     | Xml.Element _ -> match_attributes tree attrs
+     | Xml.Data _ -> false)
 
 
 let path_to_string path =
@@ -180,7 +193,7 @@ let find_all_seq_0 (path : path_component list) (tree : Xml.t) : (string * Xml.t
     | [] -> nodes
     | c :: rest ->
       match c with
-      | Tag _ | SingleWildcard ->
+      | Tag _ | SingleWildcard _ ->
           let children = Seq.flat_map children_of nodes in
           let matched_children = Seq.filter (fun sn -> match_component sn.node c) children in
           find_path_in_children rest matched_children
@@ -199,7 +212,7 @@ let find_all_seq_0 (path : path_component list) (tree : Xml.t) : (string * Xml.t
           (match Seq.drop i filtered_children |> Seq.uncons with
           | Some (n, _) -> find_path_in_children rest (Seq.return n)
           | None -> Seq.empty)
-      | MultiWildcard ->
+      | MultiWildcard attrs ->
           (* MultiWildcard matches any number of intermediate elements.
              To do this without consuming memory, we create a fully lazy sequence of all descendants
              and then continue the search from there. *)
@@ -213,7 +226,11 @@ let find_all_seq_0 (path : path_component list) (tree : Xml.t) : (string * Xml.t
             in
             aux nodes_to_scan
           in
-          find_path_in_children rest (collect_all_descendants nodes)
+          let all_descendants = collect_all_descendants nodes in
+          let matched_descendants =
+            Seq.filter (fun sn -> match_component sn.node (MultiWildcard attrs)) all_descendants
+          in
+          find_path_in_children rest matched_descendants
   in
   let initial_node = { path_to_parent = ""; node = tree } in
   let result_seq =
@@ -340,8 +357,20 @@ let pp_path fmt path =
        | Some tag -> Format.fprintf fmt "%s" tag
        | None -> ());
       Format.fprintf fmt "[%d]" i
-    | SingleWildcard -> Format.fprintf fmt "*"
-    | MultiWildcard -> Format.fprintf fmt "**"
+    | SingleWildcard attrs ->
+      Format.fprintf fmt "*";
+      List.iter (fun {name; value} ->
+        match value with
+        | Any -> Format.fprintf fmt "@%s" name
+        | Exact v -> Format.fprintf fmt "@%s=\"%s\"" name v
+      ) attrs
+    | MultiWildcard attrs ->
+      Format.fprintf fmt "**";
+      List.iter (fun {name; value} ->
+        match value with
+        | Any -> Format.fprintf fmt "@%s" name
+        | Exact v -> Format.fprintf fmt "@%s=\"%s\"" name v
+      ) attrs
   in
   match path with
   | [] -> Format.fprintf fmt "/"
