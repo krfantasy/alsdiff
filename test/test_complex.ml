@@ -99,7 +99,7 @@ let complex_xml =
 let find_path_testable = Alcotest.(option (pair string xml_testable))
 
 let test_find path_str expected () =
-  let result = find path_str complex_xml in
+  let result = find_opt path_str complex_xml in
   Alcotest.check find_path_testable ("find " ^ path_str) expected result
 
 let find_tests = [

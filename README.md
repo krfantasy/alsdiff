@@ -1,7 +1,6 @@
 # alsdiff
 
-## What is this?
-
+WIP
 
 ## License
 see [LICENSE.txt](LICENSE.txt).

@@ -13,6 +13,9 @@ let get_int_attr name xml =
 let get_float_attr name xml =
   get_attr name xml |> float_of_string
 
+let get_int64_attr name xml =
+  get_attr name xml |> Int64.of_string
+
 let get_attr_opt name xml =
   match xml with
   | Element { attrs; _ } ->
@@ -28,6 +31,9 @@ let get_float_attr_opt name xml =
 let get_bool_attr_opt name xml =
   Option.bind (get_attr_opt name xml)
     (fun x -> x |> String.lowercase_ascii |> bool_of_string_opt)
+
+let get_int64_attr_opt name xml =
+  Option.bind (get_attr_opt name xml) Int64.of_string_opt
 
 module Parser = struct
   (* Helper functions for parsing XML *)

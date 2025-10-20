@@ -22,11 +22,7 @@ module AutomationEnvelope = struct
 
   let create (xml : Alsdiff_base.Xml.t) : t =
     let id = Alsdiff_base.Xml.get_int_attr "Id" xml in
-    let target =
-      match Upath.find "/EnvelopeTarget/PointeeId@Value" xml with
-      | Some (_, xml_elem) -> Alsdiff_base.Xml.get_int_attr "Value" xml_elem
-      | _ -> failwith "Cannot find target"
-    in
+    let target = Upath.get_int_attr "/EnvelopeTarget/PointeeId" "Value" xml in
     let events =
       xml
       |> Upath.find_all "/Automation/Events/FloatEvent"

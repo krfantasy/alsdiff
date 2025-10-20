@@ -24,7 +24,7 @@ type attribute_value =
 type attribute = {
   name : string;
   value : attribute_value;
-}
+} [@@deriving eq]
 
 type path_component =
   | Tag of string * attribute list
@@ -107,7 +107,8 @@ struct
              p_tag ] <?> "path component"
 
   let path_parser =
-    char '/' *> sep_by1 (char '/') p_component <?> "path"
+    let optional_slash = option None (char '/' >>| fun _ -> Some ()) in
+    optional_slash *> sep_by1 (char '/') p_component <?> "path"
 
   let parse_path s =
     parse_string ~consume:All path_parser s
@@ -156,13 +157,13 @@ type search_node = {
 
 module Seq = Stdlib.Seq
 
+let parse_path path =
+  match Parser.parse_path path with
+  | Ok p -> p
+  | Error msg -> failwith ("Failed to parse path: " ^ path ^ " with error: " ^ msg)
+
 (** Find all XML elements in [tree] that match the [path] as a lazy sequence. *)
-let find_all_seq (tree : Xml.t) (path : string) : (string * Xml.t) Seq.t =
-  let parsed_path =
-    match Parser.parse_path path with
-    | Ok p -> p
-    | Error msg -> failwith ("Failed to parse path: " ^ path ^ " with error: " ^ msg)
-  in
+let find_all_seq_0 (path : path_component list) (tree : Xml.t) : (string * Xml.t) Seq.t =
   let children_of n =
     match n.node with
     | Xml.Element {childs; name; _} ->
@@ -216,7 +217,7 @@ let find_all_seq (tree : Xml.t) (path : string) : (string * Xml.t) Seq.t =
   in
   let initial_node = { path_to_parent = ""; node = tree } in
   let result_seq =
-    match parsed_path with
+    match path with
     | (Tag(name, _) as first) :: rest ->
         if name = (match tree with Xml.Element {name=n;_} -> n | _ -> "") && match_component tree first then
           (* The first path component matches the root `tree` itself.
@@ -225,11 +226,11 @@ let find_all_seq (tree : Xml.t) (path : string) : (string * Xml.t) Seq.t =
         else
           (* The first path component does not match the root `tree`.
              Per design, we now search for the *entire* path within the children of `tree`. *)
-          find_path_in_children parsed_path (Seq.return initial_node)
+          find_path_in_children path (Seq.return initial_node)
     | _ ->
         (* The path does not start with a Tag.
            Per design, we search for the *entire* path within the children of `tree`. *)
-        find_path_in_children parsed_path (Seq.return initial_node)
+        find_path_in_children path (Seq.return initial_node)
   in
   result_seq |> Seq.map (fun {path_to_parent; node} ->
       let final_path = match node with
@@ -241,11 +242,111 @@ let find_all_seq (tree : Xml.t) (path : string) : (string * Xml.t) Seq.t =
   |> Seq.memoize
 
 
+let find_all_seq_1 (path : string) (tree : Xml.t) : (string * Xml.t) Seq.t =
+  find_all_seq_0 (parse_path path) tree
+
+
 (** Find all XML elements in [tree] that match the [path]. *)
 let find_all (path : string) (tree : Xml.t) : (string * Xml.t) list =
-  find_all_seq tree path |> List.of_seq
+  find_all_seq_1 path tree |> List.of_seq
 
 
 (** Find the first XML element in [tree] that matches the [path]. *)
-let find (path : string) (tree : Xml.t) : (string * Xml.t) option =
-  find_all_seq tree path |> Seq.uncons |> Option.map fst
+let find_opt (path : string) (tree : Xml.t) : (string * Xml.t) option =
+  find_all_seq_1 path tree |> Seq.uncons |> Option.map fst
+
+
+(** Find the first XML element in [tree] that matches the [path].
+    @raise [Not_found] when no XML element found *)
+let find (path : string) (tree : Xml.t) : string * Xml.t =
+  match find_opt path tree with
+  | Some result -> result
+  | _ -> raise Not_found
+
+
+(** Find a XML element that path matches [path], and return the attribute [attr] value of it.
+    @raise [Invalid_argument] if [path] is invalid, like wildcards path or indexes path.
+*)
+let find_attr_opt (path : string) (attr : string) (tree : Xml.t) : (string * string) option =
+  let parsed_path = parse_path path in
+  let last_component = List.hd @@ List.rev parsed_path in
+  match last_component with
+  | Tag (tag_name, existing_attrs) ->
+    (* Check if the required attribute is already in the path constraints *)
+    let attr_already_exists = List.exists (fun a -> a.name = attr) existing_attrs in
+
+    (* Add the attribute constraint if it's not already there *)
+    let final_attrs =
+      if attr_already_exists then
+        existing_attrs
+      else
+        { name = attr; value = Any } :: existing_attrs
+    in
+
+    (* Create the final path with the attribute constraint added *)
+    let final_last_component = Tag (tag_name, final_attrs) in
+    let final_path =
+      if List.length parsed_path = 1 then
+        [final_last_component]
+      else
+        let all_but_last = List.rev (List.tl (List.rev parsed_path)) in
+        all_but_last @ [final_last_component]
+    in
+
+    (* Find the element that matches the updated path (which now includes the attribute requirement) *)
+    let matched_element = find_all_seq_0 final_path tree |> Seq.uncons |> Option.map fst in
+    Option.map (fun (element_path, xml) ->
+        let attr_val = Xml.get_attr attr xml in
+        (element_path, attr_val)
+      ) matched_element
+  | _ -> raise (Invalid_argument "Invalid path for find_attr, the last component must matches a tag")
+
+
+let find_attr (path : string) (attr : string) (tree : Xml.t) : string * string =
+  match find_attr_opt path attr tree with
+  | Some result -> result
+  | _ -> raise Not_found
+
+
+let get_attr_opt path attr tree = find_attr_opt path attr tree |> Option.map snd
+let get_int_attr_opt path attr tree = Option.bind (get_attr_opt path attr tree) int_of_string_opt
+let get_float_attr_opt path attr tree = Option.bind (get_attr_opt path attr tree) float_of_string_opt
+let get_bool_attr_opt path attr tree = Option.bind (get_attr_opt path attr tree) (fun x -> x |> String.lowercase_ascii |> bool_of_string_opt)
+let get_int64_attr_opt path attr tree = Option.bind (get_attr_opt path attr tree) Int64.of_string_opt
+
+let get_attr path attr tree = find_attr path attr tree |> snd
+let get_int_attr path attr tree = get_attr path attr tree |> int_of_string
+let get_float_attr path attr tree = get_attr path attr tree |> float_of_string
+let get_bool_attr path attr tree = get_attr path attr tree |> String.lowercase_ascii |> bool_of_string
+let get_int64_attr path attr tree = get_attr path attr tree |> Int64.of_string
+
+
+(* Equality and pretty printing functions for testing *)
+let equal_path path1 path2 =
+  path1 = path2
+
+
+let pp_path fmt path =
+  let pp_component fmt = function
+    | Tag (name, attrs) ->
+      Format.fprintf fmt "%s" name;
+      List.iter (fun {name; value} ->
+        match value with
+        | Any -> Format.fprintf fmt "@%s" name
+        | Exact v -> Format.fprintf fmt "@%s=\"%s\"" name v
+      ) attrs
+    | Index (i, tag_opt) ->
+      (match tag_opt with
+       | Some tag -> Format.fprintf fmt "%s" tag
+       | None -> ());
+      Format.fprintf fmt "[%d]" i
+    | SingleWildcard -> Format.fprintf fmt "*"
+    | MultiWildcard -> Format.fprintf fmt "**"
+  in
+  match path with
+  | [] -> Format.fprintf fmt "/"
+  | components ->
+      Format.fprintf fmt "/%s"
+        (String.concat "/" (List.map (fun c ->
+           Format.asprintf "%a" pp_component c
+         ) components))
