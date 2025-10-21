@@ -5,8 +5,8 @@ module TimeSignature = struct
   let create (xml : Xml.t) : t =
     match xml with
     | Xml.Element { name = "RemoteableTimeSignature"; _ } ->
-      let numer = Upath.get_int_attr_opt "/Numerator" "Value" xml |> Option.value ~default:4 in
-      let denom = Upath.get_int_attr_opt "/Denominator" "Value" xml |> Option.value ~default:4 in
+      let numer = Upath.get_int_attr "/Numerator" "Value" xml in
+      let denom = Upath.get_int_attr "/Denominator" "Value" xml in
       { numer; denom }
     | _ -> failwith "Invalid XML element for creating TimeSignature"
 end
@@ -33,9 +33,9 @@ module LoopSection = struct
   let create (xml : Xml.t) : t =
     match xml with
     | Xml.Element { name = "Loop"; _ } ->
-      let start = Upath.get_float_attr_opt "/LoopStart" "Value" xml |> Option.value ~default:0.0 in
-      let end_ = Upath.get_float_attr_opt "/LoopEnd" "Value" xml |> Option.value ~default:0.0 in
-      let on = Upath.get_bool_attr_opt "/LoopOn" "Value" xml |> Option.value ~default:false in
+      let start = Upath.get_float_attr "/LoopStart" "Value" xml in
+      let end_ = Upath.get_float_attr "/LoopEnd" "Value" xml in
+      let on = Upath.get_bool_attr "/LoopOn" "Value" xml in
       { start_time = start; end_time = end_; on; }
     | _ -> failwith "Invalid XML element for creating LoopSection"
 end
@@ -56,11 +56,11 @@ module MidiClip = struct
     match xml with
     | Xml.Element { name = "MidiClip"; _ } ->
       let id = Xml.get_int_attr "Id" xml in
-      let name = Upath.get_attr_opt "/Name" "Value" xml |> Option.value ~default:"" in
-      let start_time = Upath.get_float_attr_opt "/CurrentStart" "Value" xml |> Option.value ~default:0.0 in
+      let name = Upath.get_attr "/Name" "Value" xml in
+      let start_time = Upath.get_float_attr "/CurrentStart" "Value" xml in
 
       (* Extract end time from CurrentEnd *)
-      let end_time = Upath.get_float_attr_opt "/CurrentEnd" "Value" xml |> Option.value ~default:start_time in
+      let end_time = Upath.get_float_attr "/CurrentEnd" "Value" xml in
 
       (* Extract loop information *)
       let loop =
@@ -124,9 +124,9 @@ module SampleRef = struct
   let create (xml : Xml.t) : t =
     match xml with
     | Xml.Element { name = "SampleRef"; _ } ->
-      let last_modified_date = Upath.get_int64_attr_opt "LastModDate" "Value" xml |> Option.value ~default:0L in
-      let file_path = Upath.get_attr_opt "FileRef/Path" "Value" xml |> Option.value ~default:"" in
-      let crc = Upath.get_attr_opt "FileRef/OriginalCrc" "Value" xml |> Option.value ~default:"" in
+      let last_modified_date = Upath.get_int64_attr "LastModDate" "Value" xml in
+      let file_path = Upath.get_attr "FileRef/Path" "Value" xml in
+      let crc = Upath.get_attr "FileRef/OriginalCrc" "Value" xml in
       { file_path; crc; last_modified_date }
     | _ -> failwith "Invalid XML element for creating SampleRef"
 end
@@ -151,9 +151,9 @@ module AudioClip = struct
     match xml with
     | Xml.Element { name = "AudioClip"; _ } ->
       let id = Xml.get_int_attr "Id" xml in
-      let name = Upath.get_attr_opt "/AudioClip/Name" "Value" xml |> Option.value ~default:"" in
-      let start_time = Upath.get_float_attr_opt "/CurrentStart" "Value" xml |> Option.value ~default:0.0 in
-      let end_time = Upath.get_float_attr_opt "/CurrentEnd" "Value" xml |> Option.value ~default:start_time in
+      let name = Upath.get_attr "/AudioClip/Name" "Value" xml in
+      let start_time = Upath.get_float_attr "/CurrentStart" "Value" xml in
+      let end_time = Upath.get_float_attr "/CurrentEnd" "Value" xml in
 
       (* Extract loop information *)
       (* TODO: what the fuck does `StartRelative` means in the `Loop` element *)
@@ -180,8 +180,8 @@ type t =
 
 let create xml : t =
   match xml with
-  | Xml.Element { name; _ } when name = "AudioClip" ->
+  | Xml.Element { name = "AudioClip"; _ } ->
     AudioClip (AudioClip.create xml)
-  | Xml.Element { name; _ } when name = "MidiClip" ->
+  | Xml.Element { name = "MidiClip"; _ } ->
     MidiClip (MidiClip.create xml)
   | _ -> raise (Invalid_argument "Invalid XML")
