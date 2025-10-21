@@ -34,6 +34,7 @@ let sample_xml =
         name = "e";
         attrs = [];
         childs = [
+          Element { name = "child"; attrs = [("id", "e-child")]; childs = []; parent = None; };
           Element {
             name = "f";
             attrs = [];
@@ -44,7 +45,16 @@ let sample_xml =
           }
         ];
         parent = None;
-      }
+      };
+      Element {
+        name = "special";
+        attrs = [("type", "magic")];
+        childs = [
+          Element { name = "child"; attrs = [("id", "s-child")]; childs = []; parent = None; }
+        ];
+        parent = None;
+      };
+      Element { name = "child"; attrs = [("type", "magic")]; childs = []; parent = None; };
     ];
     parent = None;
   }
@@ -52,7 +62,7 @@ let sample_xml =
 let find_path_testable = Alcotest.(option (pair string xml_testable))
 
 let test_find_path path_str expected () =
-  let result = find path_str sample_xml in
+  let result = find_opt path_str sample_xml in
   Alcotest.check find_path_testable ("find_path " ^ path_str) expected result
 
 let test_cases =
@@ -72,6 +82,20 @@ let test_cases =
     ("/root/a[2]/b", None);
     ("/**/b@lang=\"en\"", Some ("/root/a/b", Element { name = "b"; attrs = [("lang", "en")]; childs = [Data {value = "world"; parent = None}]; parent = None }));
     ("/**/b@lang=\"fr\"", None);
+    (* Tests for wildcard with attributes *)
+    ("/*@id", Some ("/root/a", Element { name = "a"; attrs = [("id", "1")]; childs = [Element { name = "b"; attrs = []; childs = [Data "hello"] }; Element { name = "c"; attrs = [("val", "test")]; childs = [] }] }));
+    ("/*@id=\"2\"", Some ("/root/a", Element { name = "a"; attrs = [("id", "2")]; childs = [Element { name = "d"; attrs = []; childs = [] }; Element { name = "b"; attrs = [("lang", "en")]; childs = [Data "world"] }] }));
+    ("/*@type", Some ("/root/special", Element { name = "special"; attrs = [("type", "magic")]; childs = [Element { name = "child"; attrs = [("id", "s-child")]; childs = [] }] }));
+    ("/*@type=\"magic\"", Some ("/root/special", Element { name = "special"; attrs = [("type", "magic")]; childs = [Element { name = "child"; attrs = [("id", "s-child")]; childs = [] }] }));
+    ("/*@type=\"nonexistent\"", None);
+    (* Tests for multi wildcard with attributes *)
+    ("/**@id", Some ("/root/a", Element { name = "a"; attrs = [("id", "1")]; childs = [Element { name = "b"; attrs = []; childs = [Data "hello"] }; Element { name = "c"; attrs = [("val", "test")]; childs = [] }] }));
+    ("/**@id=\"2\"", Some ("/root/a", Element { name = "a"; attrs = [("id", "2")]; childs = [Element { name = "d"; attrs = []; childs = [] }; Element { name = "b"; attrs = [("lang", "en")]; childs = [Data "world"] }] }));
+    ("/**@type", Some ("/root/special", Element { name = "special"; attrs = [("type", "magic")]; childs = [Element { name = "child"; attrs = [("id", "s-child")]; childs = [] }] }));
+    ("/**@type=\"magic\"", Some ("/root/special", Element { name = "special"; attrs = [("type", "magic")]; childs = [Element { name = "child"; attrs = [("id", "s-child")]; childs = [] }] }));
+    ("/**@type=\"nonexistent\"", None);
+    (* Tests for multi wildcard with attributes followed by more path components *)
+    ("/**@type/child", Some ("/root/special/child", Element { name = "child"; attrs = [("id", "s-child")]; childs = [] }));
   ]
 
 let filter_path_testable = Alcotest.(list (pair string xml_testable))
@@ -116,6 +140,42 @@ let filter_test_cases =
         ("/root/a/b", Element { name = "b"; attrs = [("lang", "en")]; childs = [Data {value = "world"; parent = None}]; parent = None });
         ("/root/e/f/b", Element { name = "b"; attrs = []; childs = []; parent = None });
       ]);
+    (* Tests for wildcard with attributes in find_all *)
+    ("/*@id",
+      [
+        ("/root/a", Element { name = "a"; attrs = [("id", "1")]; childs = [Element { name = "b"; attrs = []; childs = [Data "hello"] }; Element { name = "c"; attrs = [("val", "test")]; childs = [] }] });
+        ("/root/a", Element { name = "a"; attrs = [("id", "2")]; childs = [Element { name = "d"; attrs = []; childs = [] }; Element { name = "b"; attrs = [("lang", "en")]; childs = [Data "world"] }] });
+      ]);
+    ("/*@type",
+      [
+        ("/root/special", Element { name = "special"; attrs = [("type", "magic")]; childs = [Element { name = "child"; attrs = [("id", "s-child")]; childs = [] }] });
+        ("/root/child", Element { name = "child"; attrs = [("type", "magic")]; childs = [] });
+      ]);
+    (* Tests for multi wildcard with attributes in find_all *)
+    ("/**@id",
+      [
+        ("/root/a", Element { name = "a"; attrs = [("id", "1")]; childs = [Element { name = "b"; attrs = []; childs = [Data "hello"] }; Element { name = "c"; attrs = [("val", "test")]; childs = [] }] });
+        ("/root/a", Element { name = "a"; attrs = [("id", "2")]; childs = [Element { name = "d"; attrs = []; childs = [] }; Element { name = "b"; attrs = [("lang", "en")]; childs = [Data "world"] }] });
+        ("/root/e/child", Element { name = "child"; attrs = [("id", "e-child")]; childs = [] });
+        ("/root/special/child", Element { name = "child"; attrs = [("id", "s-child")]; childs = [] });
+      ]);
+    ("/**@type",
+      [
+        ("/root/special", Element { name = "special"; attrs = [("type", "magic")]; childs = [Element { name = "child"; attrs = [("id", "s-child")]; childs = [] }] });
+        ("/root/child", Element { name = "child"; attrs = [("type", "magic")]; childs = [] });
+      ]);
+    (* Edge cases for multi wildcard with attributes *)
+    ("/**@type/child",
+      [
+        ("/root/special/child", Element { name = "child"; attrs = [("id", "s-child")]; childs = [] });
+      ]);
+    ("/**/child",
+      [
+        ("/root/e/child", Element { name = "child"; attrs = [("id", "e-child")]; childs = [] });
+        ("/root/special/child", Element { name = "child"; attrs = [("id", "s-child")]; childs = [] });
+        ("/root/child", Element { name = "child"; attrs = [("type", "magic")]; childs = [] });
+      ]);
+    ("/**@lang/nonexistent", []);
   ]
 
 let sample_xml_nested =
@@ -151,7 +211,7 @@ let sample_xml_nested =
   }
 
 let test_find_path_nested path_str expected () =
-  let result = find path_str sample_xml_nested in
+  let result = find_opt path_str sample_xml_nested in
   Alcotest.check find_path_testable ("find_path_nested " ^ path_str) expected result
 
 let nested_test_cases = [
@@ -218,6 +278,43 @@ let nested_filter_test_cases = [
   ]);
 ]
 
+let test_find_attr_opt path attr expected tree () =
+  let result = find_attr_opt path attr tree in
+  Alcotest.(check (option (pair string string))) path expected result
+
+let find_attr_test_cases = [
+  ("/root/a/c@val", "val", Some ("/root/a/c", "test"));
+  ("/root/a@id", "id", Some ("/root/a", "1"));
+  ("/root/nonexistent@attr", "attr", None);
+  ("/root/a/b@nonexistent", "nonexistent", None);
+  (* Test case for single component path without attribute - this was the bug *)
+  ("/root/a", "id", Some ("/root/a", "1"));
+  (* Test case for single component path with different attribute *)
+  ("/root/a/c", "val", Some ("/root/a/c", "test"));
+]
+
+(* Test parser flexibility - paths with and without leading slash *)
+let test_parser_flexibility path_str () =
+  let result_with_slash = Parser.parse_path ("/" ^ path_str) in
+  let result_without_slash = Parser.parse_path path_str in
+  match (result_with_slash, result_without_slash) with
+  | (Ok with_slash, Ok without_slash) ->
+    Alcotest.(check (module struct
+        type t = Alsdiff_base.Upath.path
+        let equal = Alsdiff_base.Upath.equal_path
+        let pp = Alsdiff_base.Upath.pp_path
+      end)) ("parser flexibility: " ^ path_str) with_slash without_slash
+  | _ ->
+    Alcotest.fail ("Both should succeed: " ^ path_str)
+
+let parser_flexibility_test_cases = [
+  "a/b/c";
+  "root/a/b";
+  "Name";
+  "element@attr=\"value\"";
+  "parent/child[0]/grandchild";
+]
+
 let () =
   Alcotest.run "Upath" [
     "find_path",
@@ -240,4 +337,15 @@ let () =
       Alcotest.test_case path `Quick (test_find_all_nested path expected)
     )
     nested_filter_test_cases;
+    "find_attr_opt",
+    List.map (fun (path, attr, expected) ->
+      let test_func = test_find_attr_opt path attr expected sample_xml in
+      Alcotest.test_case path `Quick test_func
+    )
+    find_attr_test_cases;
+    "parser_flexibility",
+    List.map (fun path_str ->
+      Alcotest.test_case path_str `Quick (test_parser_flexibility path_str)
+    )
+    parser_flexibility_test_cases;
   ]

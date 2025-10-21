@@ -52,21 +52,21 @@ let () =
 
   (* Test case 1: Valid path that exists *)
   Printf.printf "Testing /root/a/b: ";
-  let result1 = Alsdiff_base.Upath.find "/root/a/b" sample_xml in
+  let result1 = Alsdiff_base.Upath.find_opt "/root/a/b" sample_xml in
   (match result1 with
    | Some (p, _) -> Printf.printf "Found path: %s\n" p
    | None -> Printf.printf "Path not found\n");
 
   (* Test case 2: Invalid path (wrong root) *)
   Printf.printf "Testing /a/b: ";
-  let result2 = Alsdiff_base.Upath.find "/a/b" sample_xml in
+  let result2 = Alsdiff_base.Upath.find_opt "/a/b" sample_xml in
   (match result2 with
    | Some (p, _) -> Printf.printf "Found path: %s\n" p
    | None -> Printf.printf "Path not found\n");
 
   (* Test case 3: Non-existent path *)
   Printf.printf "Testing /xyz/a/b: ";
-  let result3 = Alsdiff_base.Upath.find "/xyz/a/b" sample_xml in
+  let result3 = Alsdiff_base.Upath.find_opt "/xyz/a/b" sample_xml in
   match result3 with
   | Some (p, _) -> Printf.printf "Found path: %s\n" p
   | None -> Printf.printf "Path not found\n"

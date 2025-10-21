@@ -66,6 +66,18 @@ This is an OCaml project using Dune build system:
 - `ppx_deriving_jsonschema` - PPX extension for JSON schema generation
 - `ppx_deriving_yojson` - PPX extension for Yojson serialization
 
+## Third-Party Dependency Repositories
+
+- `camlzip` - https://github.com/xavierleroy/camlzip
+- `xmlm` - https://github.com/dbuenzli/xmlm
+- `angstrom` - https://github.com/inhabitedtype/angstrom
+- `eio` - https://github.com/ocaml-multicore/eio
+- `eio_main` - https://github.com/ocaml-multicore/eio
+- `alcotest` - https://github.com/mirage/alcotest
+- `ppx_deriving` - https://github.com/ocaml-ppx/ppx_deriving
+- `ppx_deriving_yojson` - https://github.com/ocaml-ppx/ppx_deriving_yojson
+- `ppx_deriving_jsonschema` - https://github.com/ahrefs/ppx_deriving_jsonschema
+
 ## Architecture Overview
 
 This is a Git helper tool for Ableton Live Set (.als) files. The core functionality:
