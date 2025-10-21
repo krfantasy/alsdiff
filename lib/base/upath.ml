@@ -1,9 +1,10 @@
-(** A simple path parser for a subset of XPath-like syntax.
+(** μpath: A tiny expression language for querying in XML documents, with a XPath-like syntax.
+
     Supports:
     - Tag names with optional attributes (e.g., `tag`, `tag@attr="value"`, `tag@attr=*`)
     - Indexing with optional Tag name (e.g., `[0]`, `[1]`, `tag[3]`)
     - Single wildcard (`*`) for single level matching
-    - Multi wildcard (`**`) for multiple levels matching
+    - Multi wildcard (`**`) for multiple levels matching, like XPath's '//'
     - Wildcards with optional attributes (e.g., `*@attr="value"`, `**@attr`)
     - Paths separated by `/` (e.g., `/tag1/tag2@attr="value"/*/tag3/**/tag4`)
 
@@ -15,7 +16,7 @@
 
     Example usage:
     let result = parse_path "/bookstore/book@category=\"cooking\"/title"
-    let wildcard_with_attr = parse_path "//*[@type=\"magic\"]"
+    let wildcard_with_attr = parse_path "/*[@type=\"magic\"]"
 *)
 
 
