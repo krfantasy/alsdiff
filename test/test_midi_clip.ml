@@ -1,24 +1,22 @@
 open Alsdiff_base.Xml
-open Alsdiff_live.Clip.MidiClip
-open Alsdiff_live.Clip.TimeSignature
-open Alsdiff_live.Clip.LoopSection
+open Alsdiff_live.Clip
 
 let test_midi_clip_parsing () =
   (* Read the midi_clip.xml file *)
   let xml = read_file "midi_clip.xml" in
 
   (* Create midi clip from the XML *)
-  let midi_clip = create xml in
+  let midi_clip = MidiClip.create xml in
 
   (* Expected values based on the XML file *)
   let expected_id = 2 in
   let expected_start_time = 80.0 in
   let expected_end_time = 100.0 in
-  let expected_signature = { numer = 4; denom = 4 } in
+  let expected_signature = { TimeSignature.numer = 4; TimeSignature.denom = 4 } in
   let expected_loop = Some {
-    start_time = 92.0;
-    end_time = 112.0;
-    on = false;
+    LoopSection.start_time = 92.0;
+    LoopSection.end_time = 112.0;
+    LoopSection.on = false;
   } in
 
   (* Test basic fields *)
