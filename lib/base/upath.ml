@@ -6,7 +6,10 @@
     - Single wildcard (`*`) for single level matching
     - Multi wildcard (`**`) for multiple levels matching, like XPath's '//'
     - Wildcards with optional attributes (e.g., `*@attr="value"`, `**@attr`)
+    - Current node navigation (`.`) for selecting the current node
+    - Parent node navigation (`..`) for selecting the parent node
     - Paths separated by `/` (e.g., `/tag1/tag2@attr="value"/*/tag3/**/tag4`)
+    - Combined navigation (e.g., `/a/b/c/.`, `/a/b/c/..`, `/a/b/c/../..`)
 
     Does not support:
     - Functions
@@ -17,6 +20,8 @@
     Example usage:
     let result = parse_path "/bookstore/book@category=\"cooking\"/title"
     let wildcard_with_attr = parse_path "/*[@type=\"magic\"]"
+    let current_node = parse_path "/a/b/c/."  (* returns 'c' node *)
+    let parent_node = parse_path "/a/b/c/.."  (* returns 'b' node *)
 *)
 
 
@@ -34,6 +39,8 @@ type path_component =
   | Index of int * string option
   | SingleWildcard of attribute list
   | MultiWildcard of attribute list
+  | CurrentNode
+  | ParentNode
 
 type path = path_component list
 
@@ -92,6 +99,8 @@ struct
     p_key_value <|> p_key_only <?> "attribute"
 
   let p_component =
+    let p_current_node = char '.' *> return CurrentNode in
+    let p_parent_node = string ".." *> return ParentNode in
     let p_index =
       lift2 (fun tag index -> Index (index, tag))
         (option None (identifier >>| Option.some))
@@ -112,7 +121,9 @@ struct
         identifier
         (many p_attribute)
     in
-    choice [ p_index;
+    choice [ p_parent_node;
+             p_current_node;
+             p_index;
              p_multi_wildcard;
              p_single_wildcard;
              p_tag ] <?> "path component"
@@ -158,6 +169,8 @@ let match_component tree = function
     (match tree with
      | Xml.Element _ -> match_attributes tree attrs
      | Xml.Data _ -> false)
+  | CurrentNode -> true  (* Current node always matches *)
+  | ParentNode -> true   (* Parent node matching is handled in search logic *)
 
 
 let path_to_string path =
@@ -168,6 +181,19 @@ type search_node = {
   path_to_parent: string;
   node: Xml.t;
 }
+
+let get_parent_node (search_node : search_node) : search_node option =
+  match search_node.node with
+  | Xml.Element { parent = None; _ } -> None  (* Root node has no parent *)
+  | Xml.Element { parent = Some parent_xml; _ } ->
+      (* Update path_to_parent by removing the last component *)
+      let parent_path =
+        match String.rindex_opt search_node.path_to_parent '/' with
+        | Some last_slash -> String.sub search_node.path_to_parent 0 last_slash
+        | None -> ""
+      in
+      Some { path_to_parent = parent_path; node = parent_xml }
+  | Xml.Data _ -> None  (* Data nodes don't have parents in this model *)
 
 module Seq = Stdlib.Seq
 
@@ -232,6 +258,19 @@ let find_all_seq_0 (path : path_component list) (tree : Xml.t) : (string * Xml.t
             Seq.filter (fun sn -> match_component sn.node (MultiWildcard attrs)) all_descendants
           in
           find_path_in_children rest matched_descendants
+      | CurrentNode ->
+          (* Current node matches the current nodes themselves *)
+          find_path_in_children rest nodes
+      | ParentNode ->
+          (* Parent node: get the parent of each current node *)
+          let parent_nodes =
+            Seq.flat_map (fun sn ->
+              match get_parent_node sn with
+              | Some parent -> Seq.return parent
+              | None -> Seq.empty
+            ) nodes
+          in
+          find_path_in_children rest parent_nodes
   in
   let initial_node = { path_to_parent = ""; node = tree } in
   let result_seq =
@@ -245,8 +284,14 @@ let find_all_seq_0 (path : path_component list) (tree : Xml.t) : (string * Xml.t
           (* The first path component does not match the root `tree`.
              Per design, we now search for the *entire* path within the children of `tree`. *)
           find_path_in_children path (Seq.return initial_node)
+    | CurrentNode :: rest ->
+        (* Path starts with '.', match the current root node *)
+        find_path_in_children rest (Seq.return initial_node)
+    | ParentNode :: _ ->
+        (* Path starts with '..', but root node has no parent, so return empty sequence *)
+        Seq.empty
     | _ ->
-        (* The path does not start with a Tag.
+        (* The path does not start with a Tag, CurrentNode, or ParentNode.
            Per design, we search for the *entire* path within the children of `tree`. *)
         find_path_in_children path (Seq.return initial_node)
   in
@@ -372,6 +417,10 @@ let pp_path fmt path =
         | Any -> Format.fprintf fmt "@%s" name
         | Exact v -> Format.fprintf fmt "@%s=\"%s\"" name v
       ) attrs
+    | CurrentNode ->
+      Format.fprintf fmt "."
+    | ParentNode ->
+      Format.fprintf fmt ".."
   in
   match path with
   | [] -> Format.fprintf fmt "/"
