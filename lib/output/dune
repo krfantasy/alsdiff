@@ -33,4 +33,4 @@
    (glob_files ../*.{ml,mli}))
   (target dune.ocp-indent)
   (action
-   (run ocp-indent-gen-rules -o %{target}))))
+   (bash "IGNORE=$(cd .. && ls *.pp.ml 2>/dev/null | paste -sd, -) && ocp-indent-gen-rules -o %{target} ${IGNORE:+--ignore=$IGNORE}"))))

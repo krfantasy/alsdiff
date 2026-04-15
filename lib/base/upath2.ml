@@ -470,6 +470,32 @@ let get_int_attr result name =
 let get_float_attr result name =
   Option.bind (get_attr result name) float_of_string_opt
 
+(* --- Query-level result accessors --- *)
+
+let find_result results qid =
+  List.find_opt (fun (r : match_result) -> r.query_id = qid) results
+
+let find_all_results results qid =
+  List.filter (fun (r : match_result) -> r.query_id = qid) results
+
+let query_attr results qid attr =
+  Option.bind (find_result results qid) (fun r -> get_attr r attr)
+
+let query_int_attr results qid attr =
+  Option.bind (query_attr results qid attr) int_of_string_opt
+
+let query_float_attr results qid attr =
+  Option.bind (query_attr results qid attr) float_of_string_opt
+
+let query_bool_attr results qid attr =
+  Option.bind (query_attr results qid attr)
+    (fun x -> String.lowercase_ascii x |> bool_of_string_opt)
+
+(* --- DOM-to-stream bridge --- *)
+
+let stream_of_xml xml =
+  Xml2.stream_from_string (Fmt.str "%a" Xml.pp_compact xml)
+
 (* --- Pretty printers --- *)
 
 let pp_name_matcher fmt = function

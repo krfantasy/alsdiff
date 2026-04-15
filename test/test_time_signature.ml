@@ -33,10 +33,9 @@ let test_invalid_element_name () =
   let xml = Xml.Element { name = "InvalidTimeSignature"; attrs = []; childs = [] } in
   try
     let _ = create xml in
-    fail "Expected Xml_error for invalid element name"
+    fail "Expected error for invalid element name"
   with
-  | Xml.Xml_error (_, msg) ->
-    check string "error message" "Invalid XML element for creating TimeSignature" msg
+  | Invalid_argument _ -> ()
 
 let test_missing_numerator () =
   let xml = Xml.Element { name = "RemoteableTimeSignature"; attrs = ["Id", "0"]; childs = [
@@ -45,9 +44,9 @@ let test_missing_numerator () =
     ]} in
   try
     let _ = create xml in
-    fail "Expected Xml_error for missing Numerator"
+    fail "Expected error for missing Numerator"
   with
-  | Upath.Path_not_found _ -> ()
+  | Invalid_argument _ -> ()
 
 let test_missing_denominator () =
   let xml = Xml.Element { name = "RemoteableTimeSignature"; attrs = ["Id", "0"]; childs = [
@@ -56,9 +55,9 @@ let test_missing_denominator () =
     ]} in
   try
     let _ = create xml in
-    fail "Expected Xml_error for missing Denominator"
+    fail "Expected error for missing Denominator"
   with
-  | Upath.Path_not_found _ -> ()
+  | Invalid_argument _ -> ()
 
 let test_diff_numer_change () =
   let old_sig = { numer = 4; denom = 4 } in

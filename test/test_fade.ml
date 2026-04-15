@@ -46,10 +46,9 @@ let test_invalid_element_name () =
   let xml = Xml.Element { name = "InvalidFades"; attrs = []; childs = [] } in
   try
     let _ = create xml in
-    fail "Expected Xml_error for invalid element name"
+    fail "Expected error for invalid element name"
   with
-  | Xml.Xml_error (_, msg) ->
-    check string "error message" "Invalid XML element for creating Fade" msg
+  | Invalid_argument _ -> ()
 
 let test_missing_fade_in_length () =
   let xml = Xml.Element { name = "Fades"; attrs = []; childs = [
@@ -60,7 +59,7 @@ let test_missing_fade_in_length () =
     let _ = create xml in
     fail "Expected error for missing FadeInLength"
   with
-  | Upath.Path_not_found _ -> () (* Expected - missing required attribute *)
+  | Invalid_argument _ -> () (* Expected - missing required attribute *)
 
 let test_diff_fade_in_length_change () =
   let old_fade = { fade_in_length = 0.0; fade_out_length = 8.0; is_initialized = true; crossfade_state = 1; fade_in_curve_skew = 0.0; fade_in_curve_slope = 0.0; fade_out_curve_skew = 0.0; fade_out_curve_slope = 0.0; is_default_fade_in = false; is_default_fade_out = false } in

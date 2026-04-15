@@ -47,6 +47,27 @@ module EnvelopeEvent = struct
       | _ -> raise (Xml.Xml_error (xml, "Unknown event type: " ^ tag_name))
     in
     { id; time; value; curve }
+
+  let make_from_result (r : Upath2.match_result) : t =
+    let id = Option.get (Upath2.get_int_attr r "Id") in
+    let time = Option.get (Upath2.get_float_attr r "Time") in
+    let curve =
+      match (Upath2.get_float_attr r "CurveControl1X",
+             Upath2.get_float_attr r "CurveControl1Y",
+             Upath2.get_float_attr r "CurveControl2X",
+             Upath2.get_float_attr r "CurveControl2Y") with
+      | (Some c1x, Some c1y, Some c2x, Some c2y) ->
+        Some { CurveControls.curve1_x = c1x; curve1_y = c1y;
+               curve2_x = c2x; curve2_y = c2y }
+      | _ -> None
+    in
+    let value = match r.Upath2.element_name with
+      | "FloatEvent" -> FloatEvent (Option.get (Upath2.get_float_attr r "Value"))
+      | "IntEvent" -> IntEvent (Option.get (Upath2.get_int_attr r "Value"))
+      | "EnumEvent" -> EnumEvent (Option.get (Upath2.get_int_attr r "Value"))
+      | name -> failwith ("Unknown event type: " ^ name)
+    in
+    { id; time; value; curve }
 end
 
 
@@ -59,12 +80,24 @@ type t = {
 (* Automation contains a list of EnvelopeEvents and is therefore
    a structured type at a higher level of abstraction. *)
 
-let create (xml : Alsdiff_base.Xml.t) : t =
-  let id = Xml.get_int_attr "Id" xml in
-  let target = Upath.get_int_attr "/EnvelopeTarget/PointeeId" "Value" xml in
+let queries = [
+  Upath2.query_of_path ~qid:0 ~path_str:"/EnvelopeTarget/PointeeId" ~attr:(Some "Value");
+  Upath2.query_of_path ~qid:1 ~path_str:"/Automation/Events/'(Float|Int|Enum)Event'" ~attr:None;
+]
+
+let make ~root_attrs results =
+  let id = int_of_string (List.assoc "Id" root_attrs) in
+  let target = Option.get (Upath2.query_int_attr results 0 "Value") in
   let events =
-    xml |> Upath.find_all "/Automation/Events/'(Float|Int|Enum)Event'"
-    |> List.map (fun (_, event) -> EnvelopeEvent.create event)
+    Upath2.find_all_results results 1
+    |> List.map EnvelopeEvent.make_from_result
     |> List.sort (fun a b -> Float.compare a.EnvelopeEvent.time b.EnvelopeEvent.time)
   in
   { id; target; events }
+
+let create (xml : Xml.t) : t =
+  let root_attrs = (match xml with Xml.Element { attrs; _ } -> attrs | _ -> []) in
+  let stream = Upath2.stream_of_xml xml in
+  let nfa = Upath2.compile queries in
+  let results = Upath2.evaluate nfa stream in
+  make ~root_attrs results

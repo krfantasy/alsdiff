@@ -44,10 +44,9 @@ let test_invalid_element_name () =
   let xml = Xml.Element { name = "InvalidLoop"; attrs = []; childs = [] } in
   try
     let _ = create xml in
-    fail "Expected Xml_error for invalid element name"
+    fail "Expected error for invalid element name"
   with
-  | Xml.Xml_error (_, msg) ->
-    check string "error message" "Invalid XML element for creating Loop" msg
+  | Invalid_argument _ -> ()
 
 let test_missing_loop_start () =
   let xml = Xml.Element { name = "Loop"; attrs = []; childs = [

@@ -4,13 +4,23 @@ open Alsdiff_base.Diff
 
 module TimeSignature = struct
   type t = { numer : int; denom : int } [@@deriving eq, patch] [@@patch.generate_diff]
+
+  let queries = [
+    Upath2.query_of_path ~qid:0 ~path_str:"/Numerator" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:1 ~path_str:"/Denominator" ~attr:(Some "Value");
+  ]
+
+  let make ~root_attrs:_ results =
+    let numer = Option.get (Upath2.query_int_attr results 0 "Value") in
+    let denom = Option.get (Upath2.query_int_attr results 1 "Value") in
+    { numer; denom }
+
   let create (xml : Xml.t) : t =
-    match xml with
-    | Xml.Element { name = "RemoteableTimeSignature"; _ } ->
-      let numer = Upath.get_int_attr "/Numerator" "Value" xml in
-      let denom = Upath.get_int_attr "/Denominator" "Value" xml in
-      { numer; denom }
-    | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating TimeSignature"))
+    let root_attrs = (match xml with Xml.Element { attrs; _ } -> attrs | _ -> []) in
+    let stream = Upath2.stream_of_xml xml in
+    let nfa = Upath2.compile queries in
+    let results = Upath2.evaluate nfa stream in
+    make ~root_attrs results
 end
 
 
@@ -24,14 +34,22 @@ module MidiNote = struct
     off_velocity : float;
   } [@@deriving eq, id, patch] [@@patch.generate_diff]
 
+  let make_from_result (note : int) (r : Upath2.match_result) : t =
+    let id = Option.get (Upath2.get_int_attr r "NoteId") in
+    let time = Option.get (Upath2.get_float_attr r "Time") in
+    let duration = Option.get (Upath2.get_float_attr r "Duration") in
+    let velocity = Option.get (Upath2.get_float_attr r "Velocity") in
+    let off_velocity = Option.get (Upath2.get_float_attr r "OffVelocity") in
+    { id; note; time; duration; velocity; off_velocity }
+
   let create (note: int) (xml : Xml.t) : t =
     match xml with
-    | Xml.Element { name = "MidiNoteEvent"; _ } ->
-      let id = Xml.get_int_attr "NoteId" xml in
-      let time = Xml.get_float_attr "Time" xml in
-      let duration = Xml.get_float_attr "Duration" xml in
-      let velocity = Xml.get_float_attr "Velocity" xml in
-      let off_velocity = Xml.get_float_attr "OffVelocity" xml in
+    | Xml.Element { name = "MidiNoteEvent"; attrs; _ } ->
+      let id = int_of_string (List.assoc "NoteId" attrs) in
+      let time = float_of_string (List.assoc "Time" attrs) in
+      let duration = float_of_string (List.assoc "Duration" attrs) in
+      let velocity = float_of_string (List.assoc "Velocity" attrs) in
+      let off_velocity = float_of_string (List.assoc "OffVelocity" attrs) in
       { id; note; time; duration; velocity; off_velocity }
     | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating MidiNote"))
 end
@@ -43,15 +61,24 @@ module Loop = struct
     on : bool;
   } [@@deriving eq, patch] [@@patch.generate_diff]
 
+  let queries = [
+    Upath2.query_of_path ~qid:0 ~path_str:"/LoopStart" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:1 ~path_str:"/LoopEnd" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:2 ~path_str:"/LoopOn" ~attr:(Some "Value");
+  ]
+
+  let make ~root_attrs:_ results =
+    let start_time = Option.get (Upath2.query_float_attr results 0 "Value") in
+    let end_time = Option.get (Upath2.query_float_attr results 1 "Value") in
+    let on = Option.get (Upath2.query_bool_attr results 2 "Value") in
+    { start_time; end_time; on }
 
   let create (xml : Xml.t) : t =
-    match xml with
-    | Xml.Element { name = "Loop"; _ } ->
-      let start = Upath.get_float_attr "/LoopStart" "Value" xml in
-      let end_ = Upath.get_float_attr "/LoopEnd" "Value" xml in
-      let on = Upath.get_bool_attr "/LoopOn" "Value" xml in
-      { start_time = start; end_time = end_; on; }
-    | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating Loop"))
+    let root_attrs = (match xml with Xml.Element { attrs; _ } -> attrs | _ -> []) in
+    let stream = Upath2.stream_of_xml xml in
+    let nfa = Upath2.compile queries in
+    let results = Upath2.evaluate nfa stream in
+    make ~root_attrs results
 end
 
 
@@ -66,35 +93,66 @@ module MidiClip = struct
     notes : MidiNote.t list;
   } [@@deriving eq, id, patch] [@@patch.generate_diff]
 
+  let queries = [
+    Upath2.query_of_path ~qid:0 ~path_str:"/Name" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:1 ~path_str:"/CurrentStart" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:2 ~path_str:"/CurrentEnd" ~attr:(Some "Value");
+    (* Loop children *)
+    Upath2.query_of_path ~qid:3 ~path_str:"/Loop/LoopStart" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:4 ~path_str:"/Loop/LoopEnd" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:5 ~path_str:"/Loop/LoopOn" ~attr:(Some "Value");
+    (* TimeSignature *)
+    Upath2.query_of_path ~qid:6 ~path_str:"/TimeSignature/TimeSignatures/RemoteableTimeSignature/Numerator" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:7 ~path_str:"/TimeSignature/TimeSignatures/RemoteableTimeSignature/Denominator" ~attr:(Some "Value");
+    (* KeyTracks + MidiKey + MidiNoteEvents *)
+    Upath2.query_of_path ~qid:8 ~path_str:"/Notes/KeyTracks/KeyTrack/MidiKey" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:9 ~path_str:"/Notes/KeyTracks/KeyTrack/Notes/MidiNoteEvent" ~attr:None;
+  ]
+
+  (** Group MidiNoteEvent results by their parent KeyTrack.
+      In the XML, MidiNoteEvents appear BEFORE their sibling MidiKey element:
+        <KeyTrack><Notes><MidiNoteEvent/>...</Notes><MidiKey Value="60"/></KeyTrack>
+      So in document-order results: notes for key N, then MidiKey for key N.
+      We buffer MidiNoteEvents and assign them to the next MidiKey we see. *)
+  let group_notes_by_key (all_results : Upath2.match_result list) : MidiNote.t list =
+    let rec walk results buf acc =
+      match results with
+      | [] -> List.rev acc
+      | r :: rest ->
+        if r.Upath2.query_id = 9 then
+          walk rest (r :: buf) acc
+        else if r.Upath2.query_id = 8 then begin
+          let midi_key = Option.get (Upath2.get_int_attr r "Value") in
+          let notes = List.map (MidiNote.make_from_result midi_key) (List.rev buf) in
+          walk rest [] (List.rev_append notes acc)
+        end else
+          walk rest buf acc
+    in
+    walk all_results [] []
+
+  let make ~root_attrs results =
+    let id = int_of_string (List.assoc "Id" root_attrs) in
+    let name = Option.get (Upath2.query_attr results 0 "Value") in
+    let start_time = Option.get (Upath2.query_float_attr results 1 "Value") in
+    let end_time = Option.get (Upath2.query_float_attr results 2 "Value") in
+    let loop = {
+      Loop.start_time = Option.get (Upath2.query_float_attr results 3 "Value");
+      end_time = Option.get (Upath2.query_float_attr results 4 "Value");
+      on = Option.get (Upath2.query_bool_attr results 5 "Value");
+    } in
+    let signature = {
+      TimeSignature.numer = Option.get (Upath2.query_int_attr results 6 "Value");
+      denom = Option.get (Upath2.query_int_attr results 7 "Value");
+    } in
+    let notes = group_notes_by_key results in
+    { id; name; start_time; end_time; loop; signature; notes }
+
   let create (xml : Xml.t) : t =
-    match xml with
-    | Xml.Element { name = "MidiClip"; _ } ->
-      let id = Xml.get_int_attr "Id" xml in
-      let name = Upath.get_attr "/Name" "Value" xml in
-      let start_time = Upath.get_float_attr "/CurrentStart" "Value" xml in
-
-      (* Extract end time from CurrentEnd *)
-      let end_time = Upath.get_float_attr "/CurrentEnd" "Value" xml in
-
-      (* Extract loop information *)
-      let loop = Upath.find "/Loop" xml |> snd |> Loop.create in
-
-      (* Extract time signature *)
-      let signature = Upath.find "/TimeSignature/TimeSignatures/RemoteableTimeSignature" xml |> snd |> TimeSignature.create in
-
-      (* Extract MIDI notes from KeyTracks *)
-      let notes = Upath.find_all_seq "/Notes/KeyTracks/KeyTrack" xml
-        |> Seq.map snd
-        |> Seq.flat_map (fun keytrack ->
-            let key = Upath.get_int_attr "MidiKey" "Value" keytrack in
-            Upath.find_all_seq "/Notes/MidiNoteEvent" keytrack
-            |> Seq.map snd
-            |> Seq.map @@ MidiNote.create key)
-        |> List.of_seq
-      in
-
-      { id; name; start_time; end_time; loop; signature; notes }
-    | _ -> raise (Xml.Xml_error (xml, "Expected MidiClip element"))
+    let root_attrs = (match xml with Xml.Element { attrs; _ } -> attrs | _ -> []) in
+    let stream = Upath2.stream_of_xml xml in
+    let nfa = Upath2.compile queries in
+    let results = Upath2.evaluate nfa stream in
+    make ~root_attrs results
 end
 
 
@@ -105,15 +163,24 @@ module SampleRef = struct
     last_modified_date : int; (* unix timestamp *)
   } [@@deriving eq, patch] [@@patch.generate_diff]
 
-  let create (xml : Xml.t) : t =
-    match xml with
-    | Xml.Element { name = "SampleRef"; _ } ->
-      let last_modified_date = Upath.get_int_attr "LastModDate" "Value" xml in
-      let file_path = Upath.get_attr "FileRef/Path" "Value" xml in
-      let crc = Upath.get_attr "FileRef/OriginalCrc" "Value" xml in
-      { file_path; crc; last_modified_date }
-    | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating SampleRef"))
+  let queries = [
+    Upath2.query_of_path ~qid:0 ~path_str:"/FileRef/Path" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:1 ~path_str:"/FileRef/OriginalCrc" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:2 ~path_str:"/LastModDate" ~attr:(Some "Value");
+  ]
 
+  let make ~root_attrs:_ results =
+    let file_path = Option.get (Upath2.query_attr results 0 "Value") in
+    let crc = Option.get (Upath2.query_attr results 1 "Value") in
+    let last_modified_date = Option.get (Upath2.query_int_attr results 2 "Value") in
+    { file_path; crc; last_modified_date }
+
+  let create (xml : Xml.t) : t =
+    let root_attrs = (match xml with Xml.Element { attrs; _ } -> attrs | _ -> []) in
+    let stream = Upath2.stream_of_xml xml in
+    let nfa = Upath2.compile queries in
+    let results = Upath2.evaluate nfa stream in
+    make ~root_attrs results
 end
 
 
@@ -131,27 +198,43 @@ module Fade = struct
     is_default_fade_out : bool;
   } [@@deriving eq, patch] [@@patch.generate_diff]
 
-  let create (xml : Xml.t) : t =
-    match xml with
-    | Xml.Element { name = "Fades"; _ } ->
-      let fade_in_length = Upath.get_float_attr "/FadeInLength" "Value" xml in
-      let fade_out_length = Upath.get_float_attr "/FadeOutLength" "Value" xml in
-      let is_initialized = Upath.get_bool_attr "/ClipFadesAreInitialized" "Value" xml in
-      let crossfade_state = Upath.get_int_attr "/CrossfadeInState" "Value" xml in
-      let fade_in_curve_skew = Upath.get_float_attr "/FadeInCurveSkew" "Value" xml in
-      let fade_in_curve_slope = Upath.get_float_attr "/FadeInCurveSlope" "Value" xml in
-      let fade_out_curve_skew = Upath.get_float_attr "/FadeOutCurveSkew" "Value" xml in
-      let fade_out_curve_slope = Upath.get_float_attr "/FadeOutCurveSlope" "Value" xml in
-      let is_default_fade_in = Upath.get_bool_attr "/IsDefaultFadeIn" "Value" xml in
-      let is_default_fade_out = Upath.get_bool_attr "/IsDefaultFadeOut" "Value" xml in
-      {
-        fade_in_length; fade_out_length; is_initialized;
-        crossfade_state; fade_in_curve_skew; fade_in_curve_slope;
-        fade_out_curve_skew; fade_out_curve_slope;
-        is_default_fade_in; is_default_fade_out;
-      }
-    | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating Fade"))
+  let queries = [
+    Upath2.query_of_path ~qid:0 ~path_str:"/FadeInLength" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:1 ~path_str:"/FadeOutLength" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:2 ~path_str:"/ClipFadesAreInitialized" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:3 ~path_str:"/CrossfadeInState" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:4 ~path_str:"/FadeInCurveSkew" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:5 ~path_str:"/FadeInCurveSlope" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:6 ~path_str:"/FadeOutCurveSkew" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:7 ~path_str:"/FadeOutCurveSlope" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:8 ~path_str:"/IsDefaultFadeIn" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:9 ~path_str:"/IsDefaultFadeOut" ~attr:(Some "Value");
+  ]
 
+  let make ~root_attrs:_ results =
+    let fade_in_length = Option.get (Upath2.query_float_attr results 0 "Value") in
+    let fade_out_length = Option.get (Upath2.query_float_attr results 1 "Value") in
+    let is_initialized = Option.get (Upath2.query_bool_attr results 2 "Value") in
+    let crossfade_state = Option.get (Upath2.query_int_attr results 3 "Value") in
+    let fade_in_curve_skew = Option.get (Upath2.query_float_attr results 4 "Value") in
+    let fade_in_curve_slope = Option.get (Upath2.query_float_attr results 5 "Value") in
+    let fade_out_curve_skew = Option.get (Upath2.query_float_attr results 6 "Value") in
+    let fade_out_curve_slope = Option.get (Upath2.query_float_attr results 7 "Value") in
+    let is_default_fade_in = Option.get (Upath2.query_bool_attr results 8 "Value") in
+    let is_default_fade_out = Option.get (Upath2.query_bool_attr results 9 "Value") in
+    {
+      fade_in_length; fade_out_length; is_initialized;
+      crossfade_state; fade_in_curve_skew; fade_in_curve_slope;
+      fade_out_curve_skew; fade_out_curve_slope;
+      is_default_fade_in; is_default_fade_out;
+    }
+
+  let create (xml : Xml.t) : t =
+    let root_attrs = (match xml with Xml.Element { attrs; _ } -> attrs | _ -> []) in
+    let stream = Upath2.stream_of_xml xml in
+    let nfa = Upath2.compile queries in
+    let results = Upath2.evaluate nfa stream in
+    make ~root_attrs results
 end
 
 
@@ -168,34 +251,80 @@ module AudioClip = struct
     fade : Fade.t option;
   } [@@deriving eq, id, patch]
 
+  let queries = [
+    Upath2.query_of_path ~qid:0 ~path_str:"/Name" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:1 ~path_str:"/CurrentStart" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:2 ~path_str:"/CurrentEnd" ~attr:(Some "Value");
+    (* Loop children *)
+    Upath2.query_of_path ~qid:3 ~path_str:"/Loop/LoopStart" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:4 ~path_str:"/Loop/LoopEnd" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:5 ~path_str:"/Loop/LoopOn" ~attr:(Some "Value");
+    (* TimeSignature *)
+    Upath2.query_of_path ~qid:6 ~path_str:"/TimeSignature/TimeSignatures/RemoteableTimeSignature/Numerator" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:7 ~path_str:"/TimeSignature/TimeSignatures/RemoteableTimeSignature/Denominator" ~attr:(Some "Value");
+    (* SampleRef *)
+    Upath2.query_of_path ~qid:8 ~path_str:"/SampleRef/FileRef/Path" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:9 ~path_str:"/SampleRef/FileRef/OriginalCrc" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:10 ~path_str:"/SampleRef/LastModDate" ~attr:(Some "Value");
+    (* Fade enable + Fades children *)
+    Upath2.query_of_path ~qid:11 ~path_str:"/Fade" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:12 ~path_str:"/Fades/FadeInLength" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:13 ~path_str:"/Fades/FadeOutLength" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:14 ~path_str:"/Fades/ClipFadesAreInitialized" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:15 ~path_str:"/Fades/CrossfadeInState" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:16 ~path_str:"/Fades/FadeInCurveSkew" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:17 ~path_str:"/Fades/FadeInCurveSlope" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:18 ~path_str:"/Fades/FadeOutCurveSkew" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:19 ~path_str:"/Fades/FadeOutCurveSlope" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:20 ~path_str:"/Fades/IsDefaultFadeIn" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:21 ~path_str:"/Fades/IsDefaultFadeOut" ~attr:(Some "Value");
+  ]
+
+  let make ~root_attrs results =
+    let id = int_of_string (List.assoc "Id" root_attrs) in
+    let name = Option.get (Upath2.query_attr results 0 "Value") in
+    let start_time = Option.get (Upath2.query_float_attr results 1 "Value") in
+    let end_time = Option.get (Upath2.query_float_attr results 2 "Value") in
+    let loop = {
+      Loop.start_time = Option.get (Upath2.query_float_attr results 3 "Value");
+      end_time = Option.get (Upath2.query_float_attr results 4 "Value");
+      on = Option.get (Upath2.query_bool_attr results 5 "Value");
+    } in
+    let signature = {
+      TimeSignature.numer = Option.get (Upath2.query_int_attr results 6 "Value");
+      denom = Option.get (Upath2.query_int_attr results 7 "Value");
+    } in
+    let sample_ref = {
+      SampleRef.file_path = Option.get (Upath2.query_attr results 8 "Value");
+      crc = Option.get (Upath2.query_attr results 9 "Value");
+      last_modified_date = Option.get (Upath2.query_int_attr results 10 "Value");
+    } in
+    let fade =
+      let fade_enabled = Option.get (Upath2.query_bool_attr results 11 "Value") in
+      if fade_enabled then
+        Some {
+          Fade.fade_in_length = Option.get (Upath2.query_float_attr results 12 "Value");
+          fade_out_length = Option.get (Upath2.query_float_attr results 13 "Value");
+          is_initialized = Option.get (Upath2.query_bool_attr results 14 "Value");
+          crossfade_state = Option.get (Upath2.query_int_attr results 15 "Value");
+          fade_in_curve_skew = Option.get (Upath2.query_float_attr results 16 "Value");
+          fade_in_curve_slope = Option.get (Upath2.query_float_attr results 17 "Value");
+          fade_out_curve_skew = Option.get (Upath2.query_float_attr results 18 "Value");
+          fade_out_curve_slope = Option.get (Upath2.query_float_attr results 19 "Value");
+          is_default_fade_in = Option.get (Upath2.query_bool_attr results 20 "Value");
+          is_default_fade_out = Option.get (Upath2.query_bool_attr results 21 "Value");
+        }
+      else
+        None
+    in
+    { id; name; start_time; end_time; loop; signature; sample_ref; fade }
+
   let create (xml : Xml.t) : t =
-    match xml with
-    | Xml.Element { name = "AudioClip"; _ } ->
-      let id = Xml.get_int_attr "Id" xml in
-      let name = Upath.get_attr "/Name" "Value" xml in
-      let start_time = Upath.get_float_attr "/CurrentStart" "Value" xml in
-      let end_time = Upath.get_float_attr "/CurrentEnd" "Value" xml in
-
-      (* Extract loop information *)
-      (* TODO: what the fuck does `StartRelative` means in the `Loop` element *)
-      let loop = Upath.find "/Loop" xml |> snd |> Loop.create in
-      (* Extract time signature *)
-      (* TODO: support time signature automation *)
-      let signature = Upath.find "/TimeSignature/TimeSignatures/RemoteableTimeSignature" xml |> snd |> TimeSignature.create in
-      (* Extract sample reference *)
-      let sample_ref = Upath.find "/SampleRef" xml |> snd |> SampleRef.create in
-
-      (* Extract fade information - only parse Fades if Fade is enabled *)
-      let fade =
-        let fade_enabled = Upath.get_bool_attr "/Fade" "Value" xml in
-        if fade_enabled then
-          Some (Upath.find "/Fades" xml |> snd |> Fade.create)
-        else
-          None
-      in
-
-      { id; name; start_time; end_time; loop; signature; sample_ref; fade }
-    | _ -> raise (Xml.Xml_error (xml, "Expected AudioClip element"))
+    let root_attrs = (match xml with Xml.Element { attrs; _ } -> attrs | _ -> []) in
+    let stream = Upath2.stream_of_xml xml in
+    let nfa = Upath2.compile queries in
+    let results = Upath2.evaluate nfa stream in
+    make ~root_attrs results
 
   let diff (old_clip : t) (new_clip : t) : Patch.t =
     let { id = old_id; name = old_name; start_time = old_start; end_time = old_end; loop = old_loop; signature = old_sig; sample_ref = old_sample; fade = old_fade } = old_clip in
