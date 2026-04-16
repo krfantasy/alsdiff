@@ -15,33 +15,18 @@ let resolve_test_data_path filename =
 
 let queries : Upath2.query list = [
   (* Track names *)
-  Upath2.simple_query ~qid:0 ~path:["Ableton"; "LiveSet"; "Tracks"; "MidiTrack"; "Name"; "EffectiveName"]
-    ~attr:(Some "Value");
-  Upath2.simple_query ~qid:1 ~path:["Ableton"; "LiveSet"; "Tracks"; "AudioTrack"; "Name"; "EffectiveName"]
-    ~attr:(Some "Value");
-  Upath2.simple_query ~qid:2 ~path:["Ableton"; "LiveSet"; "MainTrack"; "Name"; "EffectiveName"]
-    ~attr:(Some "Value");
+  Upath2.query_of_path ~qid:0 "/Ableton/LiveSet/Tracks/MidiTrack/Name/EffectiveName@Value";
+  Upath2.query_of_path ~qid:1 "/Ableton/LiveSet/Tracks/AudioTrack/Name/EffectiveName@Value";
+  Upath2.query_of_path ~qid:2 "/Ableton/LiveSet/MainTrack/Name/EffectiveName@Value";
   (* Track IDs *)
-  Upath2.simple_query ~qid:3 ~path:["Ableton"; "LiveSet"; "Tracks"; "MidiTrack"]
-    ~attr:(Some "Id");
-  Upath2.simple_query ~qid:4 ~path:["Ableton"; "LiveSet"; "Tracks"; "AudioTrack"]
-    ~attr:(Some "Id");
+  Upath2.query_of_path ~qid:3 "/Ableton/LiveSet/Tracks/MidiTrack@Id";
+  Upath2.query_of_path ~qid:4 "/Ableton/LiveSet/Tracks/AudioTrack@Id";
   (* Mixer values *)
-  Upath2.simple_query ~qid:5 ~path:["Ableton"; "LiveSet"; "Tracks"; "MidiTrack";
-                                    "DeviceChain"; "Mixer"; "Volume"; "Manual"]
-    ~attr:(Some "Value");
-  Upath2.simple_query ~qid:6 ~path:["Ableton"; "LiveSet"; "Tracks"; "AudioTrack";
-                                    "DeviceChain"; "Mixer"; "Volume"; "Manual"]
-    ~attr:(Some "Value");
-  Upath2.simple_query ~qid:7 ~path:["Ableton"; "LiveSet"; "MainTrack";
-                                    "DeviceChain"; "Mixer"; "Tempo"; "Manual"]
-    ~attr:(Some "Value");
-  Upath2.simple_query ~qid:8 ~path:["Ableton"; "LiveSet"; "MainTrack";
-                                    "DeviceChain"; "Mixer"; "Volume"; "Manual"]
-    ~attr:(Some "Value");
-  Upath2.simple_query ~qid:9 ~path:["Ableton"; "LiveSet"; "Tracks"; "MidiTrack";
-                                    "DeviceChain"; "Mixer"; "On"; "Manual"]
-    ~attr:(Some "Value");
+  Upath2.query_of_path ~qid:5 "/Ableton/LiveSet/Tracks/MidiTrack/DeviceChain/Mixer/Volume/Manual@Value";
+  Upath2.query_of_path ~qid:6 "/Ableton/LiveSet/Tracks/AudioTrack/DeviceChain/Mixer/Volume/Manual@Value";
+  Upath2.query_of_path ~qid:7 "/Ableton/LiveSet/MainTrack/DeviceChain/Mixer/Tempo/Manual@Value";
+  Upath2.query_of_path ~qid:8 "/Ableton/LiveSet/MainTrack/DeviceChain/Mixer/Volume/Manual@Value";
+  Upath2.query_of_path ~qid:9 "/Ableton/LiveSet/Tracks/MidiTrack/DeviceChain/Mixer/On/Manual@Value";
 ]
 
 (* Find the first match for a given query_id and extract the requested attr *)

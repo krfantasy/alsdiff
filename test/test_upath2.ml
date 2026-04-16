@@ -102,7 +102,7 @@ let complex_xml_str =
 type results = Upath2.match_result list
 
 let eval_query path_str xml_str : results =
-  let q = Upath2.query_of_path ~qid:0 ~path_str ~attr:None in
+  let q = Upath2.query_of_path ~qid:0 path_str in
   let nfa = Upath2.compile [ q ] in
   let stream = Xml2.stream_from_string xml_str in
   Upath2.evaluate nfa stream

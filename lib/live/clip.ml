@@ -6,8 +6,8 @@ module TimeSignature = struct
   type t = { numer : int; denom : int } [@@deriving eq, patch] [@@patch.generate_diff]
 
   let queries = [
-    Upath2.query_of_path ~qid:0 ~path_str:"/Numerator" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:1 ~path_str:"/Denominator" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:0 "/Numerator@Value";
+    Upath2.query_of_path ~qid:1 "/Denominator@Value";
   ]
 
   let make ~root_attrs:_ results =
@@ -62,9 +62,9 @@ module Loop = struct
   } [@@deriving eq, patch] [@@patch.generate_diff]
 
   let queries = [
-    Upath2.query_of_path ~qid:0 ~path_str:"/LoopStart" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:1 ~path_str:"/LoopEnd" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:2 ~path_str:"/LoopOn" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:0 "/LoopStart@Value";
+    Upath2.query_of_path ~qid:1 "/LoopEnd@Value";
+    Upath2.query_of_path ~qid:2 "/LoopOn@Value";
   ]
 
   let make ~root_attrs:_ results =
@@ -94,19 +94,19 @@ module MidiClip = struct
   } [@@deriving eq, id, patch] [@@patch.generate_diff]
 
   let queries = [
-    Upath2.query_of_path ~qid:0 ~path_str:"/Name" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:1 ~path_str:"/CurrentStart" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:2 ~path_str:"/CurrentEnd" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:0 "/Name@Value";
+    Upath2.query_of_path ~qid:1 "/CurrentStart@Value";
+    Upath2.query_of_path ~qid:2 "/CurrentEnd@Value";
     (* Loop children *)
-    Upath2.query_of_path ~qid:3 ~path_str:"/Loop/LoopStart" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:4 ~path_str:"/Loop/LoopEnd" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:5 ~path_str:"/Loop/LoopOn" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:3 "/Loop/LoopStart@Value";
+    Upath2.query_of_path ~qid:4 "/Loop/LoopEnd@Value";
+    Upath2.query_of_path ~qid:5 "/Loop/LoopOn@Value";
     (* TimeSignature *)
-    Upath2.query_of_path ~qid:6 ~path_str:"/TimeSignature/TimeSignatures/RemoteableTimeSignature/Numerator" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:7 ~path_str:"/TimeSignature/TimeSignatures/RemoteableTimeSignature/Denominator" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:6 "/TimeSignature/TimeSignatures/RemoteableTimeSignature/Numerator@Value";
+    Upath2.query_of_path ~qid:7 "/TimeSignature/TimeSignatures/RemoteableTimeSignature/Denominator@Value";
     (* KeyTracks + MidiKey + MidiNoteEvents *)
-    Upath2.query_of_path ~qid:8 ~path_str:"/Notes/KeyTracks/KeyTrack/MidiKey" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:9 ~path_str:"/Notes/KeyTracks/KeyTrack/Notes/MidiNoteEvent" ~attr:None;
+    Upath2.query_of_path ~qid:8 "/Notes/KeyTracks/KeyTrack/MidiKey@Value";
+    Upath2.query_of_path ~qid:9 "/Notes/KeyTracks/KeyTrack/Notes/MidiNoteEvent";
   ]
 
   (** Group MidiNoteEvent results by their parent KeyTrack.
@@ -164,9 +164,9 @@ module SampleRef = struct
   } [@@deriving eq, patch] [@@patch.generate_diff]
 
   let queries = [
-    Upath2.query_of_path ~qid:0 ~path_str:"/FileRef/Path" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:1 ~path_str:"/FileRef/OriginalCrc" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:2 ~path_str:"/LastModDate" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:0 "/FileRef/Path@Value";
+    Upath2.query_of_path ~qid:1 "/FileRef/OriginalCrc@Value";
+    Upath2.query_of_path ~qid:2 "/LastModDate@Value";
   ]
 
   let make ~root_attrs:_ results =
@@ -199,16 +199,16 @@ module Fade = struct
   } [@@deriving eq, patch] [@@patch.generate_diff]
 
   let queries = [
-    Upath2.query_of_path ~qid:0 ~path_str:"/FadeInLength" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:1 ~path_str:"/FadeOutLength" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:2 ~path_str:"/ClipFadesAreInitialized" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:3 ~path_str:"/CrossfadeInState" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:4 ~path_str:"/FadeInCurveSkew" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:5 ~path_str:"/FadeInCurveSlope" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:6 ~path_str:"/FadeOutCurveSkew" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:7 ~path_str:"/FadeOutCurveSlope" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:8 ~path_str:"/IsDefaultFadeIn" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:9 ~path_str:"/IsDefaultFadeOut" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:0 "/FadeInLength@Value";
+    Upath2.query_of_path ~qid:1 "/FadeOutLength@Value";
+    Upath2.query_of_path ~qid:2 "/ClipFadesAreInitialized@Value";
+    Upath2.query_of_path ~qid:3 "/CrossfadeInState@Value";
+    Upath2.query_of_path ~qid:4 "/FadeInCurveSkew@Value";
+    Upath2.query_of_path ~qid:5 "/FadeInCurveSlope@Value";
+    Upath2.query_of_path ~qid:6 "/FadeOutCurveSkew@Value";
+    Upath2.query_of_path ~qid:7 "/FadeOutCurveSlope@Value";
+    Upath2.query_of_path ~qid:8 "/IsDefaultFadeIn@Value";
+    Upath2.query_of_path ~qid:9 "/IsDefaultFadeOut@Value";
   ]
 
   let make ~root_attrs:_ results =
@@ -252,32 +252,32 @@ module AudioClip = struct
   } [@@deriving eq, id, patch]
 
   let queries = [
-    Upath2.query_of_path ~qid:0 ~path_str:"/Name" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:1 ~path_str:"/CurrentStart" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:2 ~path_str:"/CurrentEnd" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:0 "/Name@Value";
+    Upath2.query_of_path ~qid:1 "/CurrentStart@Value";
+    Upath2.query_of_path ~qid:2 "/CurrentEnd@Value";
     (* Loop children *)
-    Upath2.query_of_path ~qid:3 ~path_str:"/Loop/LoopStart" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:4 ~path_str:"/Loop/LoopEnd" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:5 ~path_str:"/Loop/LoopOn" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:3 "/Loop/LoopStart@Value";
+    Upath2.query_of_path ~qid:4 "/Loop/LoopEnd@Value";
+    Upath2.query_of_path ~qid:5 "/Loop/LoopOn@Value";
     (* TimeSignature *)
-    Upath2.query_of_path ~qid:6 ~path_str:"/TimeSignature/TimeSignatures/RemoteableTimeSignature/Numerator" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:7 ~path_str:"/TimeSignature/TimeSignatures/RemoteableTimeSignature/Denominator" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:6 "/TimeSignature/TimeSignatures/RemoteableTimeSignature/Numerator@Value";
+    Upath2.query_of_path ~qid:7 "/TimeSignature/TimeSignatures/RemoteableTimeSignature/Denominator@Value";
     (* SampleRef *)
-    Upath2.query_of_path ~qid:8 ~path_str:"/SampleRef/FileRef/Path" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:9 ~path_str:"/SampleRef/FileRef/OriginalCrc" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:10 ~path_str:"/SampleRef/LastModDate" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:8 "/SampleRef/FileRef/Path@Value";
+    Upath2.query_of_path ~qid:9 "/SampleRef/FileRef/OriginalCrc@Value";
+    Upath2.query_of_path ~qid:10 "/SampleRef/LastModDate@Value";
     (* Fade enable + Fades children *)
-    Upath2.query_of_path ~qid:11 ~path_str:"/Fade" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:12 ~path_str:"/Fades/FadeInLength" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:13 ~path_str:"/Fades/FadeOutLength" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:14 ~path_str:"/Fades/ClipFadesAreInitialized" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:15 ~path_str:"/Fades/CrossfadeInState" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:16 ~path_str:"/Fades/FadeInCurveSkew" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:17 ~path_str:"/Fades/FadeInCurveSlope" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:18 ~path_str:"/Fades/FadeOutCurveSkew" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:19 ~path_str:"/Fades/FadeOutCurveSlope" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:20 ~path_str:"/Fades/IsDefaultFadeIn" ~attr:(Some "Value");
-    Upath2.query_of_path ~qid:21 ~path_str:"/Fades/IsDefaultFadeOut" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:11 "/Fade@Value";
+    Upath2.query_of_path ~qid:12 "/Fades/FadeInLength@Value";
+    Upath2.query_of_path ~qid:13 "/Fades/FadeOutLength@Value";
+    Upath2.query_of_path ~qid:14 "/Fades/ClipFadesAreInitialized@Value";
+    Upath2.query_of_path ~qid:15 "/Fades/CrossfadeInState@Value";
+    Upath2.query_of_path ~qid:16 "/Fades/FadeInCurveSkew@Value";
+    Upath2.query_of_path ~qid:17 "/Fades/FadeInCurveSlope@Value";
+    Upath2.query_of_path ~qid:18 "/Fades/FadeOutCurveSkew@Value";
+    Upath2.query_of_path ~qid:19 "/Fades/FadeOutCurveSlope@Value";
+    Upath2.query_of_path ~qid:20 "/Fades/IsDefaultFadeIn@Value";
+    Upath2.query_of_path ~qid:21 "/Fades/IsDefaultFadeOut@Value";
   ]
 
   let make ~root_attrs results =

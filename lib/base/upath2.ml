@@ -4,11 +4,40 @@
     sharing, evaluate all queries in a single pass over [Xml2] StAX events.
     No DOM allocation.
 
-    Supports all [Upath] features: MultiWildcard ([**]), SingleWildcard ([*]),
+    Supports all features: MultiWildcard ([**]), SingleWildcard ([*]),
     ParentNode ([..]), CurrentNode ([.]), Regex names, attribute constraints,
-    and Index. *)
+    Index, and attribute extraction ([@attr] on last component).
 
-(* --- Types --- *)
+    Syntax (aligned with Upath):
+    - [@attr] on last component → attribute extraction
+    - [@attr="value"] → exact match constraint
+    - [@attr=*] → existence constraint
+    - [@attr] on non-last components → existence constraint *)
+
+(* --- Types (ported from Upath, owned locally) --- *)
+
+type attribute_value = Exact of string | Any
+
+type attribute = {
+  name : string;
+  value : attribute_value;
+}
+
+type name_component =
+  | Raw of string
+  | Regex of string * Re.Pcre.regexp
+
+type path_component =
+  | Tag of name_component * attribute list
+  | Index of int * name_component option
+  | SingleWildcard of attribute list
+  | MultiWildcard of attribute list
+  | CurrentNode
+  | ParentNode
+
+exception Path_parse_error of string * string
+
+(* --- NFA types --- *)
 
 type query_id = int
 
@@ -24,8 +53,8 @@ type attr_constraint = {
 
 type query = {
   qid : query_id;
-  path : Upath.path_component list;  (** Parsed path from [Upath.parse_path] *)
-  attr : string option;              (** [None] = match element, [Some name] = extract attribute *)
+  path : path_component list;       (** Parsed path components *)
+  attr : string option;             (** [None] = match element, [Some name] = extract attribute *)
 }
 
 type match_result = {
@@ -70,6 +99,198 @@ type stack_frame = {
   text_buf : Buffer.t;
   frame_results : match_result list;  (* results created at this element's El_start *)
 }
+
+(* --- Angstrom parser (ported from Upath.Parser) --- *)
+
+module Parser = struct
+
+  open Angstrom
+
+  let is_identifier_char = function
+    | '/' | '[' | ']' | '@' | '=' | '*' | '\'' -> false
+    | _ -> true
+
+  let identifier = take_while1 is_identifier_char <?> "identifier"
+
+  let compile_regex pattern =
+    try
+      Re.Pcre.regexp pattern
+    with
+    | Re.Pcre.Parse_error | Re.Pcre.Not_supported ->
+      failwith (Printf.sprintf "Invalid PCRE regex pattern '%s'" pattern)
+
+  let p_quoted_regex =
+    let p_regex_content =
+      let p_escaped =
+        char '\\' *> any_char >>| fun c ->
+        "\\" ^ String.make 1 c
+      in
+      let p_unescaped = take_while1 (fun c -> c <> '\'' && c <> '\\') in
+      many (p_escaped <|> p_unescaped) >>| String.concat ""
+    in
+    char '\'' *> p_regex_content <* char '\'' >>= fun pattern ->
+    if pattern = "" then
+      fail "Invalid path: empty regex '' is not allowed"
+    else
+      return (Regex (pattern, compile_regex pattern) : name_component)
+
+  let p_name_component : name_component Angstrom.t =
+    choice [
+      p_quoted_regex;
+      identifier >>| fun name -> Raw name;
+    ]
+
+  let integer =
+    take_while1 (function '0'..'9' -> true | _ -> false)
+    >>| int_of_string
+        <?> "integer"
+
+  let p_quoted_string =
+    let p_escaped = char '\\' *> any_char >>| String.make 1 in
+    let p_unescaped = take_while1 (fun c -> c <> '"' && c <> '\\') in
+    let p_content = many (p_escaped <|> p_unescaped) >>| String.concat "" in
+    char '"' *> p_content <* char '"' <?> "quoted string"
+
+  let p_unquoted_string =
+    let p_escaped = char '\\' *> any_char >>| String.make 1 in
+    let is_value_terminator = function
+      | '@' | '/' | '[' | ']' -> true
+      | _ -> false
+    in
+    let p_unescaped = take_while1 (fun c -> c <> '\\' && not (is_value_terminator c))
+    in
+    many1 (p_escaped <|> p_unescaped) >>| String.concat "" <?> "unquoted string"
+
+  let p_attr_value =
+    let p_wildcard_val = char '*' *> return (Any : attribute_value) in
+    let p_quoted_val = p_quoted_string >>| fun s -> (Exact s : attribute_value) in
+    let p_unquoted_val = p_unquoted_string >>| fun s -> (Exact s : attribute_value) in
+    choice [
+      p_wildcard_val;
+      p_quoted_val;
+      p_unquoted_val;
+    ]
+
+  let p_attribute =
+    let p_key_value =
+      lift2 (fun name value -> ({ name; value } : attribute))
+        (char '@' *> identifier <* char '=')
+        p_attr_value
+    in
+    let p_key_only =
+      char '@' *> identifier >>| fun name -> ({ name; value = (Any : attribute_value) } : attribute)
+    in
+    p_key_value <|> p_key_only <?> "attribute"
+
+  let p_component : path_component Angstrom.t =
+    let p_current_node = char '.' *> return CurrentNode in
+    let p_parent_node = string ".." *> return ParentNode in
+    let p_index =
+      lift2 (fun tag index -> Index (index, tag))
+        (option None (p_name_component >>| Option.some))
+        (char '[' *> integer <* char ']')
+    in
+    let p_single_wildcard =
+      lift2 (fun _ attrs -> SingleWildcard attrs)
+        (char '*')
+        (many p_attribute)
+    in
+    let p_multi_wildcard =
+      lift2 (fun _ attrs -> MultiWildcard attrs)
+        (string "**")
+        (many p_attribute)
+    in
+    let p_tag =
+      lift2 (fun name attrs -> Tag (name, attrs))
+        p_name_component
+        (many p_attribute)
+    in
+    choice [ p_parent_node;
+             p_current_node;
+             p_index;
+             p_multi_wildcard;
+             p_single_wildcard;
+             p_tag ] <?> "path component"
+
+  let validate_path_components components =
+    let has_leading_parent =
+      match components with
+      | ParentNode :: _ -> true
+      | _ -> false
+    in
+    let rec find_invalid_pattern = function
+      | MultiWildcard _ :: MultiWildcard _ :: _
+      | MultiWildcard _ :: SingleWildcard _ :: _
+      | SingleWildcard _ :: MultiWildcard _ :: _ ->
+        Some "Invalid path: adjacent wildcard pairs '**/**', '**/*', and '*/**' are not allowed"
+      | MultiWildcard _ :: ParentNode :: _
+      | SingleWildcard _ :: ParentNode :: _ ->
+        Some "Invalid path: wildcard-parent adjacency '**/..' and '*/..' is not allowed"
+      | _ :: rest -> find_invalid_pattern rest
+      | [] -> None
+    in
+    if has_leading_parent then
+      fail "Invalid path: leading parent node '..' is not allowed"
+    else
+      match find_invalid_pattern components with
+      | Some msg -> fail msg
+      | None -> return components
+
+  let path_parser =
+    let optional_slash = option None (char '/' >>| fun _ -> Some ()) in
+    optional_slash *> sep_by1 (char '/') p_component >>= validate_path_components <?> "path"
+
+  let parse_path s =
+    try
+      match parse_string ~consume:All path_parser s with
+      | Ok p -> p
+      | Error msg -> raise (Path_parse_error (s, msg))
+    with
+    | Failure msg ->
+      raise (Path_parse_error (s, msg))
+
+end
+
+(* --- Post-processing: extract @attr from last component --- *)
+
+(** If the last [Tag] component has a bare [@attr] (value = Any), treat
+    it as extraction target. The attribute is kept as an existence
+    constraint (element must have the attribute) AND recorded in [attr].
+    Bare [@attr] on wildcards remains as existence constraint only. *)
+let extract_attr components =
+  let find_last_any (attrs : attribute list) =
+    let rec loop (rev_rest : attribute list) (elts : attribute list) =
+      match elts with
+      | [] -> None, List.rev rev_rest
+      | [ a ] ->
+        (match a.value with
+         | Any -> Some a.name, List.rev (a :: rev_rest)
+         | Exact _ -> None, List.rev (a :: rev_rest))
+      | a :: rest ->
+        (match a.value with
+         | Any ->
+           (match loop (a :: rev_rest) rest with
+            | Some name, kept -> Some name, kept
+            | None, kept -> None, a :: kept)
+         | Exact _ -> loop (a :: rev_rest) rest)
+    in
+    loop [] attrs
+  in
+  let rec process_last = function
+    | [] -> None, []
+    | [ Tag (name, attrs) ] ->
+      let attr, kept = find_last_any attrs in
+      attr, [ Tag (name, kept) ]
+    | [ SingleWildcard _ as wc ] -> None, [ wc ]
+    | [ MultiWildcard _ as wc ] -> None, [ wc ]
+    | [ Index _ as idx ] -> None, [ idx ]
+    | [ CurrentNode ] -> None, [ CurrentNode ]
+    | [ ParentNode ] -> None, [ ParentNode ]
+    | comp :: rest ->
+      let attr, rest' = process_last rest in
+      attr, comp :: rest'
+  in
+  process_last components
 
 (* --- Name / attribute matching --- *)
 
@@ -229,18 +450,18 @@ let minimize_nfa states start_id =
     end
   end
 
-(* --- Upath -> upath2 type conversion --- *)
+(* --- Name component / attribute conversion to NFA types --- *)
 
-let convert_name_component = function
-  | Upath.Raw s -> Exact s
-  | Upath.Regex (p, re) -> Regex (p, re)
+let name_component_to_matcher = function
+  | Raw s -> Exact s
+  | Regex (p, re) -> Regex (p, re)
 
-let convert_attributes (attrs : Upath.attribute list) : attr_constraint list =
-  List.map (fun (a : Upath.attribute) ->
+let attributes_to_constraints (attrs : attribute list) : attr_constraint list =
+  List.map (fun (a : attribute) ->
       { name = a.name;
         value = match a.value with
-          | Upath.Exact v -> Some v
-          | Upath.Any -> None }
+          | Exact v -> Some v
+          | Any -> None }
     ) attrs
 
 (* --- Compilation --- *)
@@ -270,9 +491,9 @@ let compile (queries : query list) =
           state.accepting <- (q.qid, []) :: state.accepting
         | comp :: rest ->
           match comp with
-          | Upath.Tag (name_comp, attrs) ->
-            let matcher = convert_name_component name_comp in
-            let cattrs = convert_attributes attrs in
+          | Tag (name_comp, attrs) ->
+            let matcher = name_component_to_matcher name_comp in
+            let cattrs = attributes_to_constraints attrs in
             (match List.find_opt (fun t -> equal_transition_key t matcher cattrs None None) state.transitions with
              | Some t ->
                walk rest (Hashtbl.find states t.target)
@@ -282,8 +503,8 @@ let compile (queries : query list) =
                incr next_tid;
                state.transitions <- { tid; matcher; constraints = cattrs; target = new_state.id; index = None; depth_limit = None } :: state.transitions;
                walk rest new_state)
-          | Upath.SingleWildcard attrs ->
-            let cattrs = convert_attributes attrs in
+          | SingleWildcard attrs ->
+            let cattrs = attributes_to_constraints attrs in
             let depth_limit = if state.id = start_state.id then Some 2 else None in
             (match List.find_opt (fun t -> equal_transition_key t Any cattrs None depth_limit) state.transitions with
              | Some t ->
@@ -294,8 +515,8 @@ let compile (queries : query list) =
                incr next_tid;
                state.transitions <- { tid; matcher = Any; constraints = cattrs; target = new_state.id; index = None; depth_limit } :: state.transitions;
                walk rest new_state)
-          | Upath.MultiWildcard attrs ->
-            let cattrs = convert_attributes attrs in
+          | MultiWildcard attrs ->
+            let cattrs = attributes_to_constraints attrs in
             (* Find or create a wildcard-loop state *)
             let wl_state =
               match List.find_opt (fun t ->
@@ -318,17 +539,17 @@ let compile (queries : query list) =
               (* Continue compiling rest from the wildcard state *)
               walk rest wl_state
             end
-          | Upath.ParentNode ->
+          | ParentNode ->
             (* Add end_transition: target state activates when El_end fires *)
             let target_state = make_state () in
             state.end_transitions <- target_state.id :: state.end_transitions;
             walk rest target_state
-          | Upath.CurrentNode ->
+          | CurrentNode ->
             (* Epsilon: skip to next component in same state *)
             walk rest state
-          | Upath.Index (n, name_comp_opt) ->
+          | Index (n, name_comp_opt) ->
             let matcher = match name_comp_opt with
-              | Some nc -> convert_name_component nc
+              | Some nc -> name_component_to_matcher nc
               | None -> Any
             in
             let depth_limit = if state.id = start_state.id then Some 2 else None in
@@ -482,15 +703,14 @@ let evaluate nfa stream =
     ) stream;
   List.rev !results
 
-(* --- Convenience API --- *)
+(* --- API --- *)
 
-(** Backward-compatible constructor from string list *)
-let simple_query ~qid ~path ~attr =
-  { qid; path = List.map (fun s -> Upath.Tag (Upath.Raw s, [])) path; attr }
-
-(** Constructor from parsed path *)
-let query_of_path ~qid ~path_str ~attr =
-  { qid; path = Upath.parse_path path_str; attr }
+(** Constructor from query string. Parses the path, extracts attribute
+    from the last component's bare [@attr] if present. *)
+let query_of_path ~qid query_str =
+  let parsed = Parser.parse_path query_str in
+  let attr, path = extract_attr parsed in
+  { qid; path; attr }
 
 (* --- Helpers --- *)
 

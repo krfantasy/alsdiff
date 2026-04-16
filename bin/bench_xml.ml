@@ -212,7 +212,7 @@ let run_dom filename =
 (* --- Streaming pipeline --- *)
 
 let to_upath2_query q : Upath2.query =
-  { Upath2.qid = q.id; path = Upath.parse_path q.path; attr = None }
+  Upath2.query_of_path ~qid:q.id q.path
 
 let run_streaming filename =
   let xml_str = File.decompress_als_to_string filename in
