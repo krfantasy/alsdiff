@@ -84,6 +84,7 @@ let queries = [
   Upath2.query_of_path "/EnvelopeTarget/PointeeId@Value";
   Upath2.query_of_path "/Automation/Events/'(Float|Int|Enum)Event'";
 ]
+let nfa = lazy (Upath2.compile queries)
 
 let make ~root_attrs results =
   let id = int_of_string (List.assoc "Id" root_attrs) in
@@ -97,7 +98,5 @@ let make ~root_attrs results =
 
 let create (xml : Xml.t) : t =
   let root_attrs = (match xml with Xml.Element { attrs; _ } -> attrs | _ -> []) in
-  let stream = Upath2.stream_of_xml xml in
-  let nfa = Upath2.compile queries in
-  let results = Upath2.evaluate nfa stream in
+  let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
   make ~root_attrs results

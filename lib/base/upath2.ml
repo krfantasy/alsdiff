@@ -572,7 +572,7 @@ let compile (queries : query list) =
 
 (* --- Evaluation --- *)
 
-let evaluate nfa stream =
+let evaluate_core nfa ~get_depth ~feed_signals =
   let results = ref [] in
   let fire_counts : (int, int) Hashtbl.t = Hashtbl.create 16 in
   let new_frame_results = ref [] in
@@ -585,7 +585,7 @@ let evaluate nfa stream =
     }] in
   let new_active = ref [] in
   let end_targets = ref [] in
-  Xml2.iter_signals (fun sigv ->
+  feed_signals (fun sigv ->
       match sigv with
       | Xml2.El_start (name, attrs) ->
         let frame = List.hd !stack in
@@ -604,7 +604,7 @@ let evaluate nfa stream =
                 if match_name name t.matcher && check_attrs attrs t.constraints then begin
                   let depth_ok = match t.depth_limit with
                     | None -> true
-                    | Some d -> Xml2.depth stream = d
+                    | Some d -> get_depth () = d
                   in
                   if depth_ok then begin
                     let fire = match t.index with
@@ -623,7 +623,7 @@ let evaluate nfa stream =
                       List.iter (fun (qid, acc_attrs) ->
                           if check_attrs attrs acc_attrs then begin
                             let r = { query_id = qid; element_name = name;
-                                      attrs; depth = Xml2.depth stream;
+                                      attrs; depth = get_depth ();
                                       text_content = None } in
                             results := r :: !results;
                             new_frame_results := r :: !new_frame_results
@@ -638,7 +638,7 @@ let evaluate nfa stream =
               List.iter (fun (qid, acc_attrs) ->
                   if check_attrs attrs acc_attrs then begin
                     let r = { query_id = qid; element_name = name;
-                              attrs; depth = Xml2.depth stream;
+                              attrs; depth = get_depth ();
                               text_content = None } in
                     results := r :: !results;
                     new_frame_results := r :: !new_frame_results
@@ -680,7 +680,7 @@ let evaluate nfa stream =
                    if check_attrs popped.element_attrs acc_attrs then
                      results := { query_id = qid; element_name = popped.element_name;
                                   attrs = popped.element_attrs;
-                                  depth = Xml2.depth stream;
+                                  depth = get_depth ();
                                   text_content = None } :: !results
                  ) target_state.accepting
              ) !end_targets;
@@ -699,8 +699,30 @@ let evaluate nfa stream =
         (match !stack with
          | frame :: _ -> Buffer.add_string frame.text_buf text
          | [] -> ())
-    ) stream;
+    );
   List.rev !results
+
+let evaluate nfa stream =
+  evaluate_core nfa
+    ~get_depth:(fun () -> Xml2.depth stream)
+    ~feed_signals:(fun callback -> Xml2.iter_signals callback stream)
+
+let evaluate_on_dom nfa xml =
+  let depth_ref = ref 0 in
+  evaluate_core nfa
+    ~get_depth:(fun () -> !depth_ref)
+    ~feed_signals:(fun callback ->
+        let rec walk = function
+          | Xml.Element { name; attrs; childs } ->
+            incr depth_ref;
+            callback (Xml2.El_start (name, attrs));
+            List.iter walk childs;
+            decr depth_ref;
+            callback Xml2.El_end
+          | Xml.Data text ->
+            callback (Xml2.Data text)
+        in
+        walk xml)
 
 (* --- API --- *)
 
@@ -744,11 +766,6 @@ let query_float_attr results qid attr =
 let query_bool_attr results qid attr =
   Option.bind (query_attr results qid attr)
     (fun x -> String.lowercase_ascii x |> bool_of_string_opt)
-
-(* --- DOM-to-stream bridge --- *)
-
-let stream_of_xml xml =
-  Xml2.stream_from_string (Fmt.str "%a" Xml.pp_compact xml)
 
 (* --- Pretty printers --- *)
 

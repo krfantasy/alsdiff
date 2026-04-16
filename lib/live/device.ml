@@ -198,6 +198,7 @@ module GenericParam = struct
     Upath2.query_of_path "/MidiCCOnOffThresholds/Min@Value";
     Upath2.query_of_path "/MidiCCOnOffThresholds/Max@Value";
   ]
+  let nfa = lazy (Upath2.compile queries)
 
   let make ~root_name ~parse_value results =
     let name = root_name in
@@ -211,9 +212,7 @@ module GenericParam = struct
 
   let create ~parse_value xml =
     let root_name = Xml.get_name xml in
-    let stream = Upath2.stream_of_xml xml in
-    let nfa = Upath2.compile queries in
-    let results = Upath2.evaluate nfa stream in
+    let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
     make ~root_name ~parse_value results
 
   let create_int_manual xml =
@@ -247,6 +246,7 @@ module DeviceParam = struct
   let id_hash t = Hashtbl.hash t.base.name
 
   let queries = GenericParam.queries
+  let nfa = lazy (Upath2.compile queries)
 
   let make ~path results =
     let name = param_name_from_path path in
@@ -262,9 +262,7 @@ module DeviceParam = struct
   let create (path : string) (xml : Xml.t) : t =
     match xml with
     | Xml.Element _ ->
-      let stream = Upath2.stream_of_xml xml in
-      let nfa = Upath2.compile queries in
-      let results = Upath2.evaluate nfa stream in
+      let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
       make ~path results
     | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating DeviceParam"))
 
@@ -299,6 +297,7 @@ module PresetRef = struct
     Upath2.query_of_path "/FileRef/OriginalCrc@Value";
     Upath2.query_of_path "/DeviceId@Name";
   ]
+  let nfa = lazy (Upath2.compile queries)
 
   let make ~root_name ~root_attrs results =
     let id = int_of_string (List.assoc "Id" root_attrs) in
@@ -325,9 +324,7 @@ module PresetRef = struct
   let create (xml : Xml.t) : t =
     match xml with
     | Xml.Element { name = root_name; attrs = root_attrs; _ } ->
-      let stream = Upath2.stream_of_xml xml in
-      let nfa = Upath2.compile queries in
-      let results = Upath2.evaluate nfa stream in
+      let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
       make ~root_name ~root_attrs results
     | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating PresetRef"))
 end
@@ -357,6 +354,7 @@ module PatchRef = struct
     Upath2.query_of_path "/FileRef/OriginalCrc@Value";
     Upath2.query_of_path "/LastModDate@Value";
   ]
+  let nfa = lazy (Upath2.compile queries)
 
   let make ~root_attrs results =
     let id = int_of_string (List.assoc "Id" root_attrs) in
@@ -374,9 +372,7 @@ module PatchRef = struct
   let create (xml : Xml.t) : t =
     match xml with
     | Xml.Element { name = "MxPatchRef"; attrs = root_attrs; _ } ->
-      let stream = Upath2.stream_of_xml xml in
-      let nfa = Upath2.compile queries in
-      let results = Upath2.evaluate nfa stream in
+      let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
       make ~root_attrs results
     | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating PatchRef (expected MxPatchRef)"))
 end
@@ -403,6 +399,7 @@ module PluginParam = struct
     Upath2.query_of_path "/ParameterValue/MidiCCOnOffThresholds/Min@Value";
     Upath2.query_of_path "/ParameterValue/MidiCCOnOffThresholds/Max@Value";
   ]
+  let nfa = lazy (Upath2.compile queries)
 
   let make ~root_name ~root_attrs results =
     let id = int_of_string (List.assoc "Id" root_attrs) in
@@ -428,9 +425,7 @@ module PluginParam = struct
   let create (xml : Xml.t) : t =
     let root_name = Xml.get_name xml in
     let root_attrs = (match xml with Xml.Element { attrs; _ } -> attrs | _ -> []) in
-    let stream = Upath2.stream_of_xml xml in
-    let nfa = Upath2.compile queries in
-    let results = Upath2.evaluate nfa stream in
+    let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
     try make ~root_name ~root_attrs results
     with Failure msg -> raise (Xml.Xml_error (xml, msg))
 
@@ -674,6 +669,7 @@ module Max4LiveParam = struct
     Upath2.query_of_path "/Timeable/MidiCCOnOffThresholds/Max@Value";
     Upath2.query_of_path "/Names/Name/Name@Value";
   ]
+  let nfa = lazy (Upath2.compile queries)
 
   let make ~root_name ~root_attrs results =
     let id = int_of_string (List.assoc "Id" root_attrs) in
@@ -710,9 +706,7 @@ module Max4LiveParam = struct
   let create (_path : string) (xml : Xml.t) : t =
     let root_name = Xml.get_name xml in
     let root_attrs = (match xml with Xml.Element { attrs; _ } -> attrs | _ -> []) in
-    let stream = Upath2.stream_of_xml xml in
-    let nfa = Upath2.compile queries in
-    let results = Upath2.evaluate nfa stream in
+    let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
     make ~root_name ~root_attrs results
 
   let create_from_upath_find (path, xml) = create path xml
@@ -748,6 +742,7 @@ module MixerDevice = struct
   let queries =
     dp_queries "On" @ dp_queries "Speaker"
     @ dp_queries "Volume" @ dp_queries "Panorama"
+  let nfa = lazy (Upath2.compile queries)
 
   let make_dp results ~path ~qid_base =
     let name = param_name_from_path path in
@@ -772,9 +767,7 @@ module MixerDevice = struct
   let create (xml : Xml.t) : t =
     match xml with
     | Xml.Element { name = "MixerDevice"; _ } ->
-      let stream = Upath2.stream_of_xml xml in
-      let nfa = Upath2.compile queries in
-      let results = Upath2.evaluate nfa stream in
+      let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
       make results
     | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating MixerDevice"))
 
@@ -832,6 +825,7 @@ module Snapshot = struct
     Upath2.query_of_path "/SnapshotName@Value";
     Upath2.query_of_path "/'MacroValues\\.[0-9]+'@Value";
   ]
+  let nfa = lazy (Upath2.compile queries)
 
   let make ~root_attrs results =
     let id = int_of_string (List.assoc "Id" root_attrs) in
@@ -850,9 +844,7 @@ module Snapshot = struct
   let create (xml : Xml.t) : t =
     match xml with
     | Xml.Element { name = "MacroSnapshot"; attrs = root_attrs; _ } ->
-      let stream = Upath2.stream_of_xml xml in
-      let nfa = Upath2.compile queries in
-      let results = Upath2.evaluate nfa stream in
+      let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
       make ~root_attrs results
     | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating Snapshot"))
 
@@ -1219,13 +1211,12 @@ module RegularDevice = struct
     Upath2.query_of_path "/On/MidiCCOnOffThresholds/Min@Value";
     Upath2.query_of_path "/On/MidiCCOnOffThresholds/Max@Value";
   ]
+  let nfa = lazy (Upath2.compile queries)
 
   let create (xml : Xml.t) : t =
     match xml with
     | Xml.Element { name; attrs = root_attrs; _ } ->
-      let stream = Upath2.stream_of_xml xml in
-      let nfa = Upath2.compile queries in
-      let results = Upath2.evaluate nfa stream in
+      let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
       let id = int_of_string (List.assoc "Id" root_attrs) in
       let pointee = Option.get (Upath2.query_int_attr results 0 "Id") in
       (* PresetRef from inlined queries *)
@@ -1332,13 +1323,12 @@ module PluginDevice = struct
     Upath2.query_of_path "/On/MidiCCOnOffThresholds/Min@Value";
     Upath2.query_of_path "/On/MidiCCOnOffThresholds/Max@Value";
   ]
+  let nfa = lazy (Upath2.compile queries)
 
   let create (xml : Xml.t) : t =
     match xml with
     | Xml.Element { name; attrs = root_attrs; _ } ->
-      let stream = Upath2.stream_of_xml xml in
-      let nfa = Upath2.compile queries in
-      let results = Upath2.evaluate nfa stream in
+      let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
       let id = int_of_string (List.assoc "Id" root_attrs) in
       let pointee = Option.get (Upath2.query_int_attr results 0 "Id") in
       (* PresetRef from inlined queries *)
@@ -1488,13 +1478,12 @@ module GroupDevice = struct
     Upath2.query_of_path "/On/MidiCCOnOffThresholds/Min@Value";
     Upath2.query_of_path "/On/MidiCCOnOffThresholds/Max@Value";
   ]
+  let nfa = lazy (Upath2.compile queries)
 
   let create (device_creator : Xml.t -> device) (xml : Xml.t) : t =
     match xml with
     | Xml.Element { name; attrs = root_attrs; _ } ->
-      let stream = Upath2.stream_of_xml xml in
-      let nfa = Upath2.compile queries in
-      let results = Upath2.evaluate nfa stream in
+      let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
       let id = int_of_string (List.assoc "Id" root_attrs) in
       let pointee = Option.get (Upath2.query_int_attr results 0 "Id") in
       (* PresetRef from inlined queries *)
@@ -1632,13 +1621,12 @@ module Max4LiveDevice = struct
     Upath2.query_of_path "/On/MidiCCOnOffThresholds/Min@Value";
     Upath2.query_of_path "/On/MidiCCOnOffThresholds/Max@Value";
   ]
+  let nfa = lazy (Upath2.compile queries)
 
   let create (xml : Xml.t) : t =
     match xml with
     | Xml.Element { name; attrs = root_attrs; _ } ->
-      let stream = Upath2.stream_of_xml xml in
-      let nfa = Upath2.compile queries in
-      let results = Upath2.evaluate nfa stream in
+      let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
       let id = int_of_string (List.assoc "Id" root_attrs) in
       let pointee = Option.get (Upath2.query_int_attr results 0 "Id") in
       (* PresetRef from inlined queries *)

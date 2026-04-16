@@ -9,6 +9,7 @@ module TimeSignature = struct
     Upath2.query_of_path "/Numerator@Value";
     Upath2.query_of_path "/Denominator@Value";
   ]
+  let nfa = lazy (Upath2.compile queries)
 
   let make ~root_attrs:_ results =
     let numer = Option.get (Upath2.query_int_attr results 0 "Value") in
@@ -17,9 +18,7 @@ module TimeSignature = struct
 
   let create (xml : Xml.t) : t =
     let root_attrs = (match xml with Xml.Element { attrs; _ } -> attrs | _ -> []) in
-    let stream = Upath2.stream_of_xml xml in
-    let nfa = Upath2.compile queries in
-    let results = Upath2.evaluate nfa stream in
+    let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
     make ~root_attrs results
 end
 
@@ -66,6 +65,7 @@ module Loop = struct
     Upath2.query_of_path "/LoopEnd@Value";
     Upath2.query_of_path "/LoopOn@Value";
   ]
+  let nfa = lazy (Upath2.compile queries)
 
   let make ~root_attrs:_ results =
     let start_time = Option.get (Upath2.query_float_attr results 0 "Value") in
@@ -75,9 +75,7 @@ module Loop = struct
 
   let create (xml : Xml.t) : t =
     let root_attrs = (match xml with Xml.Element { attrs; _ } -> attrs | _ -> []) in
-    let stream = Upath2.stream_of_xml xml in
-    let nfa = Upath2.compile queries in
-    let results = Upath2.evaluate nfa stream in
+    let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
     make ~root_attrs results
 end
 
@@ -108,6 +106,7 @@ module MidiClip = struct
     Upath2.query_of_path "/Notes/KeyTracks/KeyTrack/MidiKey@Value";
     Upath2.query_of_path "/Notes/KeyTracks/KeyTrack/Notes/MidiNoteEvent";
   ]
+  let nfa = lazy (Upath2.compile queries)
 
   (** Group MidiNoteEvent results by their parent KeyTrack.
       In the XML, MidiNoteEvents appear BEFORE their sibling MidiKey element:
@@ -149,9 +148,7 @@ module MidiClip = struct
 
   let create (xml : Xml.t) : t =
     let root_attrs = (match xml with Xml.Element { attrs; _ } -> attrs | _ -> []) in
-    let stream = Upath2.stream_of_xml xml in
-    let nfa = Upath2.compile queries in
-    let results = Upath2.evaluate nfa stream in
+    let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
     make ~root_attrs results
 end
 
@@ -168,6 +165,7 @@ module SampleRef = struct
     Upath2.query_of_path "/FileRef/OriginalCrc@Value";
     Upath2.query_of_path "/LastModDate@Value";
   ]
+  let nfa = lazy (Upath2.compile queries)
 
   let make ~root_attrs:_ results =
     let file_path = Option.get (Upath2.query_attr results 0 "Value") in
@@ -177,9 +175,7 @@ module SampleRef = struct
 
   let create (xml : Xml.t) : t =
     let root_attrs = (match xml with Xml.Element { attrs; _ } -> attrs | _ -> []) in
-    let stream = Upath2.stream_of_xml xml in
-    let nfa = Upath2.compile queries in
-    let results = Upath2.evaluate nfa stream in
+    let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
     make ~root_attrs results
 end
 
@@ -210,6 +206,7 @@ module Fade = struct
     Upath2.query_of_path "/IsDefaultFadeIn@Value";
     Upath2.query_of_path "/IsDefaultFadeOut@Value";
   ]
+  let nfa = lazy (Upath2.compile queries)
 
   let make ~root_attrs:_ results =
     let fade_in_length = Option.get (Upath2.query_float_attr results 0 "Value") in
@@ -231,9 +228,7 @@ module Fade = struct
 
   let create (xml : Xml.t) : t =
     let root_attrs = (match xml with Xml.Element { attrs; _ } -> attrs | _ -> []) in
-    let stream = Upath2.stream_of_xml xml in
-    let nfa = Upath2.compile queries in
-    let results = Upath2.evaluate nfa stream in
+    let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
     make ~root_attrs results
 end
 
@@ -279,6 +274,7 @@ module AudioClip = struct
     Upath2.query_of_path "/Fades/IsDefaultFadeIn@Value";
     Upath2.query_of_path "/Fades/IsDefaultFadeOut@Value";
   ]
+  let nfa = lazy (Upath2.compile queries)
 
   let make ~root_attrs results =
     let id = int_of_string (List.assoc "Id" root_attrs) in
@@ -321,9 +317,7 @@ module AudioClip = struct
 
   let create (xml : Xml.t) : t =
     let root_attrs = (match xml with Xml.Element { attrs; _ } -> attrs | _ -> []) in
-    let stream = Upath2.stream_of_xml xml in
-    let nfa = Upath2.compile queries in
-    let results = Upath2.evaluate nfa stream in
+    let results = Upath2.evaluate_on_dom (Lazy.force nfa) xml in
     make ~root_attrs results
 
   let diff (old_clip : t) (new_clip : t) : Patch.t =

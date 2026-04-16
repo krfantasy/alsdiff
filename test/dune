@@ -185,6 +185,11 @@
  (libraries alsdiff_base alcotest))
 
 (test
+ (name test_upath2_dom)
+ (modules test_upath2_dom)
+ (libraries alsdiff_base alcotest))
+
+(test
  (name test_upath2_regex)
  (modules test_upath2_regex)
  (libraries alsdiff_base alcotest)
