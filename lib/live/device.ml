@@ -141,6 +141,32 @@ module MIDIMapping = struct
 
   let create_opt (xml : Xml.t) : t option = try Some (create xml) with _ -> None
 
+  (** [make_opt results ~qid_base] constructs a MIDIMapping from Upath2 results.
+      Expects 8 consecutive qids starting at qid_base:
+      0=NoteOrController, 1=Channel, 2=IsNote, 3=ControllerMapMode,
+      4=MidiControllerRange/Min, 5=Max, 6=MidiCCOnOffThresholds/Min, 7=Max *)
+  let make_opt results ~qid_base : t option =
+    let is_note = Upath2.query_bool_attr results (qid_base + 2) "Value"
+      |> Option.value ~default:false in
+    let map_mode = Upath2.query_int_attr results (qid_base + 3) "Value"
+      |> Option.value ~default:0 in
+    if is_note && map_mode <> 0 then begin
+      let target = Upath2.query_int_attr results (qid_base + 0) "Value"
+        |> Option.value ~default:0 in
+      let channel = Upath2.query_int_attr results (qid_base + 1) "Value"
+        |> Option.value ~default:0 in
+      let cont_min = Upath2.query_int_attr results (qid_base + 4) "Value" in
+      let cont_max = Upath2.query_int_attr results (qid_base + 5) "Value" in
+      let onoff_min = Upath2.query_int_attr results (qid_base + 6) "Value" in
+      let onoff_max = Upath2.query_int_attr results (qid_base + 7) "Value" in
+      match (cont_min, cont_max), (onoff_min, onoff_max) with
+      | (Some l, Some h), (None, None) ->
+        Some { target; channel; kind = Continuous; low = l; high = h }
+      | (None, None), (Some l, Some h) ->
+        Some { target; channel; kind = OnOff; low = l; high = h }
+      | _ -> None
+    end else None
+
   (** [create_head_key_midi xml] create a [MIDIMapping] from a [<HeadKeyMidi></HeadKeyMidi>] element *)
   let create_head_key_midi (xml : Xml.t) : t =
     let target = Upath.get_int_attr "/NoteOrController" "Value" xml in
@@ -158,24 +184,49 @@ module GenericParam = struct
     mapping : MIDIMapping.t option;  [@patch.skip]
   } [@@deriving eq, patch] [@@patch.generate_diff]
 
-  let create ~parse_value xml =
-    let name = Xml.get_name xml in
-    let value = parse_value xml in
-    let automation = Upath.get_int_attr_opt "/AutomationTarget" "Id" xml
+  let queries = [
+    Upath2.query_of_path ~qid:0 ~path_str:"/AutomationTarget" ~attr:(Some "Id");
+    Upath2.query_of_path ~qid:1 ~path_str:"/ModulationTarget" ~attr:(Some "Id");
+    Upath2.query_of_path ~qid:2 ~path_str:"/Manual" ~attr:(Some "Value");
+    (* MIDIMapping: qid 3-10 *)
+    Upath2.query_of_path ~qid:3  ~path_str:"/KeyMidi/NoteOrController" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:4  ~path_str:"/KeyMidi/Channel" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:5  ~path_str:"/KeyMidi/IsNote" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:6  ~path_str:"/KeyMidi/ControllerMapMode" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:7  ~path_str:"/MidiControllerRange/Min" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:8  ~path_str:"/MidiControllerRange/Max" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:9  ~path_str:"/MidiCCOnOffThresholds/Min" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:10 ~path_str:"/MidiCCOnOffThresholds/Max" ~attr:(Some "Value");
+  ]
+
+  let make ~root_name ~parse_value results =
+    let name = root_name in
+    let value = parse_value results in
+    let automation = Upath2.query_int_attr results 0 "Id"
       |> Option.value ~default:0 in
-    let modulation = Upath.get_int_attr_opt "/ModulationTarget" "Id" xml
+    let modulation = Upath2.query_int_attr results 1 "Id"
       |> Option.value ~default:0 in
-    let mapping = MIDIMapping.create_opt xml in
+    let mapping = MIDIMapping.make_opt results ~qid_base:3 in
     { name; value; automation; modulation; mapping }
 
+  let create ~parse_value xml =
+    let root_name = Xml.get_name xml in
+    let stream = Upath2.stream_of_xml xml in
+    let nfa = Upath2.compile queries in
+    let results = Upath2.evaluate nfa stream in
+    make ~root_name ~parse_value results
+
   let create_int_manual xml =
-    create xml ~parse_value:(fun x -> Int (Upath.get_int_attr "/Manual" "Value" x))
+    create xml ~parse_value:(fun results ->
+        Int (Option.get (Upath2.query_int_attr results 2 "Value")))
 
   let create_float_manual xml =
-    create xml ~parse_value:(fun x -> Float (Upath.get_float_attr "/Manual" "Value" x))
+    create xml ~parse_value:(fun results ->
+        Float (Option.get (Upath2.query_float_attr results 2 "Value")))
 
   let create_bool_manual xml =
-    create xml ~parse_value:(fun x -> Bool (Upath.get_bool_attr "/Manual" "Value" x))
+    create xml ~parse_value:(fun results ->
+        Bool (Option.get (Upath2.query_bool_attr results 2 "Value")))
 end
 
 
@@ -195,27 +246,26 @@ module DeviceParam = struct
   let has_same_id a b = a.base.name = b.base.name
   let id_hash t = Hashtbl.hash t.base.name
 
-  (** [create path xml] creates a device parameter from a Device XML element.
-      It raises [Failure "Invalid XML element for creating DeviceParam"] if the XML
-      is not a valid element, and raises [Failure "Failed to parse device parameter"]
-      if the parameter value cannot be parsed.
+  let queries = GenericParam.queries
 
-      @param path the path relative to the device XML element
-      @param xml the device XML element
-  *)
+  let make ~path results =
+    let name = param_name_from_path path in
+    let parse_value results =
+      let literal = Option.get (Upath2.query_attr results 2 "Value") in
+      match literal with
+      | "true" | "false" -> Bool (bool_of_string literal)
+      | _ -> Float (float_of_string literal)
+    in
+    let base = GenericParam.make ~root_name:name ~parse_value results in
+    { base }
+
   let create (path : string) (xml : Xml.t) : t =
     match xml with
     | Xml.Element _ ->
-      let name = param_name_from_path path in
-      let parse_value = fun xml ->
-        let literal = Upath.get_attr "/Manual" "Value" xml in
-        match literal with
-        | "true" | "false" -> Bool (bool_of_string literal)
-        | _ -> Float (float_of_string literal)
-      in
-      let base = GenericParam.create ~parse_value xml in
-      let name_updated_base = { base with name } in
-      { base = name_updated_base }
+      let stream = Upath2.stream_of_xml xml in
+      let nfa = Upath2.compile queries in
+      let results = Upath2.evaluate nfa stream in
+      make ~path results
     | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating DeviceParam"))
 
   let create_from_upath_find (path, xml) = create path xml
@@ -240,43 +290,45 @@ module PresetRef = struct
     crc : int;
   } [@@deriving eq, id, patch] [@@patch.generate_diff]
 
+  let queries = [
+    Upath2.query_of_path ~qid:0 ~path_str:"/FileRef/RelativePath" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:1 ~path_str:"/FileRef/Path" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:2 ~path_str:"/FileRef/LivePackName" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:3 ~path_str:"/FileRef/LivePackId" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:4 ~path_str:"/FileRef/OriginalFileSize" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:5 ~path_str:"/FileRef/OriginalCrc" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:6 ~path_str:"/DeviceId" ~attr:(Some "Name");
+  ]
+
+  let make ~root_name ~root_attrs results =
+    let id = int_of_string (List.assoc "Id" root_attrs) in
+    let preset_type = match root_name with
+      | "FilePresetRef" -> UserPreset
+      | "AbletonDefaultPresetRef" -> DefaultPreset
+      | _ -> failwith "Unknown PresetRef type"
+    in
+    let relative_path = Option.get (Upath2.query_attr results 0 "Value") in
+    let path = Option.get (Upath2.query_attr results 1 "Value") in
+    let preset_file_name = Filename.basename path |> Filename.remove_extension in
+    let name = match preset_type with
+      | UserPreset -> preset_file_name
+      | DefaultPreset ->
+        let device_name = Option.value (Upath2.query_attr results 6 "Name") ~default:"" in
+        if device_name <> "" then device_name else preset_file_name
+    in
+    let pack_name = Option.get (Upath2.query_attr results 2 "Value") in
+    let pack_id = Upath2.query_int_attr results 3 "Value" |> Option.value ~default:0 in
+    let file_size = Option.get (Upath2.query_int_attr results 4 "Value") in
+    let crc = Upath2.query_int_attr results 5 "Value" |> Option.value ~default:0 in
+    { id; name; preset_type; relative_path; path; pack_name; pack_id; file_size; crc }
+
   let create (xml : Xml.t) : t =
     match xml with
-    | Xml.Element { name=tag; childs; _ } ->
-      let id = Xml.get_int_attr "Id" xml in
-      let preset_type =
-        match tag with
-        | "FilePresetRef" -> UserPreset
-        | "AbletonDefaultPresetRef" -> DefaultPreset
-        | _ -> raise (Xml.Xml_error (xml, "Unknown PresetRef type" ^ tag))
-      in
-
-      (* Extract FileRef element *)
-      let file_ref_xml =
-        try List.find (function
-            | Xml.Element { name = "FileRef"; _ } -> true
-            | _ -> false) childs
-        with Not_found -> raise (Xml.Xml_error (xml, "FileRef element not found in PresetRef"))
-      in
-
-      (* Extract all the required fields from FileRef *)
-      let relative_path = Upath.get_attr "/RelativePath" "Value" file_ref_xml in
-      let path = Upath.get_attr "/Path" "Value" file_ref_xml in
-
-      let preset_file_name = Upath.get_attr "/FileRef/Path" "Value" xml |> Filename.basename |> Filename.remove_extension in
-      let name = match preset_type with
-        | UserPreset -> preset_file_name
-        | DefaultPreset ->
-          let device_name = Upath.get_attr "/DeviceId" "Name" xml in
-          if device_name <> "" then device_name else preset_file_name
-      in
-
-      let pack_name = Upath.get_attr "/LivePackName" "Value" file_ref_xml in
-      let pack_id = Upath.get_int_attr_opt "/LivePackId" "Value" file_ref_xml |> Option.value ~default:0 in
-      let file_size = Upath.get_int_attr "/OriginalFileSize" "Value" file_ref_xml in
-      let crc = Upath.get_int_attr_opt "/OriginalCrc" "Value" file_ref_xml |> Option.value ~default:0 in
-
-      { id; name; preset_type; relative_path; path; pack_name; pack_id; file_size; crc }
+    | Xml.Element { name = root_name; attrs = root_attrs; _ } ->
+      let stream = Upath2.stream_of_xml xml in
+      let nfa = Upath2.compile queries in
+      let results = Upath2.evaluate nfa stream in
+      make ~root_name ~root_attrs results
     | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating PresetRef"))
 end
 
@@ -296,38 +348,36 @@ module PatchRef = struct
     last_mod_date : int;  (* LastModDate Value attribute - UNIX timestamp *)
   } [@@deriving eq, id, patch] [@@patch.generate_diff]
 
+  let queries = [
+    Upath2.query_of_path ~qid:0 ~path_str:"/FileRef/RelativePath" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:1 ~path_str:"/FileRef/Path" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:2 ~path_str:"/FileRef/LivePackName" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:3 ~path_str:"/FileRef/LivePackId" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:4 ~path_str:"/FileRef/OriginalFileSize" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:5 ~path_str:"/FileRef/OriginalCrc" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:6 ~path_str:"/LastModDate" ~attr:(Some "Value");
+  ]
+
+  let make ~root_attrs results =
+    let id = int_of_string (List.assoc "Id" root_attrs) in
+    let preset_type = PresetRef.UserPreset in
+    let relative_path = Option.get (Upath2.query_attr results 0 "Value") in
+    let path = Option.get (Upath2.query_attr results 1 "Value") in
+    let name = Filename.basename path |> Filename.remove_extension in
+    let last_mod_date = Upath2.query_int_attr results 6 "Value" |> Option.value ~default:0 in
+    let pack_name = Option.get (Upath2.query_attr results 2 "Value") in
+    let pack_id = Upath2.query_int_attr results 3 "Value" |> Option.value ~default:0 in
+    let file_size = Option.get (Upath2.query_int_attr results 4 "Value") in
+    let crc = Upath2.query_int_attr results 5 "Value" |> Option.value ~default:0 in
+    { id; name; preset_type; relative_path; path; pack_name; pack_id; file_size; crc; last_mod_date }
+
   let create (xml : Xml.t) : t =
     match xml with
-    | Xml.Element { name="MxPatchRef"; childs; _ } ->
-      let id = Xml.get_int_attr "Id" xml in
-      let preset_type = PresetRef.UserPreset in (* M4L patches are always user presets *)
-
-      (* Extract FileRef element *)
-      let file_ref_xml =
-        try List.find (function
-            | Xml.Element { name = "FileRef"; _ } -> true
-            | _ -> false) childs
-        with Not_found -> raise (Xml.Xml_error (xml, "FileRef element not found in MxPatchRef"))
-      in
-
-      (* Extract all the required fields from FileRef *)
-      let relative_path = Upath.get_attr "/RelativePath" "Value" file_ref_xml in
-      let path = Upath.get_attr "/Path" "Value" file_ref_xml in
-      let preset_file_name = Upath.get_attr "/Path" "Value" file_ref_xml |> Filename.basename |> Filename.remove_extension in
-
-      (* Extract LastModDate as int UNIX timestamp *)
-      let last_mod_date =
-        try Upath.get_attr "/LastModDate" "Value" xml |> int_of_string
-        with _ -> 0 (* Default to 0 if not found *)
-      in
-
-      let name = preset_file_name in
-      let pack_name = Upath.get_attr "/LivePackName" "Value" file_ref_xml in
-      let pack_id = Upath.get_int_attr_opt "/LivePackId" "Value" file_ref_xml |> Option.value ~default:0 in
-      let file_size = Upath.get_int_attr "/OriginalFileSize" "Value" file_ref_xml in
-      let crc = Upath.get_int_attr_opt "/OriginalCrc" "Value" file_ref_xml |> Option.value ~default:0 in
-
-      { id; name; preset_type; relative_path; path; pack_name; pack_id; file_size; crc; last_mod_date }
+    | Xml.Element { name = "MxPatchRef"; attrs = root_attrs; _ } ->
+      let stream = Upath2.stream_of_xml xml in
+      let nfa = Upath2.compile queries in
+      let results = Upath2.evaluate nfa stream in
+      make ~root_attrs results
     | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating PatchRef (expected MxPatchRef)"))
 end
 
@@ -339,27 +389,50 @@ module PluginParam = struct
     base : GenericParam.t;
   } [@@deriving eq]
 
-  let create (xml : Xml.t) : t =
-    let id = Xml.get_int_attr "Id" xml in
+  let queries = [
+    Upath2.query_of_path ~qid:0  ~path_str:"/ParameterName" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:1  ~path_str:"/ParameterValue/Manual" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:2  ~path_str:"/ParameterValue/AutomationTarget" ~attr:(Some "Id");
+    Upath2.query_of_path ~qid:3  ~path_str:"/ParameterValue/ModulationTarget" ~attr:(Some "Id");
+    Upath2.query_of_path ~qid:4  ~path_str:"/ParameterValue/KeyMidi/NoteOrController" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:5  ~path_str:"/ParameterValue/KeyMidi/Channel" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:6  ~path_str:"/ParameterValue/KeyMidi/IsNote" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:7  ~path_str:"/ParameterValue/KeyMidi/ControllerMapMode" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:8  ~path_str:"/ParameterValue/MidiControllerRange/Min" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:9  ~path_str:"/ParameterValue/MidiControllerRange/Max" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:10 ~path_str:"/ParameterValue/MidiCCOnOffThresholds/Min" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:11 ~path_str:"/ParameterValue/MidiCCOnOffThresholds/Max" ~attr:(Some "Value");
+  ]
 
-    let param_type = Xml.get_name xml in
-    let parse_value val_xml =
-      match param_type with
+  let make ~root_name ~root_attrs results =
+    let id = int_of_string (List.assoc "Id" root_attrs) in
+    let name = Option.get (Upath2.query_attr results 0 "Value") in
+    let value = match root_name with
       | "PluginFloatParameter" ->
-        Float (Upath.get_float_attr "/Manual" "Value" val_xml)
+        Float (Option.get (Upath2.query_float_attr results 1 "Value"))
       | "PluginIntParameter" ->
-        Int (Upath.get_int_attr "/Manual" "Value" val_xml)
+        Int (Option.get (Upath2.query_int_attr results 1 "Value"))
       | "PluginBoolParameter" ->
-        Bool (Upath.get_bool_attr "/Manual" "Value" val_xml)
+        Bool (Option.get (Upath2.query_bool_attr results 1 "Value"))
       | "PluginEnumParameter" ->
-        (* raise (Not_implemented "PluginEnumParameter parsing is not yet implemented. If you encounter this error, please consider sharing your .als file to help improve support for this feature.") *)
-        Int (Upath.get_int_attr "/Manual" "Value" val_xml)
-      | _ -> raise (Xml.Xml_error (xml, "Invalid parameter type " ^ param_type))
+        Int (Option.get (Upath2.query_int_attr results 1 "Value"))
+      | _ -> failwith ("Invalid parameter type " ^ root_name)
     in
-    let base = Upath.find "/ParameterValue" xml |> snd |> GenericParam.create ~parse_value in
-    let name = Upath.get_attr "/ParameterName" "Value" xml in
-    let name_updated_base = { base with name } in
-    { id; base = name_updated_base; }
+    let automation = Upath2.query_int_attr results 2 "Id"
+      |> Option.value ~default:0 in
+    let modulation = Upath2.query_int_attr results 3 "Id"
+      |> Option.value ~default:0 in
+    let mapping = MIDIMapping.make_opt results ~qid_base:6 in
+    { id; base = { GenericParam.name; value; automation; modulation; mapping } }
+
+  let create (xml : Xml.t) : t =
+    let root_name = Xml.get_name xml in
+    let root_attrs = (match xml with Xml.Element { attrs; _ } -> attrs | _ -> []) in
+    let stream = Upath2.stream_of_xml xml in
+    let nfa = Upath2.compile queries in
+    let results = Upath2.evaluate nfa stream in
+    try make ~root_name ~root_attrs results
+    with Failure msg -> raise (Xml.Xml_error (xml, msg))
 
   module Patch = struct
     type t = {
@@ -585,51 +658,62 @@ module Max4LiveParam = struct
     base : GenericParam.t;
   } [@@deriving eq, id, patch] [@@patch.generate_diff]
 
-  (** Extract enum description from Names/Name/Name structure - specific to M4L *)
-  let extract_enum_desc (xml : Xml.t) : enum_desc option =
-    try
-      (* Find all Name elements under Names *)
-      let name_elements = Upath.find_all "/Names/Name/Name" xml in
-      let enums =
-        List.map (fun (_, name_xml) ->
-            Xml.get_attr "Value" name_xml
-          ) name_elements
-        |> Array.of_list
-      in
-      if Array.length enums > 0 then
-        let max_id = Array.length enums - 1 in
-        Some { min = 0; max = max_id; enums }
-      else
-        None
-    with _ -> None
+  let queries = [
+    Upath2.query_of_path ~qid:0  ~path_str:"/Name" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:1  ~path_str:"/Index" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:2  ~path_str:"/Timeable/Manual" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:3  ~path_str:"/Timeable/AutomationTarget" ~attr:(Some "Id");
+    Upath2.query_of_path ~qid:4  ~path_str:"/Timeable/ModulationTarget" ~attr:(Some "Id");
+    Upath2.query_of_path ~qid:5  ~path_str:"/Timeable/KeyMidi/NoteOrController" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:6  ~path_str:"/Timeable/KeyMidi/Channel" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:7  ~path_str:"/Timeable/KeyMidi/IsNote" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:8  ~path_str:"/Timeable/KeyMidi/ControllerMapMode" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:9  ~path_str:"/Timeable/MidiControllerRange/Min" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:10 ~path_str:"/Timeable/MidiControllerRange/Max" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:11 ~path_str:"/Timeable/MidiCCOnOffThresholds/Min" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:12 ~path_str:"/Timeable/MidiCCOnOffThresholds/Max" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:13 ~path_str:"/Names/Name/Name" ~attr:(Some "Value");
+  ]
 
-  (** Create M4L parameter from XML element *)
-  let create (_path : string) (xml : Xml.t) : t =
-    let id = Xml.get_int_attr "Id" xml in
-    let index = Upath.get_int_attr "/Index" "Value" xml in
-
-    let param_type = Xml.get_name xml in
-    let parse_value = fun val_xml ->
-      match param_type with
+  let make ~root_name ~root_attrs results =
+    let id = int_of_string (List.assoc "Id" root_attrs) in
+    let index = Option.get (Upath2.query_int_attr results 1 "Value") in
+    let name = Option.get (Upath2.query_attr results 0 "Value") in
+    let value = match root_name with
       | "MxDFloatParameter" ->
-        Float (Upath.get_float_attr "/Manual" "Value" val_xml)
+        Float (Option.get (Upath2.query_float_attr results 2 "Value"))
       | "MxDIntParameter" ->
-        Int (Upath.get_int_attr "/Manual" "Value" val_xml)
+        Int (Option.get (Upath2.query_int_attr results 2 "Value"))
       | "MxDBoolParameter" ->
-        Bool (Upath.get_bool_attr "/Manual" "Value" val_xml)
+        Bool (Option.get (Upath2.query_bool_attr results 2 "Value"))
       | "MxDEnumParameter" ->
-        let enum_value = Upath.get_int_attr "/Manual" "Value" val_xml in
-        let enum_desc_opt = extract_enum_desc xml in
-        (match enum_desc_opt with
-         | Some enum_desc  -> Enum (enum_value, enum_desc)
-         | None -> raise (Xml.Xml_error (xml, "Haven't found enum definitions")))
-      | _ -> raise (Xml.Xml_error (xml, "Invalid M4L parameter type: " ^ param_type))
+        let enum_value = Option.get (Upath2.query_int_attr results 2 "Value") in
+        let enums =
+          Upath2.find_all_results results 13
+          |> List.map (fun (r : Upath2.match_result) ->
+              Option.get (Upath2.get_attr r "Value"))
+          |> Array.of_list
+        in
+        if Array.length enums > 0 then
+          Enum (enum_value, { min = 0; max = Array.length enums - 1; enums })
+        else
+          failwith "MxDEnumParameter: no enum definitions found"
+      | _ -> failwith ("Invalid M4L parameter type: " ^ root_name)
     in
+    let automation = Upath2.query_int_attr results 3 "Id"
+      |> Option.value ~default:0 in
+    let modulation = Upath2.query_int_attr results 4 "Id"
+      |> Option.value ~default:0 in
+    let mapping = MIDIMapping.make_opt results ~qid_base:7 in
+    { id; index; base = { GenericParam.name; value; automation; modulation; mapping } }
 
-    let name = Upath.get_attr "/Name" "Value" xml in
-    let base = Upath.find "/Timeable" xml |> snd |> GenericParam.create ~parse_value in
-    let name_updated_base = { base with name } in
-    { id; index; base = name_updated_base; }
+  let create (_path : string) (xml : Xml.t) : t =
+    let root_name = Xml.get_name xml in
+    let root_attrs = (match xml with Xml.Element { attrs; _ } -> attrs | _ -> []) in
+    let stream = Upath2.stream_of_xml xml in
+    let nfa = Upath2.compile queries in
+    let results = Upath2.evaluate nfa stream in
+    make ~root_name ~root_attrs results
 
   let create_from_upath_find (path, xml) = create path xml
 end
@@ -645,15 +729,53 @@ module MixerDevice = struct
     pan : DeviceParam.t;         (* panorama/panning *)
   } [@@deriving eq, patch] [@@patch.generate_diff]
 
+  let dp_queries prefix base =
+    let p = "/" ^ prefix in
+    [
+      Upath2.query_of_path ~qid:(base + 0)  ~path_str:(p ^ "/AutomationTarget") ~attr:(Some "Id");
+      Upath2.query_of_path ~qid:(base + 1)  ~path_str:(p ^ "/ModulationTarget") ~attr:(Some "Id");
+      Upath2.query_of_path ~qid:(base + 2)  ~path_str:(p ^ "/Manual") ~attr:(Some "Value");
+      Upath2.query_of_path ~qid:(base + 3)  ~path_str:(p ^ "/KeyMidi/NoteOrController") ~attr:(Some "Value");
+      Upath2.query_of_path ~qid:(base + 4)  ~path_str:(p ^ "/KeyMidi/Channel") ~attr:(Some "Value");
+      Upath2.query_of_path ~qid:(base + 5)  ~path_str:(p ^ "/KeyMidi/IsNote") ~attr:(Some "Value");
+      Upath2.query_of_path ~qid:(base + 6)  ~path_str:(p ^ "/KeyMidi/ControllerMapMode") ~attr:(Some "Value");
+      Upath2.query_of_path ~qid:(base + 7)  ~path_str:(p ^ "/MidiControllerRange/Min") ~attr:(Some "Value");
+      Upath2.query_of_path ~qid:(base + 8)  ~path_str:(p ^ "/MidiControllerRange/Max") ~attr:(Some "Value");
+      Upath2.query_of_path ~qid:(base + 9)  ~path_str:(p ^ "/MidiCCOnOffThresholds/Min") ~attr:(Some "Value");
+      Upath2.query_of_path ~qid:(base + 10) ~path_str:(p ^ "/MidiCCOnOffThresholds/Max") ~attr:(Some "Value");
+    ]
+
+  let queries =
+    dp_queries "On" 0 @ dp_queries "Speaker" 11
+    @ dp_queries "Volume" 22 @ dp_queries "Panorama" 33
+
+  let make_dp results ~path ~qid_base =
+    let name = param_name_from_path path in
+    let literal = Option.get (Upath2.query_attr results (qid_base + 2) "Value") in
+    let value = match literal with
+      | "true" | "false" -> Bool (bool_of_string literal)
+      | _ -> Float (float_of_string literal)
+    in
+    let automation = Upath2.query_int_attr results (qid_base + 0) "Id"
+      |> Option.value ~default:0 in
+    let modulation = Upath2.query_int_attr results (qid_base + 1) "Id"
+      |> Option.value ~default:0 in
+    let mapping = MIDIMapping.make_opt results ~qid_base:(qid_base + 3) in
+    { DeviceParam.base = { GenericParam.name; value; automation; modulation; mapping } }
+
+  let make results =
+    { on = make_dp results ~path:"On" ~qid_base:0;
+      speaker = make_dp results ~path:"Speaker" ~qid_base:11;
+      volume = make_dp results ~path:"Volume" ~qid_base:22;
+      pan = make_dp results ~path:"Panorama" ~qid_base:33 }
+
   let create (xml : Xml.t) : t =
     match xml with
     | Xml.Element { name = "MixerDevice"; _ } ->
-      (* Extract On parameter *)
-      let on = Upath.find "/On" xml |> DeviceParam.create_from_upath_find in
-      let speaker = Upath.find "/Speaker" xml |> DeviceParam.create_from_upath_find in
-      let volume = Upath.find "/Volume" xml |> DeviceParam.create_from_upath_find in
-      let pan = Upath.find "/Panorama" xml |> DeviceParam.create_from_upath_find in
-      { on; speaker; volume; pan }
+      let stream = Upath2.stream_of_xml xml in
+      let nfa = Upath2.compile queries in
+      let results = Upath2.evaluate nfa stream in
+      make results
     | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating MixerDevice"))
 
   (* MixerDevice doesn't have a natural ID, so use placeholder interface *)
@@ -706,31 +828,32 @@ module Snapshot = struct
     values : float list;
   } [@@deriving eq, id, patch]
 
+  let queries = [
+    Upath2.query_of_path ~qid:0 ~path_str:"/SnapshotName" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:1 ~path_str:"/'MacroValues\\.[0-9]+'" ~attr:(Some "Value");
+  ]
+
+  let make ~root_attrs results =
+    let id = int_of_string (List.assoc "Id" root_attrs) in
+    let name = Option.get (Upath2.query_attr results 0 "Value") in
+    let values =
+      Upath2.find_all_results results 1
+      |> List.map (fun (r : Upath2.match_result) ->
+          let index = extract_index_from_name r.Upath2.element_name in
+          let value = Option.get (Upath2.get_float_attr r "Value") in
+          (index, value))
+      |> List.sort (fun (i1, _) (i2, _) -> Stdlib.compare i1 i2)
+      |> List.map snd
+    in
+    { id; name; values }
+
   let create (xml : Xml.t) : t =
     match xml with
-    | Xml.Element { name = "MacroSnapshot"; _ } ->
-      let id = Xml.get_int_attr "Id" xml in
-      let name = Upath.get_attr "/SnapshotName" "Value" xml in
-
-      (* Extract all MacroValues.N elements using regex *)
-      let macro_values_xml = Upath.find_all "/'MacroValues\\.[0-9]+'" xml in
-
-      (* Build ordered list of values from MacroValues *)
-      let values =
-        List.map (fun (_, xml_elem) ->
-            let element_name = match xml_elem with
-              | Xml.Element { name; _ } -> name
-              | Xml.Data _ -> raise (Xml.Xml_error (xml_elem, "Expected Element, got Data"))
-            in
-            let index = extract_index_from_name element_name in
-            let value = Xml.get_float_attr "Value" xml_elem in
-            (index, value)
-          ) macro_values_xml
-        |> List.sort (fun (i1, _) (i2, _) -> Stdlib.compare i1 i2)
-        |> List.map snd
-      in
-
-      { id; name; values }
+    | Xml.Element { name = "MacroSnapshot"; attrs = root_attrs; _ } ->
+      let stream = Upath2.stream_of_xml xml in
+      let nfa = Upath2.compile queries in
+      let results = Upath2.evaluate nfa stream in
+      make ~root_attrs results
     | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating Snapshot"))
 
   let diff (old_snapshot : t) (new_snapshot : t) : Patch.t =
@@ -1063,26 +1186,6 @@ and group_device_diff (old_group : group_device) (new_group : group_device) =
     }
 
 
-(** Get display name based on [ShouldShowPresetName].
-    if [ShouldShowPresetName] set to be [true], return the preset name.
-    else return [UserName] if exists, if [UserName] is empty,
-    return device type name.
-    For a device with default preset, return the [DeviceId] as display name
-    instead device type name.
-
-    @param preset The preset reference of the device
-    @param xml The XML element of the device
-*)
-let get_display_name (preset_opt : PresetRef.t option) (xml : Xml.t) =
-  if Upath.get_bool_attr "ShouldShowPresetName" "Value" xml &&
-     Option.is_some preset_opt then
-    Option.map (fun p -> p.PresetRef.name) preset_opt |> Option.get
-  else
-    let user_name = Upath.get_attr "UserName" "Value" xml in
-    if user_name <> "" then
-      user_name
-    else
-      Xml.get_name xml
 
 
 (* ================== Device modules ================== *)
@@ -1090,27 +1193,78 @@ module RegularDevice = struct
   (** All the built-in devices *)
   type t = regular_device [@@deriving eq]
 
+  let queries = [
+    Upath2.query_of_path ~qid:0 ~path_str:"/Pointee" ~attr:(Some "Id");
+    Upath2.query_of_path ~qid:1 ~path_str:"/ShouldShowPresetName" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:2 ~path_str:"/UserName" ~attr:(Some "Value");
+    (* PresetRef inlined *)
+    Upath2.query_of_path ~qid:10 ~path_str:"/LastPresetRef/Value/*/FileRef/RelativePath" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:11 ~path_str:"/LastPresetRef/Value/*/FileRef/Path" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:12 ~path_str:"/LastPresetRef/Value/*/FileRef/LivePackName" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:13 ~path_str:"/LastPresetRef/Value/*/FileRef/LivePackId" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:14 ~path_str:"/LastPresetRef/Value/*/FileRef/OriginalFileSize" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:15 ~path_str:"/LastPresetRef/Value/*/FileRef/OriginalCrc" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:16 ~path_str:"/LastPresetRef/Value/*/DeviceId" ~attr:(Some "Name");
+    (* Enabled DeviceParam inlined *)
+    Upath2.query_of_path ~qid:20 ~path_str:"/On/AutomationTarget" ~attr:(Some "Id");
+    Upath2.query_of_path ~qid:21 ~path_str:"/On/ModulationTarget" ~attr:(Some "Id");
+    Upath2.query_of_path ~qid:22 ~path_str:"/On/Manual" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:23 ~path_str:"/On/KeyMidi/NoteOrController" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:24 ~path_str:"/On/KeyMidi/Channel" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:25 ~path_str:"/On/KeyMidi/IsNote" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:26 ~path_str:"/On/KeyMidi/ControllerMapMode" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:27 ~path_str:"/On/MidiControllerRange/Min" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:28 ~path_str:"/On/MidiControllerRange/Max" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:29 ~path_str:"/On/MidiCCOnOffThresholds/Min" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:30 ~path_str:"/On/MidiCCOnOffThresholds/Max" ~attr:(Some "Value");
+  ]
+
   let create (xml : Xml.t) : t =
     match xml with
-    | Xml.Element { name; _ } ->
-      let id = Alsdiff_base.Xml.get_int_attr "Id" xml in
-      let pointee = Alsdiff_base.Upath.get_int_attr "/Pointee" "Id" xml in
-      let preset = Upath.find_opt "/LastPresetRef/Value/*" xml |> Option.map snd |> Option.map PresetRef.create in
-      let display_name = get_display_name preset xml in
-      let enabled = Upath.find "/On" xml |> DeviceParam.create_from_upath_find in
-
-      (* Find all elements that has both LomId and Manual child elements *)
-      let params = Alsdiff_base.Upath.find_all "/**/LomId/../Manual/.." xml
+    | Xml.Element { name; attrs = root_attrs; _ } ->
+      let stream = Upath2.stream_of_xml xml in
+      let nfa = Upath2.compile queries in
+      let results = Upath2.evaluate nfa stream in
+      let id = int_of_string (List.assoc "Id" root_attrs) in
+      let pointee = Option.get (Upath2.query_int_attr results 0 "Id") in
+      (* PresetRef from inlined qids 10-16 *)
+      let preset =
+        match Upath2.query_attr results 11 "Value" with
+        | Some _ ->
+          let relative_path = Option.get (Upath2.query_attr results 10 "Value") in
+          let path = Option.get (Upath2.query_attr results 11 "Value") in
+          let preset_file_name = Filename.basename path |> Filename.remove_extension in
+          let pack_name = Option.get (Upath2.query_attr results 12 "Value") in
+          let pack_id = Upath2.query_int_attr results 13 "Value" |> Option.value ~default:0 in
+          let file_size = Option.get (Upath2.query_int_attr results 14 "Value") in
+          let crc = Upath2.query_int_attr results 15 "Value" |> Option.value ~default:0 in
+          Some { PresetRef.id = 0; name = preset_file_name;
+                 preset_type = UserPreset; relative_path; path;
+                 pack_name; pack_id; file_size; crc }
+        | None -> None
+      in
+      let display_name =
+        let show_preset = Upath2.query_bool_attr results 1 "Value"
+          |> Option.value ~default:false in
+        if show_preset && Option.is_some preset then
+          Option.get preset |> fun p -> p.PresetRef.name
+        else
+          let user_name = Upath2.query_attr results 2 "Value"
+            |> Option.value ~default:"" in
+          if user_name <> "" then user_name else name
+      in
+      (* Enabled DeviceParam from results *)
+      let enabled = MixerDevice.make_dp results ~path:"On" ~qid_base:20 in
+      (* Multi-match params: DOM fallback *)
+      let params = Upath.find_all "/**/LomId/../Manual/.." xml
         |> List.map DeviceParam.create_from_upath_find
       in
-      { id; device_name=name; display_name; pointee; enabled; params; preset }
+      { id; device_name = name; display_name; pointee; enabled; params; preset }
     | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating Device"))
 
   module Patch = struct
     type t = regular_device_patch
 
-    (* Use reference to break circular dependency - initialized after
-       the mutually recursive helpers are defined at end of file *)
     let is_empty_ref : (t -> bool) ref = ref (fun _ -> failwith "RegularDevice.Patch.is_empty not initialized")
     let is_empty p = !is_empty_ref p
   end
@@ -1123,34 +1277,79 @@ end
 module PluginDevice = struct
   type t = plugin_device [@@deriving eq]
 
+  let queries = [
+    Upath2.query_of_path ~qid:0  ~path_str:"/Pointee" ~attr:(Some "Id");
+    Upath2.query_of_path ~qid:1  ~path_str:"/ShouldShowPresetName" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:2  ~path_str:"/UserName" ~attr:(Some "Value");
+    (* PresetRef inlined: qid 10-16 *)
+    Upath2.query_of_path ~qid:10 ~path_str:"/LastPresetRef/Value/*/FileRef/RelativePath" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:11 ~path_str:"/LastPresetRef/Value/*/FileRef/Path" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:12 ~path_str:"/LastPresetRef/Value/*/FileRef/LivePackName" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:13 ~path_str:"/LastPresetRef/Value/*/FileRef/LivePackId" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:14 ~path_str:"/LastPresetRef/Value/*/FileRef/OriginalFileSize" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:15 ~path_str:"/LastPresetRef/Value/*/FileRef/OriginalCrc" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:16 ~path_str:"/LastPresetRef/Value/*/DeviceId" ~attr:(Some "Name");
+    (* Enabled DeviceParam inlined: qid 20-30 *)
+    Upath2.query_of_path ~qid:20 ~path_str:"/On/AutomationTarget" ~attr:(Some "Id");
+    Upath2.query_of_path ~qid:21 ~path_str:"/On/ModulationTarget" ~attr:(Some "Id");
+    Upath2.query_of_path ~qid:22 ~path_str:"/On/Manual" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:23 ~path_str:"/On/KeyMidi/NoteOrController" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:24 ~path_str:"/On/KeyMidi/Channel" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:25 ~path_str:"/On/KeyMidi/IsNote" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:26 ~path_str:"/On/KeyMidi/ControllerMapMode" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:27 ~path_str:"/On/MidiControllerRange/Min" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:28 ~path_str:"/On/MidiControllerRange/Max" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:29 ~path_str:"/On/MidiCCOnOffThresholds/Min" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:30 ~path_str:"/On/MidiCCOnOffThresholds/Max" ~attr:(Some "Value");
+  ]
+
   let create (xml : Xml.t) : t =
-    (* Get device ID *)
-    let id = Xml.get_int_attr "Id" xml in
-
-    let preset = Upath.find_opt "/LastPresetRef/Value/*" xml
-      |> Option.map snd
-      |> Option.map PresetRef.create in
-    let display_name = get_display_name preset xml in
-
-    (* Get pointee ID *)
-    let pointee = Upath.get_int_attr "/Pointee" "Id" xml in
-    let enabled = Upath.find "/On" xml |> DeviceParam.create_from_upath_find in
-
-    (* Find the PluginDesc element - must be before device_name *)
-    let plugin_desc_xml = Upath.find "/PluginDesc" xml |> snd in
-    let desc = PluginDesc.create plugin_desc_xml in
-
-    (* Use actual plugin name from desc instead of XML element name *)
-    let device_name = desc.name in
-
-    (* Extract all plugin parameters *)
-    let params =
-      Upath.find_all "/ParameterList/*" xml
-      |> List.map snd
-      |> List.map PluginParam.create
-    in
-
-    { id; device_name; display_name; pointee; enabled; desc; params; preset }
+    match xml with
+    | Xml.Element { name; attrs = root_attrs; _ } ->
+      let stream = Upath2.stream_of_xml xml in
+      let nfa = Upath2.compile queries in
+      let results = Upath2.evaluate nfa stream in
+      let id = int_of_string (List.assoc "Id" root_attrs) in
+      let pointee = Option.get (Upath2.query_int_attr results 0 "Id") in
+      (* PresetRef from inlined qids 10-16 *)
+      let preset =
+        match Upath2.query_attr results 11 "Value" with
+        | Some _ ->
+          let relative_path = Option.get (Upath2.query_attr results 10 "Value") in
+          let path = Option.get (Upath2.query_attr results 11 "Value") in
+          let preset_file_name = Filename.basename path |> Filename.remove_extension in
+          let pack_name = Option.get (Upath2.query_attr results 12 "Value") in
+          let pack_id = Upath2.query_int_attr results 13 "Value" |> Option.value ~default:0 in
+          let file_size = Option.get (Upath2.query_int_attr results 14 "Value") in
+          let crc = Upath2.query_int_attr results 15 "Value" |> Option.value ~default:0 in
+          Some { PresetRef.id = 0; name = preset_file_name;
+                 preset_type = UserPreset; relative_path; path;
+                 pack_name; pack_id; file_size; crc }
+        | None -> None
+      in
+      let display_name =
+        let show_preset = Upath2.query_bool_attr results 1 "Value"
+          |> Option.value ~default:false in
+        if show_preset && Option.is_some preset then
+          Option.get preset |> fun p -> p.PresetRef.name
+        else
+          let user_name = Upath2.query_attr results 2 "Value"
+            |> Option.value ~default:"" in
+          if user_name <> "" then user_name else name
+      in
+      let enabled = MixerDevice.make_dp results ~path:"On" ~qid_base:20 in
+      (* DOM fallback for PluginDesc *)
+      let plugin_desc_xml = Upath.find "/PluginDesc" xml |> snd in
+      let desc = PluginDesc.create plugin_desc_xml in
+      let device_name = desc.name in
+      (* DOM fallback for multi-match PluginParams *)
+      let params =
+        Upath.find_all "/ParameterList/*" xml
+        |> List.map snd
+        |> List.map PluginParam.create
+      in
+      { id; device_name; display_name; pointee; enabled; desc; params; preset }
+    | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating PluginDevice"))
 
 
   module Patch = struct
@@ -1205,17 +1404,68 @@ module GroupDevice = struct
 
   let id_hash t = Hashtbl.hash t.id
 
+  let queries = [
+    Upath2.query_of_path ~qid:0  ~path_str:"/Pointee" ~attr:(Some "Id");
+    Upath2.query_of_path ~qid:1  ~path_str:"/ShouldShowPresetName" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:2  ~path_str:"/UserName" ~attr:(Some "Value");
+    (* PresetRef inlined: qid 10-16 *)
+    Upath2.query_of_path ~qid:10 ~path_str:"/LastPresetRef/Value/*/FileRef/RelativePath" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:11 ~path_str:"/LastPresetRef/Value/*/FileRef/Path" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:12 ~path_str:"/LastPresetRef/Value/*/FileRef/LivePackName" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:13 ~path_str:"/LastPresetRef/Value/*/FileRef/LivePackId" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:14 ~path_str:"/LastPresetRef/Value/*/FileRef/OriginalFileSize" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:15 ~path_str:"/LastPresetRef/Value/*/FileRef/OriginalCrc" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:16 ~path_str:"/LastPresetRef/Value/*/DeviceId" ~attr:(Some "Name");
+    (* Enabled DeviceParam inlined: qid 20-30 *)
+    Upath2.query_of_path ~qid:20 ~path_str:"/On/AutomationTarget" ~attr:(Some "Id");
+    Upath2.query_of_path ~qid:21 ~path_str:"/On/ModulationTarget" ~attr:(Some "Id");
+    Upath2.query_of_path ~qid:22 ~path_str:"/On/Manual" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:23 ~path_str:"/On/KeyMidi/NoteOrController" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:24 ~path_str:"/On/KeyMidi/Channel" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:25 ~path_str:"/On/KeyMidi/IsNote" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:26 ~path_str:"/On/KeyMidi/ControllerMapMode" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:27 ~path_str:"/On/MidiControllerRange/Min" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:28 ~path_str:"/On/MidiControllerRange/Max" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:29 ~path_str:"/On/MidiCCOnOffThresholds/Min" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:30 ~path_str:"/On/MidiCCOnOffThresholds/Max" ~attr:(Some "Value");
+  ]
+
   let create (device_creator : Xml.t -> device) (xml : Xml.t) : t =
     match xml with
-    | Xml.Element { name; _ } ->
-      let id = Xml.get_int_attr "Id" xml in
-      let pointee = Upath.get_int_attr "/Pointee" "Id" xml in
-      let preset = Upath.find_opt "/LastPresetRef/Value/*" xml
-        |> Option.map snd
-        |> Option.map PresetRef.create in
-      let display_name = get_display_name preset xml in
-      let enabled = Upath.find "/On" xml |> DeviceParam.create_from_upath_find in
-
+    | Xml.Element { name; attrs = root_attrs; _ } ->
+      let stream = Upath2.stream_of_xml xml in
+      let nfa = Upath2.compile queries in
+      let results = Upath2.evaluate nfa stream in
+      let id = int_of_string (List.assoc "Id" root_attrs) in
+      let pointee = Option.get (Upath2.query_int_attr results 0 "Id") in
+      (* PresetRef from inlined qids 10-16 *)
+      let preset =
+        match Upath2.query_attr results 11 "Value" with
+        | Some _ ->
+          let relative_path = Option.get (Upath2.query_attr results 10 "Value") in
+          let path = Option.get (Upath2.query_attr results 11 "Value") in
+          let preset_file_name = Filename.basename path |> Filename.remove_extension in
+          let pack_name = Option.get (Upath2.query_attr results 12 "Value") in
+          let pack_id = Upath2.query_int_attr results 13 "Value" |> Option.value ~default:0 in
+          let file_size = Option.get (Upath2.query_int_attr results 14 "Value") in
+          let crc = Upath2.query_int_attr results 15 "Value" |> Option.value ~default:0 in
+          Some { PresetRef.id = 0; name = preset_file_name;
+                 preset_type = UserPreset; relative_path; path;
+                 pack_name; pack_id; file_size; crc }
+        | None -> None
+      in
+      let display_name =
+        let show_preset = Upath2.query_bool_attr results 1 "Value"
+          |> Option.value ~default:false in
+        if show_preset && Option.is_some preset then
+          Option.get preset |> fun p -> p.PresetRef.name
+        else
+          let user_name = Upath2.query_attr results 2 "Value"
+            |> Option.value ~default:"" in
+          if user_name <> "" then user_name else name
+      in
+      let enabled = MixerDevice.make_dp results ~path:"On" ~qid_base:20 in
+      (* DOM fallback for branches, macros, snapshots *)
       let branches = Upath.find "/Branches" xml
         |> snd
         |> Xml.get_childs
@@ -1223,13 +1473,11 @@ module GroupDevice = struct
       in
       let macro_names_xml = Upath.find_all "/'MacroDisplayNames\\.[0-9]+$'" xml in
       let macro_controls_xml = Upath.find_all "/'MacroControls\\.[0-9]+$'" xml in
-
-      (* Create ordered list of macros by index *)
       let macros =
         List.combine macro_names_xml macro_controls_xml
         |> List.map (fun (n,c) ->
             let element_name = match (snd n) with
-              | Xml.Element { name; _ } -> name
+              | Xml.Element { name = ename; _ } -> ename
               | Xml.Data _ -> raise (Xml.Xml_error (snd n, "Expected Element, got Data"))
             in
             let index = extract_index_from_name element_name in
@@ -1244,8 +1492,7 @@ module GroupDevice = struct
         |> List.map snd
         |> List.map Snapshot.create
       in
-
-      { id; device_name=name; display_name; pointee;  enabled; branches; macros; snapshots; preset }
+      { id; device_name=name; display_name; pointee; enabled; branches; macros; snapshots; preset }
     | _ -> invalid_arg "Cannot create a GroupDevice on Data"
 
   module Patch = struct
@@ -1264,34 +1511,99 @@ end
 module Max4LiveDevice = struct
   type t = max4live_device [@@deriving eq]
 
+  let queries = [
+    Upath2.query_of_path ~qid:0  ~path_str:"/Pointee" ~attr:(Some "Id");
+    Upath2.query_of_path ~qid:1  ~path_str:"/ShouldShowPresetName" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:2  ~path_str:"/UserName" ~attr:(Some "Value");
+    (* PresetRef inlined: qid 10-16 *)
+    Upath2.query_of_path ~qid:10 ~path_str:"/LastPresetRef/Value/*/FileRef/RelativePath" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:11 ~path_str:"/LastPresetRef/Value/*/FileRef/Path" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:12 ~path_str:"/LastPresetRef/Value/*/FileRef/LivePackName" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:13 ~path_str:"/LastPresetRef/Value/*/FileRef/LivePackId" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:14 ~path_str:"/LastPresetRef/Value/*/FileRef/OriginalFileSize" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:15 ~path_str:"/LastPresetRef/Value/*/FileRef/OriginalCrc" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:16 ~path_str:"/LastPresetRef/Value/*/DeviceId" ~attr:(Some "Name");
+    (* PatchRef inlined: qid 30-36 *)
+    Upath2.query_of_path ~qid:30 ~path_str:"/PatchSlot/Value/MxPatchRef/FileRef/RelativePath" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:31 ~path_str:"/PatchSlot/Value/MxPatchRef/FileRef/Path" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:32 ~path_str:"/PatchSlot/Value/MxPatchRef/FileRef/LivePackName" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:33 ~path_str:"/PatchSlot/Value/MxPatchRef/FileRef/LivePackId" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:34 ~path_str:"/PatchSlot/Value/MxPatchRef/FileRef/OriginalFileSize" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:35 ~path_str:"/PatchSlot/Value/MxPatchRef/FileRef/OriginalCrc" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:36 ~path_str:"/PatchSlot/Value/MxPatchRef/LastModDate" ~attr:(Some "Value");
+    (* Enabled DeviceParam inlined: qid 40-50 *)
+    Upath2.query_of_path ~qid:40 ~path_str:"/On/AutomationTarget" ~attr:(Some "Id");
+    Upath2.query_of_path ~qid:41 ~path_str:"/On/ModulationTarget" ~attr:(Some "Id");
+    Upath2.query_of_path ~qid:42 ~path_str:"/On/Manual" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:43 ~path_str:"/On/KeyMidi/NoteOrController" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:44 ~path_str:"/On/KeyMidi/Channel" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:45 ~path_str:"/On/KeyMidi/IsNote" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:46 ~path_str:"/On/KeyMidi/ControllerMapMode" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:47 ~path_str:"/On/MidiControllerRange/Min" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:48 ~path_str:"/On/MidiControllerRange/Max" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:49 ~path_str:"/On/MidiCCOnOffThresholds/Min" ~attr:(Some "Value");
+    Upath2.query_of_path ~qid:50 ~path_str:"/On/MidiCCOnOffThresholds/Max" ~attr:(Some "Value");
+  ]
+
   let create (xml : Xml.t) : t =
-    (* Get device ID *)
-    let id = Xml.get_int_attr "Id" xml in
-
-    let preset = Upath.find_opt "/LastPresetRef/Value/*" xml
-      |> Option.map snd
-      |> Option.map PresetRef.create in
-    let display_name = get_display_name preset xml in
-
-    (* Get pointee ID *)
-    let pointee = Upath.get_int_attr "/Pointee" "Id" xml in
-    let enabled = Upath.find "/On" xml |> DeviceParam.create_from_upath_find in
-
-    (* Parse PatchSlot/MxPatchRef for patch_ref - must be before device_name *)
-    let patch_ref = Upath.find "/PatchSlot/Value/MxPatchRef" xml |> snd |> PatchRef.create in
-
-    (* Use patch name instead of XML element name *)
-    let device_name = patch_ref.PatchRef.name in
-
-    (* Extract all M4L parameters *)
-    let float_params = Alsdiff_base.Upath.find_all "**/MxDFloatParameter" xml in
-    let int_params = Alsdiff_base.Upath.find_all "**/MxDIntParameter" xml in
-    let bool_params = Alsdiff_base.Upath.find_all "**/MxDBoolParameter" xml in
-    let enum_params = Alsdiff_base.Upath.find_all "**/MxDEnumParameter" xml in
-    let all_params = float_params @ int_params @ bool_params @ enum_params in
-    let params = List.map Max4LiveParam.create_from_upath_find all_params in
-
-    { id; device_name; display_name; pointee; enabled; patch_ref; params; preset }
+    match xml with
+    | Xml.Element { name; attrs = root_attrs; _ } ->
+      let stream = Upath2.stream_of_xml xml in
+      let nfa = Upath2.compile queries in
+      let results = Upath2.evaluate nfa stream in
+      let id = int_of_string (List.assoc "Id" root_attrs) in
+      let pointee = Option.get (Upath2.query_int_attr results 0 "Id") in
+      (* PresetRef from inlined qids 10-16 *)
+      let preset =
+        match Upath2.query_attr results 11 "Value" with
+        | Some _ ->
+          let relative_path = Option.get (Upath2.query_attr results 10 "Value") in
+          let path = Option.get (Upath2.query_attr results 11 "Value") in
+          let preset_file_name = Filename.basename path |> Filename.remove_extension in
+          let pack_name = Option.get (Upath2.query_attr results 12 "Value") in
+          let pack_id = Upath2.query_int_attr results 13 "Value" |> Option.value ~default:0 in
+          let file_size = Option.get (Upath2.query_int_attr results 14 "Value") in
+          let crc = Upath2.query_int_attr results 15 "Value" |> Option.value ~default:0 in
+          Some { PresetRef.id = 0; name = preset_file_name;
+                 preset_type = UserPreset; relative_path; path;
+                 pack_name; pack_id; file_size; crc }
+        | None -> None
+      in
+      let display_name =
+        let show_preset = Upath2.query_bool_attr results 1 "Value"
+          |> Option.value ~default:false in
+        if show_preset && Option.is_some preset then
+          Option.get preset |> fun p -> p.PresetRef.name
+        else
+          let user_name = Upath2.query_attr results 2 "Value"
+            |> Option.value ~default:"" in
+          if user_name <> "" then user_name else name
+      in
+      let enabled = MixerDevice.make_dp results ~path:"On" ~qid_base:40 in
+      (* PatchRef from inlined qids 30-36 *)
+      let patch_ref =
+        let relative_path = Option.get (Upath2.query_attr results 30 "Value") in
+        let path = Option.get (Upath2.query_attr results 31 "Value") in
+        let patch_name = Filename.basename path |> Filename.remove_extension in
+        let pack_name = Option.get (Upath2.query_attr results 32 "Value") in
+        let pack_id = Upath2.query_int_attr results 33 "Value" |> Option.value ~default:0 in
+        let file_size = Option.get (Upath2.query_int_attr results 34 "Value") in
+        let crc = Upath2.query_int_attr results 35 "Value" |> Option.value ~default:0 in
+        let last_mod_date = Upath2.query_int_attr results 36 "Value" |> Option.value ~default:0 in
+        { PatchRef.id = 0; name = patch_name;
+          preset_type = UserPreset; relative_path; path;
+          pack_name; pack_id; file_size; crc; last_mod_date }
+      in
+      let device_name = patch_ref.PatchRef.name in
+      (* DOM fallback for multi-match M4L params *)
+      let float_params = Alsdiff_base.Upath.find_all "**/MxDFloatParameter" xml in
+      let int_params = Alsdiff_base.Upath.find_all "**/MxDIntParameter" xml in
+      let bool_params = Alsdiff_base.Upath.find_all "**/MxDBoolParameter" xml in
+      let enum_params = Alsdiff_base.Upath.find_all "**/MxDEnumParameter" xml in
+      let all_params = float_params @ int_params @ bool_params @ enum_params in
+      let params = List.map Max4LiveParam.create_from_upath_find all_params in
+      { id; device_name; display_name; pointee; enabled; patch_ref; params; preset }
+    | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating Max4LiveDevice"))
 
   module Patch = struct
     type t = max4live_device_patch

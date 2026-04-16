@@ -33,6 +33,7 @@ type match_result = {
   element_name : string;
   attrs : (string * string) list;
   depth : int;
+  mutable text_content : string option;  (* text between start/end tags *)
 }
 
 (* --- NFA representation --- *)
@@ -66,6 +67,8 @@ type stack_frame = {
   element_name : string;
   element_attrs : (string * string) list;
   active : state_id list;
+  text_buf : Buffer.t;
+  frame_results : match_result list;  (* results created at this element's El_start *)
 }
 
 (* --- Name / attribute matching --- *)
@@ -352,10 +355,13 @@ let compile (queries : query list) =
 let evaluate nfa stream =
   let results = ref [] in
   let fire_counts : (int, int) Hashtbl.t = Hashtbl.create 16 in
+  let new_frame_results = ref [] in
   let stack = ref [{
       element_name = "";
       element_attrs = [];
       active = [ nfa.start ];
+      text_buf = Buffer.create 0;
+      frame_results = [];
     }] in
   let new_active = ref [] in
   let end_targets = ref [] in
@@ -365,6 +371,7 @@ let evaluate nfa stream =
         let frame = List.hd !stack in
         let active = frame.active in
         new_active := [];
+        new_frame_results := [];
         List.iter (fun sid ->
             let state = nfa.states.(sid) in
             (* Wildcard loop: self-propagate *)
@@ -394,9 +401,13 @@ let evaluate nfa stream =
                       (* Check accepting at target *)
                       let target_state = nfa.states.(t.target) in
                       List.iter (fun (qid, acc_attrs) ->
-                          if check_attrs attrs acc_attrs then
-                            results := { query_id = qid; element_name = name;
-                                         attrs; depth = Xml2.depth stream } :: !results
+                          if check_attrs attrs acc_attrs then begin
+                            let r = { query_id = qid; element_name = name;
+                                      attrs; depth = Xml2.depth stream;
+                                      text_content = None } in
+                            results := r :: !results;
+                            new_frame_results := r :: !new_frame_results
+                          end
                         ) target_state.accepting
                     end
                   end
@@ -405,15 +416,28 @@ let evaluate nfa stream =
             (* Wildcard self-match accepting *)
             if state.is_wildcard_loop then
               List.iter (fun (qid, acc_attrs) ->
-                  if check_attrs attrs acc_attrs then
-                    results := { query_id = qid; element_name = name;
-                                 attrs; depth = Xml2.depth stream } :: !results
+                  if check_attrs attrs acc_attrs then begin
+                    let r = { query_id = qid; element_name = name;
+                              attrs; depth = Xml2.depth stream;
+                              text_content = None } in
+                    results := r :: !results;
+                    new_frame_results := r :: !new_frame_results
+                  end
                 ) state.accepting
           ) active;
-        stack := { element_name = name; element_attrs = attrs; active = !new_active } :: !stack
+        stack := { element_name = name; element_attrs = attrs;
+                   active = !new_active;
+                   text_buf = Buffer.create 16;
+                   frame_results = !new_frame_results } :: !stack
       | Xml2.El_end ->
         (match !stack with
          | popped :: parent :: rest ->
+           (* Update text_content for results from this frame *)
+           let text = Buffer.contents popped.text_buf in
+           if text <> "" then
+             List.iter (fun (r : match_result) ->
+                 r.text_content <- Some text
+               ) popped.frame_results;
            (* End transitions: ParentNode handling *)
            end_targets := [];
            List.iter (fun sid ->
@@ -436,16 +460,25 @@ let evaluate nfa stream =
                    if check_attrs popped.element_attrs acc_attrs then
                      results := { query_id = qid; element_name = popped.element_name;
                                   attrs = popped.element_attrs;
-                                  depth = Xml2.depth stream } :: !results
+                                  depth = Xml2.depth stream;
+                                  text_content = None } :: !results
                  ) target_state.accepting
              ) !end_targets;
            stack := { parent with active = merged_active } :: rest
          | popped :: rest ->
-           (* Top-level: just pop *)
+           (* Update text_content for top-level frame *)
+           let text = Buffer.contents popped.text_buf in
+           if text <> "" then
+             List.iter (fun (r : match_result) ->
+                 r.text_content <- Some text
+               ) popped.frame_results;
            ignore popped;
            stack := rest
          | [] -> ())
-      | Data _ -> ()
+      | Data text ->
+        (match !stack with
+         | frame :: _ -> Buffer.add_string frame.text_buf text
+         | [] -> ())
     ) stream;
   List.rev !results
 
@@ -469,6 +502,8 @@ let get_int_attr result name =
 
 let get_float_attr result name =
   Option.bind (get_attr result name) float_of_string_opt
+
+let get_text_content (r : match_result) : string option = r.text_content
 
 (* --- Query-level result accessors --- *)
 
