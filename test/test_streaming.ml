@@ -15,23 +15,23 @@ let resolve_test_data_path filename =
 
 let queries : Upath2.query list = [
   (* Track names *)
-  Upath2.query_of_path ~qid:0 "/Ableton/LiveSet/Tracks/MidiTrack/Name/EffectiveName@Value";
-  Upath2.query_of_path ~qid:1 "/Ableton/LiveSet/Tracks/AudioTrack/Name/EffectiveName@Value";
-  Upath2.query_of_path ~qid:2 "/Ableton/LiveSet/MainTrack/Name/EffectiveName@Value";
+  Upath2.query_of_path "/Ableton/LiveSet/Tracks/MidiTrack/Name/EffectiveName@Value";
+  Upath2.query_of_path "/Ableton/LiveSet/Tracks/AudioTrack/Name/EffectiveName@Value";
+  Upath2.query_of_path "/Ableton/LiveSet/MainTrack/Name/EffectiveName@Value";
   (* Track IDs *)
-  Upath2.query_of_path ~qid:3 "/Ableton/LiveSet/Tracks/MidiTrack@Id";
-  Upath2.query_of_path ~qid:4 "/Ableton/LiveSet/Tracks/AudioTrack@Id";
+  Upath2.query_of_path "/Ableton/LiveSet/Tracks/MidiTrack@Id";
+  Upath2.query_of_path "/Ableton/LiveSet/Tracks/AudioTrack@Id";
   (* Mixer values *)
-  Upath2.query_of_path ~qid:5 "/Ableton/LiveSet/Tracks/MidiTrack/DeviceChain/Mixer/Volume/Manual@Value";
-  Upath2.query_of_path ~qid:6 "/Ableton/LiveSet/Tracks/AudioTrack/DeviceChain/Mixer/Volume/Manual@Value";
-  Upath2.query_of_path ~qid:7 "/Ableton/LiveSet/MainTrack/DeviceChain/Mixer/Tempo/Manual@Value";
-  Upath2.query_of_path ~qid:8 "/Ableton/LiveSet/MainTrack/DeviceChain/Mixer/Volume/Manual@Value";
-  Upath2.query_of_path ~qid:9 "/Ableton/LiveSet/Tracks/MidiTrack/DeviceChain/Mixer/On/Manual@Value";
+  Upath2.query_of_path "/Ableton/LiveSet/Tracks/MidiTrack/DeviceChain/Mixer/Volume/Manual@Value";
+  Upath2.query_of_path "/Ableton/LiveSet/Tracks/AudioTrack/DeviceChain/Mixer/Volume/Manual@Value";
+  Upath2.query_of_path "/Ableton/LiveSet/MainTrack/DeviceChain/Mixer/Tempo/Manual@Value";
+  Upath2.query_of_path "/Ableton/LiveSet/MainTrack/DeviceChain/Mixer/Volume/Manual@Value";
+  Upath2.query_of_path "/Ableton/LiveSet/Tracks/MidiTrack/DeviceChain/Mixer/On/Manual@Value";
 ]
 
 (* Find the first match for a given query_id and extract the requested attr *)
 let find_attr (queries : Upath2.query list) results qid =
-  let q = List.find (fun q -> q.Upath2.qid = qid) queries in
+  let q = List.nth queries qid in
   let r = List.find (fun r -> r.Upath2.query_id = qid) results in
   match q.Upath2.attr with
   | Some attr_name -> Upath2.get_attr r attr_name

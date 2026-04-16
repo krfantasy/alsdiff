@@ -52,7 +52,6 @@ type attr_constraint = {
 }
 
 type query = {
-  qid : query_id;
   path : path_component list;       (** Parsed path components *)
   attr : string option;             (** [None] = match element, [Some name] = extract attribute *)
 }
@@ -484,11 +483,11 @@ let compile (queries : query list) =
      still tried at every depth, matching DOM-based Upath behavior. *)
   start_state.is_wildcard_loop <- true;
   (* Build NFA with prefix sharing *)
-  List.iter (fun q ->
+  List.iteri (fun qid q ->
       let rec walk path (state : nfa_state) =
         match path with
         | [] ->
-          state.accepting <- (q.qid, []) :: state.accepting
+          state.accepting <- (qid, []) :: state.accepting
         | comp :: rest ->
           match comp with
           | Tag (name_comp, attrs) ->
@@ -534,7 +533,7 @@ let compile (queries : query list) =
             in
             if rest = [] then begin
               (* MultiWildcard is last component: add accepting with attrs for self-match *)
-              wl_state.accepting <- (q.qid, cattrs) :: wl_state.accepting
+              wl_state.accepting <- (qid, cattrs) :: wl_state.accepting
             end else begin
               (* Continue compiling rest from the wildcard state *)
               walk rest wl_state
@@ -707,10 +706,10 @@ let evaluate nfa stream =
 
 (** Constructor from query string. Parses the path, extracts attribute
     from the last component's bare [@attr] if present. *)
-let query_of_path ~qid query_str =
+let query_of_path query_str =
   let parsed = Parser.parse_path query_str in
   let attr, path = extract_attr parsed in
-  { qid; path; attr }
+  { path; attr }
 
 (* --- Helpers --- *)
 

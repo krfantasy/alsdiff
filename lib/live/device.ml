@@ -185,18 +185,18 @@ module GenericParam = struct
   } [@@deriving eq, patch] [@@patch.generate_diff]
 
   let queries = [
-    Upath2.query_of_path ~qid:0 "/AutomationTarget@Id";
-    Upath2.query_of_path ~qid:1 "/ModulationTarget@Id";
-    Upath2.query_of_path ~qid:2 "/Manual@Value";
-    (* MIDIMapping: qid 3-10 *)
-    Upath2.query_of_path ~qid:3  "/KeyMidi/NoteOrController@Value";
-    Upath2.query_of_path ~qid:4  "/KeyMidi/Channel@Value";
-    Upath2.query_of_path ~qid:5  "/KeyMidi/IsNote@Value";
-    Upath2.query_of_path ~qid:6  "/KeyMidi/ControllerMapMode@Value";
-    Upath2.query_of_path ~qid:7  "/MidiControllerRange/Min@Value";
-    Upath2.query_of_path ~qid:8  "/MidiControllerRange/Max@Value";
-    Upath2.query_of_path ~qid:9  "/MidiCCOnOffThresholds/Min@Value";
-    Upath2.query_of_path ~qid:10 "/MidiCCOnOffThresholds/Max@Value";
+    Upath2.query_of_path "/AutomationTarget@Id";
+    Upath2.query_of_path "/ModulationTarget@Id";
+    Upath2.query_of_path "/Manual@Value";
+    (* MIDIMapping *)
+    Upath2.query_of_path "/KeyMidi/NoteOrController@Value";
+    Upath2.query_of_path "/KeyMidi/Channel@Value";
+    Upath2.query_of_path "/KeyMidi/IsNote@Value";
+    Upath2.query_of_path "/KeyMidi/ControllerMapMode@Value";
+    Upath2.query_of_path "/MidiControllerRange/Min@Value";
+    Upath2.query_of_path "/MidiControllerRange/Max@Value";
+    Upath2.query_of_path "/MidiCCOnOffThresholds/Min@Value";
+    Upath2.query_of_path "/MidiCCOnOffThresholds/Max@Value";
   ]
 
   let make ~root_name ~parse_value results =
@@ -291,13 +291,13 @@ module PresetRef = struct
   } [@@deriving eq, id, patch] [@@patch.generate_diff]
 
   let queries = [
-    Upath2.query_of_path ~qid:0 "/FileRef/RelativePath@Value";
-    Upath2.query_of_path ~qid:1 "/FileRef/Path@Value";
-    Upath2.query_of_path ~qid:2 "/FileRef/LivePackName@Value";
-    Upath2.query_of_path ~qid:3 "/FileRef/LivePackId@Value";
-    Upath2.query_of_path ~qid:4 "/FileRef/OriginalFileSize@Value";
-    Upath2.query_of_path ~qid:5 "/FileRef/OriginalCrc@Value";
-    Upath2.query_of_path ~qid:6 "/DeviceId@Name";
+    Upath2.query_of_path "/FileRef/RelativePath@Value";
+    Upath2.query_of_path "/FileRef/Path@Value";
+    Upath2.query_of_path "/FileRef/LivePackName@Value";
+    Upath2.query_of_path "/FileRef/LivePackId@Value";
+    Upath2.query_of_path "/FileRef/OriginalFileSize@Value";
+    Upath2.query_of_path "/FileRef/OriginalCrc@Value";
+    Upath2.query_of_path "/DeviceId@Name";
   ]
 
   let make ~root_name ~root_attrs results =
@@ -349,13 +349,13 @@ module PatchRef = struct
   } [@@deriving eq, id, patch] [@@patch.generate_diff]
 
   let queries = [
-    Upath2.query_of_path ~qid:0 "/FileRef/RelativePath@Value";
-    Upath2.query_of_path ~qid:1 "/FileRef/Path@Value";
-    Upath2.query_of_path ~qid:2 "/FileRef/LivePackName@Value";
-    Upath2.query_of_path ~qid:3 "/FileRef/LivePackId@Value";
-    Upath2.query_of_path ~qid:4 "/FileRef/OriginalFileSize@Value";
-    Upath2.query_of_path ~qid:5 "/FileRef/OriginalCrc@Value";
-    Upath2.query_of_path ~qid:6 "/LastModDate@Value";
+    Upath2.query_of_path "/FileRef/RelativePath@Value";
+    Upath2.query_of_path "/FileRef/Path@Value";
+    Upath2.query_of_path "/FileRef/LivePackName@Value";
+    Upath2.query_of_path "/FileRef/LivePackId@Value";
+    Upath2.query_of_path "/FileRef/OriginalFileSize@Value";
+    Upath2.query_of_path "/FileRef/OriginalCrc@Value";
+    Upath2.query_of_path "/LastModDate@Value";
   ]
 
   let make ~root_attrs results =
@@ -390,18 +390,18 @@ module PluginParam = struct
   } [@@deriving eq]
 
   let queries = [
-    Upath2.query_of_path ~qid:0  "/ParameterName@Value";
-    Upath2.query_of_path ~qid:1  "/ParameterValue/Manual@Value";
-    Upath2.query_of_path ~qid:2  "/ParameterValue/AutomationTarget@Id";
-    Upath2.query_of_path ~qid:3  "/ParameterValue/ModulationTarget@Id";
-    Upath2.query_of_path ~qid:4  "/ParameterValue/KeyMidi/NoteOrController@Value";
-    Upath2.query_of_path ~qid:5  "/ParameterValue/KeyMidi/Channel@Value";
-    Upath2.query_of_path ~qid:6  "/ParameterValue/KeyMidi/IsNote@Value";
-    Upath2.query_of_path ~qid:7  "/ParameterValue/KeyMidi/ControllerMapMode@Value";
-    Upath2.query_of_path ~qid:8  "/ParameterValue/MidiControllerRange/Min@Value";
-    Upath2.query_of_path ~qid:9  "/ParameterValue/MidiControllerRange/Max@Value";
-    Upath2.query_of_path ~qid:10 "/ParameterValue/MidiCCOnOffThresholds/Min@Value";
-    Upath2.query_of_path ~qid:11 "/ParameterValue/MidiCCOnOffThresholds/Max@Value";
+    Upath2.query_of_path "/ParameterName@Value";
+    Upath2.query_of_path "/ParameterValue/Manual@Value";
+    Upath2.query_of_path "/ParameterValue/AutomationTarget@Id";
+    Upath2.query_of_path "/ParameterValue/ModulationTarget@Id";
+    Upath2.query_of_path "/ParameterValue/KeyMidi/NoteOrController@Value";
+    Upath2.query_of_path "/ParameterValue/KeyMidi/Channel@Value";
+    Upath2.query_of_path "/ParameterValue/KeyMidi/IsNote@Value";
+    Upath2.query_of_path "/ParameterValue/KeyMidi/ControllerMapMode@Value";
+    Upath2.query_of_path "/ParameterValue/MidiControllerRange/Min@Value";
+    Upath2.query_of_path "/ParameterValue/MidiControllerRange/Max@Value";
+    Upath2.query_of_path "/ParameterValue/MidiCCOnOffThresholds/Min@Value";
+    Upath2.query_of_path "/ParameterValue/MidiCCOnOffThresholds/Max@Value";
   ]
 
   let make ~root_name ~root_attrs results =
@@ -659,20 +659,20 @@ module Max4LiveParam = struct
   } [@@deriving eq, id, patch] [@@patch.generate_diff]
 
   let queries = [
-    Upath2.query_of_path ~qid:0  "/Name@Value";
-    Upath2.query_of_path ~qid:1  "/Index@Value";
-    Upath2.query_of_path ~qid:2  "/Timeable/Manual@Value";
-    Upath2.query_of_path ~qid:3  "/Timeable/AutomationTarget@Id";
-    Upath2.query_of_path ~qid:4  "/Timeable/ModulationTarget@Id";
-    Upath2.query_of_path ~qid:5  "/Timeable/KeyMidi/NoteOrController@Value";
-    Upath2.query_of_path ~qid:6  "/Timeable/KeyMidi/Channel@Value";
-    Upath2.query_of_path ~qid:7  "/Timeable/KeyMidi/IsNote@Value";
-    Upath2.query_of_path ~qid:8  "/Timeable/KeyMidi/ControllerMapMode@Value";
-    Upath2.query_of_path ~qid:9  "/Timeable/MidiControllerRange/Min@Value";
-    Upath2.query_of_path ~qid:10 "/Timeable/MidiControllerRange/Max@Value";
-    Upath2.query_of_path ~qid:11 "/Timeable/MidiCCOnOffThresholds/Min@Value";
-    Upath2.query_of_path ~qid:12 "/Timeable/MidiCCOnOffThresholds/Max@Value";
-    Upath2.query_of_path ~qid:13 "/Names/Name/Name@Value";
+    Upath2.query_of_path "/Name@Value";
+    Upath2.query_of_path "/Index@Value";
+    Upath2.query_of_path "/Timeable/Manual@Value";
+    Upath2.query_of_path "/Timeable/AutomationTarget@Id";
+    Upath2.query_of_path "/Timeable/ModulationTarget@Id";
+    Upath2.query_of_path "/Timeable/KeyMidi/NoteOrController@Value";
+    Upath2.query_of_path "/Timeable/KeyMidi/Channel@Value";
+    Upath2.query_of_path "/Timeable/KeyMidi/IsNote@Value";
+    Upath2.query_of_path "/Timeable/KeyMidi/ControllerMapMode@Value";
+    Upath2.query_of_path "/Timeable/MidiControllerRange/Min@Value";
+    Upath2.query_of_path "/Timeable/MidiControllerRange/Max@Value";
+    Upath2.query_of_path "/Timeable/MidiCCOnOffThresholds/Min@Value";
+    Upath2.query_of_path "/Timeable/MidiCCOnOffThresholds/Max@Value";
+    Upath2.query_of_path "/Names/Name/Name@Value";
   ]
 
   let make ~root_name ~root_attrs results =
@@ -729,25 +729,25 @@ module MixerDevice = struct
     pan : DeviceParam.t;         (* panorama/panning *)
   } [@@deriving eq, patch] [@@patch.generate_diff]
 
-  let dp_queries prefix base =
+  let dp_queries prefix =
     let p = "/" ^ prefix in
     [
-      Upath2.query_of_path ~qid:(base + 0)  (p ^ "/AutomationTarget@Id");
-      Upath2.query_of_path ~qid:(base + 1)  (p ^ "/ModulationTarget@Id");
-      Upath2.query_of_path ~qid:(base + 2)  (p ^ "/Manual@Value");
-      Upath2.query_of_path ~qid:(base + 3)  (p ^ "/KeyMidi/NoteOrController@Value");
-      Upath2.query_of_path ~qid:(base + 4)  (p ^ "/KeyMidi/Channel@Value");
-      Upath2.query_of_path ~qid:(base + 5)  (p ^ "/KeyMidi/IsNote@Value");
-      Upath2.query_of_path ~qid:(base + 6)  (p ^ "/KeyMidi/ControllerMapMode@Value");
-      Upath2.query_of_path ~qid:(base + 7)  (p ^ "/MidiControllerRange/Min@Value");
-      Upath2.query_of_path ~qid:(base + 8)  (p ^ "/MidiControllerRange/Max@Value");
-      Upath2.query_of_path ~qid:(base + 9)  (p ^ "/MidiCCOnOffThresholds/Min@Value");
-      Upath2.query_of_path ~qid:(base + 10) (p ^ "/MidiCCOnOffThresholds/Max@Value");
+      Upath2.query_of_path (p ^ "/AutomationTarget@Id");
+      Upath2.query_of_path (p ^ "/ModulationTarget@Id");
+      Upath2.query_of_path (p ^ "/Manual@Value");
+      Upath2.query_of_path (p ^ "/KeyMidi/NoteOrController@Value");
+      Upath2.query_of_path (p ^ "/KeyMidi/Channel@Value");
+      Upath2.query_of_path (p ^ "/KeyMidi/IsNote@Value");
+      Upath2.query_of_path (p ^ "/KeyMidi/ControllerMapMode@Value");
+      Upath2.query_of_path (p ^ "/MidiControllerRange/Min@Value");
+      Upath2.query_of_path (p ^ "/MidiControllerRange/Max@Value");
+      Upath2.query_of_path (p ^ "/MidiCCOnOffThresholds/Min@Value");
+      Upath2.query_of_path (p ^ "/MidiCCOnOffThresholds/Max@Value");
     ]
 
   let queries =
-    dp_queries "On" 0 @ dp_queries "Speaker" 11
-    @ dp_queries "Volume" 22 @ dp_queries "Panorama" 33
+    dp_queries "On" @ dp_queries "Speaker"
+    @ dp_queries "Volume" @ dp_queries "Panorama"
 
   let make_dp results ~path ~qid_base =
     let name = param_name_from_path path in
@@ -829,8 +829,8 @@ module Snapshot = struct
   } [@@deriving eq, id, patch]
 
   let queries = [
-    Upath2.query_of_path ~qid:0 "/SnapshotName@Value";
-    Upath2.query_of_path ~qid:1 "/'MacroValues\\.[0-9]+'@Value";
+    Upath2.query_of_path "/SnapshotName@Value";
+    Upath2.query_of_path "/'MacroValues\\.[0-9]+'@Value";
   ]
 
   let make ~root_attrs results =
@@ -1194,30 +1194,30 @@ module RegularDevice = struct
   type t = regular_device [@@deriving eq]
 
   let queries = [
-    Upath2.query_of_path ~qid:0 "/Pointee@Id";
-    Upath2.query_of_path ~qid:1 "/ShouldShowPresetName@Value";
-    Upath2.query_of_path ~qid:2 "/UserName@Value";
+    Upath2.query_of_path "/Pointee@Id";
+    Upath2.query_of_path "/ShouldShowPresetName@Value";
+    Upath2.query_of_path "/UserName@Value";
     (* PresetRef inlined *)
-    Upath2.query_of_path ~qid:10 "/LastPresetRef/Value/*/FileRef/RelativePath@Value";
-    Upath2.query_of_path ~qid:11 "/LastPresetRef/Value/*/FileRef/Path@Value";
-    Upath2.query_of_path ~qid:12 "/LastPresetRef/Value/*/FileRef/LivePackName@Value";
-    Upath2.query_of_path ~qid:13 "/LastPresetRef/Value/*/FileRef/LivePackId@Value";
-    Upath2.query_of_path ~qid:14 "/LastPresetRef/Value/*/FileRef/OriginalFileSize@Value";
-    Upath2.query_of_path ~qid:15 "/LastPresetRef/Value/*/FileRef/OriginalCrc@Value";
-    Upath2.query_of_path ~qid:16 "/LastPresetRef/Value/*/DeviceId@Name";
-    Upath2.query_of_path ~qid:17 "/LastPresetRef/Value/*";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/RelativePath@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/Path@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/LivePackName@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/LivePackId@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/OriginalFileSize@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/OriginalCrc@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/DeviceId@Name";
+    Upath2.query_of_path "/LastPresetRef/Value/*";
     (* Enabled DeviceParam inlined *)
-    Upath2.query_of_path ~qid:20 "/On/AutomationTarget@Id";
-    Upath2.query_of_path ~qid:21 "/On/ModulationTarget@Id";
-    Upath2.query_of_path ~qid:22 "/On/Manual@Value";
-    Upath2.query_of_path ~qid:23 "/On/KeyMidi/NoteOrController@Value";
-    Upath2.query_of_path ~qid:24 "/On/KeyMidi/Channel@Value";
-    Upath2.query_of_path ~qid:25 "/On/KeyMidi/IsNote@Value";
-    Upath2.query_of_path ~qid:26 "/On/KeyMidi/ControllerMapMode@Value";
-    Upath2.query_of_path ~qid:27 "/On/MidiControllerRange/Min@Value";
-    Upath2.query_of_path ~qid:28 "/On/MidiControllerRange/Max@Value";
-    Upath2.query_of_path ~qid:29 "/On/MidiCCOnOffThresholds/Min@Value";
-    Upath2.query_of_path ~qid:30 "/On/MidiCCOnOffThresholds/Max@Value";
+    Upath2.query_of_path "/On/AutomationTarget@Id";
+    Upath2.query_of_path "/On/ModulationTarget@Id";
+    Upath2.query_of_path "/On/Manual@Value";
+    Upath2.query_of_path "/On/KeyMidi/NoteOrController@Value";
+    Upath2.query_of_path "/On/KeyMidi/Channel@Value";
+    Upath2.query_of_path "/On/KeyMidi/IsNote@Value";
+    Upath2.query_of_path "/On/KeyMidi/ControllerMapMode@Value";
+    Upath2.query_of_path "/On/MidiControllerRange/Min@Value";
+    Upath2.query_of_path "/On/MidiControllerRange/Max@Value";
+    Upath2.query_of_path "/On/MidiCCOnOffThresholds/Min@Value";
+    Upath2.query_of_path "/On/MidiCCOnOffThresholds/Max@Value";
   ]
 
   let create (xml : Xml.t) : t =
@@ -1228,8 +1228,8 @@ module RegularDevice = struct
       let results = Upath2.evaluate nfa stream in
       let id = int_of_string (List.assoc "Id" root_attrs) in
       let pointee = Option.get (Upath2.query_int_attr results 0 "Id") in
-      (* PresetRef from inlined qids 10-17 *)
-      let preset_root = Upath2.find_result results 17 in
+      (* PresetRef from inlined queries *)
+      let preset_root = Upath2.find_result results 10 in
       let preset_type = match preset_root with
         | Some r -> (match r.Upath2.element_name with
             | "AbletonDefaultPresetRef" -> PresetRef.DefaultPreset
@@ -1243,10 +1243,10 @@ module RegularDevice = struct
         | None -> 0
       in
       let preset =
-        match Upath2.query_attr results 11 "Value" with
+        match Upath2.query_attr results 4 "Value" with
         | Some _ ->
-          let relative_path = Option.get (Upath2.query_attr results 10 "Value") in
-          let path = Option.get (Upath2.query_attr results 11 "Value") in
+          let relative_path = Option.get (Upath2.query_attr results 3 "Value") in
+          let path = Option.get (Upath2.query_attr results 4 "Value") in
           let preset_file_name =
             Filename.basename path |> Filename.remove_extension
           in
@@ -1254,18 +1254,18 @@ module RegularDevice = struct
             | PresetRef.UserPreset -> preset_file_name
             | PresetRef.DefaultPreset ->
               let device_name = Option.value
-                  (Upath2.query_attr results 16 "Name") ~default:"" in
+                  (Upath2.query_attr results 9 "Name") ~default:"" in
               if device_name <> "" then device_name else preset_file_name
           in
-          let pack_name = Option.get (Upath2.query_attr results 12 "Value") in
+          let pack_name = Option.get (Upath2.query_attr results 5 "Value") in
           let pack_id =
-            Upath2.query_int_attr results 13 "Value"
+            Upath2.query_int_attr results 6 "Value"
             |> Option.value ~default:0
           in
           let file_size =
-            Option.get (Upath2.query_int_attr results 14 "Value")
+            Option.get (Upath2.query_int_attr results 7 "Value")
           in
-          let crc = Upath2.query_int_attr results 15 "Value"
+          let crc = Upath2.query_int_attr results 8 "Value"
             |> Option.value ~default:0
           in
           Some { PresetRef.id = preset_id; name; preset_type;
@@ -1283,7 +1283,7 @@ module RegularDevice = struct
           if user_name <> "" then user_name else name
       in
       (* Enabled DeviceParam from results *)
-      let enabled = MixerDevice.make_dp results ~path:"On" ~qid_base:20 in
+      let enabled = MixerDevice.make_dp results ~path:"On" ~qid_base:11 in
       (* Multi-match params: DOM fallback *)
       let params = Upath.find_all "/**/LomId/../Manual/.." xml
         |> List.map DeviceParam.create_from_upath_find
@@ -1307,30 +1307,30 @@ module PluginDevice = struct
   type t = plugin_device [@@deriving eq]
 
   let queries = [
-    Upath2.query_of_path ~qid:0  "/Pointee@Id";
-    Upath2.query_of_path ~qid:1  "/ShouldShowPresetName@Value";
-    Upath2.query_of_path ~qid:2  "/UserName@Value";
-    (* PresetRef inlined: qid 10-16 *)
-    Upath2.query_of_path ~qid:10 "/LastPresetRef/Value/*/FileRef/RelativePath@Value";
-    Upath2.query_of_path ~qid:11 "/LastPresetRef/Value/*/FileRef/Path@Value";
-    Upath2.query_of_path ~qid:12 "/LastPresetRef/Value/*/FileRef/LivePackName@Value";
-    Upath2.query_of_path ~qid:13 "/LastPresetRef/Value/*/FileRef/LivePackId@Value";
-    Upath2.query_of_path ~qid:14 "/LastPresetRef/Value/*/FileRef/OriginalFileSize@Value";
-    Upath2.query_of_path ~qid:15 "/LastPresetRef/Value/*/FileRef/OriginalCrc@Value";
-    Upath2.query_of_path ~qid:16 "/LastPresetRef/Value/*/DeviceId@Name";
-    Upath2.query_of_path ~qid:17 "/LastPresetRef/Value/*";
-    (* Enabled DeviceParam inlined: qid 20-30 *)
-    Upath2.query_of_path ~qid:20 "/On/AutomationTarget@Id";
-    Upath2.query_of_path ~qid:21 "/On/ModulationTarget@Id";
-    Upath2.query_of_path ~qid:22 "/On/Manual@Value";
-    Upath2.query_of_path ~qid:23 "/On/KeyMidi/NoteOrController@Value";
-    Upath2.query_of_path ~qid:24 "/On/KeyMidi/Channel@Value";
-    Upath2.query_of_path ~qid:25 "/On/KeyMidi/IsNote@Value";
-    Upath2.query_of_path ~qid:26 "/On/KeyMidi/ControllerMapMode@Value";
-    Upath2.query_of_path ~qid:27 "/On/MidiControllerRange/Min@Value";
-    Upath2.query_of_path ~qid:28 "/On/MidiControllerRange/Max@Value";
-    Upath2.query_of_path ~qid:29 "/On/MidiCCOnOffThresholds/Min@Value";
-    Upath2.query_of_path ~qid:30 "/On/MidiCCOnOffThresholds/Max@Value";
+    Upath2.query_of_path "/Pointee@Id";
+    Upath2.query_of_path "/ShouldShowPresetName@Value";
+    Upath2.query_of_path "/UserName@Value";
+    (* PresetRef inlined *)
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/RelativePath@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/Path@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/LivePackName@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/LivePackId@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/OriginalFileSize@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/OriginalCrc@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/DeviceId@Name";
+    Upath2.query_of_path "/LastPresetRef/Value/*";
+    (* Enabled DeviceParam inlined *)
+    Upath2.query_of_path "/On/AutomationTarget@Id";
+    Upath2.query_of_path "/On/ModulationTarget@Id";
+    Upath2.query_of_path "/On/Manual@Value";
+    Upath2.query_of_path "/On/KeyMidi/NoteOrController@Value";
+    Upath2.query_of_path "/On/KeyMidi/Channel@Value";
+    Upath2.query_of_path "/On/KeyMidi/IsNote@Value";
+    Upath2.query_of_path "/On/KeyMidi/ControllerMapMode@Value";
+    Upath2.query_of_path "/On/MidiControllerRange/Min@Value";
+    Upath2.query_of_path "/On/MidiControllerRange/Max@Value";
+    Upath2.query_of_path "/On/MidiCCOnOffThresholds/Min@Value";
+    Upath2.query_of_path "/On/MidiCCOnOffThresholds/Max@Value";
   ]
 
   let create (xml : Xml.t) : t =
@@ -1341,8 +1341,8 @@ module PluginDevice = struct
       let results = Upath2.evaluate nfa stream in
       let id = int_of_string (List.assoc "Id" root_attrs) in
       let pointee = Option.get (Upath2.query_int_attr results 0 "Id") in
-      (* PresetRef from inlined qids 10-17 *)
-      let preset_root = Upath2.find_result results 17 in
+      (* PresetRef from inlined queries *)
+      let preset_root = Upath2.find_result results 10 in
       let preset_type = match preset_root with
         | Some r -> (match r.Upath2.element_name with
             | "AbletonDefaultPresetRef" -> PresetRef.DefaultPreset
@@ -1356,10 +1356,10 @@ module PluginDevice = struct
         | None -> 0
       in
       let preset =
-        match Upath2.query_attr results 11 "Value" with
+        match Upath2.query_attr results 4 "Value" with
         | Some _ ->
-          let relative_path = Option.get (Upath2.query_attr results 10 "Value") in
-          let path = Option.get (Upath2.query_attr results 11 "Value") in
+          let relative_path = Option.get (Upath2.query_attr results 3 "Value") in
+          let path = Option.get (Upath2.query_attr results 4 "Value") in
           let preset_file_name =
             Filename.basename path |> Filename.remove_extension
           in
@@ -1367,18 +1367,18 @@ module PluginDevice = struct
             | PresetRef.UserPreset -> preset_file_name
             | PresetRef.DefaultPreset ->
               let device_name = Option.value
-                  (Upath2.query_attr results 16 "Name") ~default:"" in
+                  (Upath2.query_attr results 9 "Name") ~default:"" in
               if device_name <> "" then device_name else preset_file_name
           in
-          let pack_name = Option.get (Upath2.query_attr results 12 "Value") in
+          let pack_name = Option.get (Upath2.query_attr results 5 "Value") in
           let pack_id =
-            Upath2.query_int_attr results 13 "Value"
+            Upath2.query_int_attr results 6 "Value"
             |> Option.value ~default:0
           in
           let file_size =
-            Option.get (Upath2.query_int_attr results 14 "Value")
+            Option.get (Upath2.query_int_attr results 7 "Value")
           in
-          let crc = Upath2.query_int_attr results 15 "Value"
+          let crc = Upath2.query_int_attr results 8 "Value"
             |> Option.value ~default:0
           in
           Some { PresetRef.id = preset_id; name; preset_type;
@@ -1395,7 +1395,7 @@ module PluginDevice = struct
             |> Option.value ~default:"" in
           if user_name <> "" then user_name else name
       in
-      let enabled = MixerDevice.make_dp results ~path:"On" ~qid_base:20 in
+      let enabled = MixerDevice.make_dp results ~path:"On" ~qid_base:11 in
       (* DOM fallback for PluginDesc *)
       let plugin_desc_xml = Upath.find "/PluginDesc" xml |> snd in
       let desc = PluginDesc.create plugin_desc_xml in
@@ -1463,30 +1463,30 @@ module GroupDevice = struct
   let id_hash t = Hashtbl.hash t.id
 
   let queries = [
-    Upath2.query_of_path ~qid:0  "/Pointee@Id";
-    Upath2.query_of_path ~qid:1  "/ShouldShowPresetName@Value";
-    Upath2.query_of_path ~qid:2  "/UserName@Value";
-    (* PresetRef inlined: qid 10-16 *)
-    Upath2.query_of_path ~qid:10 "/LastPresetRef/Value/*/FileRef/RelativePath@Value";
-    Upath2.query_of_path ~qid:11 "/LastPresetRef/Value/*/FileRef/Path@Value";
-    Upath2.query_of_path ~qid:12 "/LastPresetRef/Value/*/FileRef/LivePackName@Value";
-    Upath2.query_of_path ~qid:13 "/LastPresetRef/Value/*/FileRef/LivePackId@Value";
-    Upath2.query_of_path ~qid:14 "/LastPresetRef/Value/*/FileRef/OriginalFileSize@Value";
-    Upath2.query_of_path ~qid:15 "/LastPresetRef/Value/*/FileRef/OriginalCrc@Value";
-    Upath2.query_of_path ~qid:16 "/LastPresetRef/Value/*/DeviceId@Name";
-    Upath2.query_of_path ~qid:17 "/LastPresetRef/Value/*";
-    (* Enabled DeviceParam inlined: qid 20-30 *)
-    Upath2.query_of_path ~qid:20 "/On/AutomationTarget@Id";
-    Upath2.query_of_path ~qid:21 "/On/ModulationTarget@Id";
-    Upath2.query_of_path ~qid:22 "/On/Manual@Value";
-    Upath2.query_of_path ~qid:23 "/On/KeyMidi/NoteOrController@Value";
-    Upath2.query_of_path ~qid:24 "/On/KeyMidi/Channel@Value";
-    Upath2.query_of_path ~qid:25 "/On/KeyMidi/IsNote@Value";
-    Upath2.query_of_path ~qid:26 "/On/KeyMidi/ControllerMapMode@Value";
-    Upath2.query_of_path ~qid:27 "/On/MidiControllerRange/Min@Value";
-    Upath2.query_of_path ~qid:28 "/On/MidiControllerRange/Max@Value";
-    Upath2.query_of_path ~qid:29 "/On/MidiCCOnOffThresholds/Min@Value";
-    Upath2.query_of_path ~qid:30 "/On/MidiCCOnOffThresholds/Max@Value";
+    Upath2.query_of_path "/Pointee@Id";
+    Upath2.query_of_path "/ShouldShowPresetName@Value";
+    Upath2.query_of_path "/UserName@Value";
+    (* PresetRef inlined *)
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/RelativePath@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/Path@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/LivePackName@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/LivePackId@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/OriginalFileSize@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/OriginalCrc@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/DeviceId@Name";
+    Upath2.query_of_path "/LastPresetRef/Value/*";
+    (* Enabled DeviceParam inlined *)
+    Upath2.query_of_path "/On/AutomationTarget@Id";
+    Upath2.query_of_path "/On/ModulationTarget@Id";
+    Upath2.query_of_path "/On/Manual@Value";
+    Upath2.query_of_path "/On/KeyMidi/NoteOrController@Value";
+    Upath2.query_of_path "/On/KeyMidi/Channel@Value";
+    Upath2.query_of_path "/On/KeyMidi/IsNote@Value";
+    Upath2.query_of_path "/On/KeyMidi/ControllerMapMode@Value";
+    Upath2.query_of_path "/On/MidiControllerRange/Min@Value";
+    Upath2.query_of_path "/On/MidiControllerRange/Max@Value";
+    Upath2.query_of_path "/On/MidiCCOnOffThresholds/Min@Value";
+    Upath2.query_of_path "/On/MidiCCOnOffThresholds/Max@Value";
   ]
 
   let create (device_creator : Xml.t -> device) (xml : Xml.t) : t =
@@ -1497,8 +1497,8 @@ module GroupDevice = struct
       let results = Upath2.evaluate nfa stream in
       let id = int_of_string (List.assoc "Id" root_attrs) in
       let pointee = Option.get (Upath2.query_int_attr results 0 "Id") in
-      (* PresetRef from inlined qids 10-17 *)
-      let preset_root = Upath2.find_result results 17 in
+      (* PresetRef from inlined queries *)
+      let preset_root = Upath2.find_result results 10 in
       let preset_type = match preset_root with
         | Some r -> (match r.Upath2.element_name with
             | "AbletonDefaultPresetRef" -> PresetRef.DefaultPreset
@@ -1512,10 +1512,10 @@ module GroupDevice = struct
         | None -> 0
       in
       let preset =
-        match Upath2.query_attr results 11 "Value" with
+        match Upath2.query_attr results 4 "Value" with
         | Some _ ->
-          let relative_path = Option.get (Upath2.query_attr results 10 "Value") in
-          let path = Option.get (Upath2.query_attr results 11 "Value") in
+          let relative_path = Option.get (Upath2.query_attr results 3 "Value") in
+          let path = Option.get (Upath2.query_attr results 4 "Value") in
           let preset_file_name =
             Filename.basename path |> Filename.remove_extension
           in
@@ -1523,18 +1523,18 @@ module GroupDevice = struct
             | PresetRef.UserPreset -> preset_file_name
             | PresetRef.DefaultPreset ->
               let device_name = Option.value
-                  (Upath2.query_attr results 16 "Name") ~default:"" in
+                  (Upath2.query_attr results 9 "Name") ~default:"" in
               if device_name <> "" then device_name else preset_file_name
           in
-          let pack_name = Option.get (Upath2.query_attr results 12 "Value") in
+          let pack_name = Option.get (Upath2.query_attr results 5 "Value") in
           let pack_id =
-            Upath2.query_int_attr results 13 "Value"
+            Upath2.query_int_attr results 6 "Value"
             |> Option.value ~default:0
           in
           let file_size =
-            Option.get (Upath2.query_int_attr results 14 "Value")
+            Option.get (Upath2.query_int_attr results 7 "Value")
           in
-          let crc = Upath2.query_int_attr results 15 "Value"
+          let crc = Upath2.query_int_attr results 8 "Value"
             |> Option.value ~default:0
           in
           Some { PresetRef.id = preset_id; name; preset_type;
@@ -1551,7 +1551,7 @@ module GroupDevice = struct
             |> Option.value ~default:"" in
           if user_name <> "" then user_name else name
       in
-      let enabled = MixerDevice.make_dp results ~path:"On" ~qid_base:20 in
+      let enabled = MixerDevice.make_dp results ~path:"On" ~qid_base:11 in
       (* DOM fallback for branches, macros, snapshots *)
       let branches = Upath.find "/Branches" xml
         |> snd
@@ -1599,38 +1599,38 @@ module Max4LiveDevice = struct
   type t = max4live_device [@@deriving eq]
 
   let queries = [
-    Upath2.query_of_path ~qid:0  "/Pointee@Id";
-    Upath2.query_of_path ~qid:1  "/ShouldShowPresetName@Value";
-    Upath2.query_of_path ~qid:2  "/UserName@Value";
-    (* PresetRef inlined: qid 10-16 *)
-    Upath2.query_of_path ~qid:10 "/LastPresetRef/Value/*/FileRef/RelativePath@Value";
-    Upath2.query_of_path ~qid:11 "/LastPresetRef/Value/*/FileRef/Path@Value";
-    Upath2.query_of_path ~qid:12 "/LastPresetRef/Value/*/FileRef/LivePackName@Value";
-    Upath2.query_of_path ~qid:13 "/LastPresetRef/Value/*/FileRef/LivePackId@Value";
-    Upath2.query_of_path ~qid:14 "/LastPresetRef/Value/*/FileRef/OriginalFileSize@Value";
-    Upath2.query_of_path ~qid:15 "/LastPresetRef/Value/*/FileRef/OriginalCrc@Value";
-    Upath2.query_of_path ~qid:16 "/LastPresetRef/Value/*/DeviceId@Name";
-    Upath2.query_of_path ~qid:17 "/LastPresetRef/Value/*";
-    (* PatchRef inlined: qid 30-36 *)
-    Upath2.query_of_path ~qid:30 "/PatchSlot/Value/MxPatchRef/FileRef/RelativePath@Value";
-    Upath2.query_of_path ~qid:31 "/PatchSlot/Value/MxPatchRef/FileRef/Path@Value";
-    Upath2.query_of_path ~qid:32 "/PatchSlot/Value/MxPatchRef/FileRef/LivePackName@Value";
-    Upath2.query_of_path ~qid:33 "/PatchSlot/Value/MxPatchRef/FileRef/LivePackId@Value";
-    Upath2.query_of_path ~qid:34 "/PatchSlot/Value/MxPatchRef/FileRef/OriginalFileSize@Value";
-    Upath2.query_of_path ~qid:35 "/PatchSlot/Value/MxPatchRef/FileRef/OriginalCrc@Value";
-    Upath2.query_of_path ~qid:36 "/PatchSlot/Value/MxPatchRef/LastModDate@Value";
-    (* Enabled DeviceParam inlined: qid 40-50 *)
-    Upath2.query_of_path ~qid:40 "/On/AutomationTarget@Id";
-    Upath2.query_of_path ~qid:41 "/On/ModulationTarget@Id";
-    Upath2.query_of_path ~qid:42 "/On/Manual@Value";
-    Upath2.query_of_path ~qid:43 "/On/KeyMidi/NoteOrController@Value";
-    Upath2.query_of_path ~qid:44 "/On/KeyMidi/Channel@Value";
-    Upath2.query_of_path ~qid:45 "/On/KeyMidi/IsNote@Value";
-    Upath2.query_of_path ~qid:46 "/On/KeyMidi/ControllerMapMode@Value";
-    Upath2.query_of_path ~qid:47 "/On/MidiControllerRange/Min@Value";
-    Upath2.query_of_path ~qid:48 "/On/MidiControllerRange/Max@Value";
-    Upath2.query_of_path ~qid:49 "/On/MidiCCOnOffThresholds/Min@Value";
-    Upath2.query_of_path ~qid:50 "/On/MidiCCOnOffThresholds/Max@Value";
+    Upath2.query_of_path "/Pointee@Id";
+    Upath2.query_of_path "/ShouldShowPresetName@Value";
+    Upath2.query_of_path "/UserName@Value";
+    (* PresetRef inlined *)
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/RelativePath@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/Path@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/LivePackName@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/LivePackId@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/OriginalFileSize@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/FileRef/OriginalCrc@Value";
+    Upath2.query_of_path "/LastPresetRef/Value/*/DeviceId@Name";
+    Upath2.query_of_path "/LastPresetRef/Value/*";
+    (* PatchRef inlined *)
+    Upath2.query_of_path "/PatchSlot/Value/MxPatchRef/FileRef/RelativePath@Value";
+    Upath2.query_of_path "/PatchSlot/Value/MxPatchRef/FileRef/Path@Value";
+    Upath2.query_of_path "/PatchSlot/Value/MxPatchRef/FileRef/LivePackName@Value";
+    Upath2.query_of_path "/PatchSlot/Value/MxPatchRef/FileRef/LivePackId@Value";
+    Upath2.query_of_path "/PatchSlot/Value/MxPatchRef/FileRef/OriginalFileSize@Value";
+    Upath2.query_of_path "/PatchSlot/Value/MxPatchRef/FileRef/OriginalCrc@Value";
+    Upath2.query_of_path "/PatchSlot/Value/MxPatchRef/LastModDate@Value";
+    (* Enabled DeviceParam inlined *)
+    Upath2.query_of_path "/On/AutomationTarget@Id";
+    Upath2.query_of_path "/On/ModulationTarget@Id";
+    Upath2.query_of_path "/On/Manual@Value";
+    Upath2.query_of_path "/On/KeyMidi/NoteOrController@Value";
+    Upath2.query_of_path "/On/KeyMidi/Channel@Value";
+    Upath2.query_of_path "/On/KeyMidi/IsNote@Value";
+    Upath2.query_of_path "/On/KeyMidi/ControllerMapMode@Value";
+    Upath2.query_of_path "/On/MidiControllerRange/Min@Value";
+    Upath2.query_of_path "/On/MidiControllerRange/Max@Value";
+    Upath2.query_of_path "/On/MidiCCOnOffThresholds/Min@Value";
+    Upath2.query_of_path "/On/MidiCCOnOffThresholds/Max@Value";
   ]
 
   let create (xml : Xml.t) : t =
@@ -1641,8 +1641,8 @@ module Max4LiveDevice = struct
       let results = Upath2.evaluate nfa stream in
       let id = int_of_string (List.assoc "Id" root_attrs) in
       let pointee = Option.get (Upath2.query_int_attr results 0 "Id") in
-      (* PresetRef from inlined qids 10-17 *)
-      let preset_root = Upath2.find_result results 17 in
+      (* PresetRef from inlined queries *)
+      let preset_root = Upath2.find_result results 10 in
       let preset_type = match preset_root with
         | Some r -> (match r.Upath2.element_name with
             | "AbletonDefaultPresetRef" -> PresetRef.DefaultPreset
@@ -1656,10 +1656,10 @@ module Max4LiveDevice = struct
         | None -> 0
       in
       let preset =
-        match Upath2.query_attr results 11 "Value" with
+        match Upath2.query_attr results 4 "Value" with
         | Some _ ->
-          let relative_path = Option.get (Upath2.query_attr results 10 "Value") in
-          let path = Option.get (Upath2.query_attr results 11 "Value") in
+          let relative_path = Option.get (Upath2.query_attr results 3 "Value") in
+          let path = Option.get (Upath2.query_attr results 4 "Value") in
           let preset_file_name =
             Filename.basename path |> Filename.remove_extension
           in
@@ -1667,18 +1667,18 @@ module Max4LiveDevice = struct
             | PresetRef.UserPreset -> preset_file_name
             | PresetRef.DefaultPreset ->
               let device_name = Option.value
-                  (Upath2.query_attr results 16 "Name") ~default:"" in
+                  (Upath2.query_attr results 9 "Name") ~default:"" in
               if device_name <> "" then device_name else preset_file_name
           in
-          let pack_name = Option.get (Upath2.query_attr results 12 "Value") in
+          let pack_name = Option.get (Upath2.query_attr results 5 "Value") in
           let pack_id =
-            Upath2.query_int_attr results 13 "Value"
+            Upath2.query_int_attr results 6 "Value"
             |> Option.value ~default:0
           in
           let file_size =
-            Option.get (Upath2.query_int_attr results 14 "Value")
+            Option.get (Upath2.query_int_attr results 7 "Value")
           in
-          let crc = Upath2.query_int_attr results 15 "Value"
+          let crc = Upath2.query_int_attr results 8 "Value"
             |> Option.value ~default:0
           in
           Some { PresetRef.id = preset_id; name; preset_type;
@@ -1695,17 +1695,17 @@ module Max4LiveDevice = struct
             |> Option.value ~default:"" in
           if user_name <> "" then user_name else name
       in
-      let enabled = MixerDevice.make_dp results ~path:"On" ~qid_base:40 in
-      (* PatchRef from inlined qids 30-36 *)
+      let enabled = MixerDevice.make_dp results ~path:"On" ~qid_base:18 in
+      (* PatchRef from inlined queries *)
       let patch_ref =
-        let relative_path = Option.get (Upath2.query_attr results 30 "Value") in
-        let path = Option.get (Upath2.query_attr results 31 "Value") in
+        let relative_path = Option.get (Upath2.query_attr results 11 "Value") in
+        let path = Option.get (Upath2.query_attr results 12 "Value") in
         let patch_name = Filename.basename path |> Filename.remove_extension in
-        let pack_name = Option.get (Upath2.query_attr results 32 "Value") in
-        let pack_id = Upath2.query_int_attr results 33 "Value" |> Option.value ~default:0 in
-        let file_size = Option.get (Upath2.query_int_attr results 34 "Value") in
-        let crc = Upath2.query_int_attr results 35 "Value" |> Option.value ~default:0 in
-        let last_mod_date = Upath2.query_int_attr results 36 "Value" |> Option.value ~default:0 in
+        let pack_name = Option.get (Upath2.query_attr results 13 "Value") in
+        let pack_id = Upath2.query_int_attr results 14 "Value" |> Option.value ~default:0 in
+        let file_size = Option.get (Upath2.query_int_attr results 15 "Value") in
+        let crc = Upath2.query_int_attr results 16 "Value" |> Option.value ~default:0 in
+        let last_mod_date = Upath2.query_int_attr results 17 "Value" |> Option.value ~default:0 in
         { PatchRef.id = 0; name = patch_name;
           preset_type = UserPreset; relative_path; path;
           pack_name; pack_id; file_size; crc; last_mod_date }

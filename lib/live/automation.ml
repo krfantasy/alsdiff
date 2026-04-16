@@ -81,8 +81,8 @@ type t = {
    a structured type at a higher level of abstraction. *)
 
 let queries = [
-  Upath2.query_of_path ~qid:0 "/EnvelopeTarget/PointeeId@Value";
-  Upath2.query_of_path ~qid:1 "/Automation/Events/'(Float|Int|Enum)Event'";
+  Upath2.query_of_path "/EnvelopeTarget/PointeeId@Value";
+  Upath2.query_of_path "/Automation/Events/'(Float|Int|Enum)Event'";
 ]
 
 let make ~root_attrs results =

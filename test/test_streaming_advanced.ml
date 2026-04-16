@@ -16,7 +16,7 @@ let run_queries queries =
   let stream = Xml2.stream_from_file path in
   Upath2.evaluate nfa stream
 
-let q qid path_str = Upath2.query_of_path ~qid path_str
+let q path_str = Upath2.query_of_path path_str
 
 let find_by_qid results qid =
   List.filter (fun r -> r.Upath2.query_id = qid) results
@@ -26,14 +26,14 @@ let get_value r = Upath2.get_attr r "Value"
 (* --- MultiWildcard tests --- *)
 
 let test_multiwildcard_track () =
-  let results = run_queries [ q 0 "/**/AudioTrack" ] in
+  let results = run_queries [ q "/**/AudioTrack" ] in
   let matches = find_by_qid results 0 in
   let ids = List.filter_map (fun r -> Upath2.get_attr r "Id") matches in
   Alcotest.(check int) "one AudioTrack" 1 (List.length ids);
   Alcotest.(check string) "AudioTrack Id" "15" (List.hd ids)
 
 let test_multiwildcard_manual () =
-  let results = run_queries [ q 0 "/**/Manual@Value" ] in
+  let results = run_queries [ q "/**/Manual@Value" ] in
   let matches = find_by_qid results 0 in
   let values = List.filter_map get_value matches in
   Alcotest.(check bool) "multiple Manual matches" true (List.length values >= 3);
@@ -43,7 +43,7 @@ let test_multiwildcard_manual () =
   Alcotest.(check bool) "contains 'true'" true (List.mem "true" values)
 
 let test_multiwildcard_effective_name () =
-  let results = run_queries [ q 0 "/**/EffectiveName@Value" ] in
+  let results = run_queries [ q "/**/EffectiveName@Value" ] in
   let matches = find_by_qid results 0 in
   let values = List.filter_map get_value matches in
   Alcotest.(check bool) "at least 3 EffectiveName matches" true (List.length values >= 3);
@@ -54,7 +54,7 @@ let test_multiwildcard_effective_name () =
 (* --- SingleWildcard tests --- *)
 
 let test_singlewildcard_name () =
-  let results = run_queries [ q 0 "/Tracks/*/Name/EffectiveName@Value" ] in
+  let results = run_queries [ q "/Tracks/*/Name/EffectiveName@Value" ] in
   let matches = find_by_qid results 0 in
   let values = List.filter_map get_value matches in
   Alcotest.(check int) "two tracks" 2 (List.length values);
@@ -62,7 +62,7 @@ let test_singlewildcard_name () =
   Alcotest.(check bool) "contains 2-Audio" true (List.mem "2-Audio" values)
 
 let test_singlewildcard_mixer_volume () =
-  let results = run_queries [ q 0 "/Tracks/*/DeviceChain/Mixer/Volume/Manual@Value" ] in
+  let results = run_queries [ q "/Tracks/*/DeviceChain/Mixer/Volume/Manual@Value" ] in
   let matches = find_by_qid results 0 in
   let values = List.filter_map get_value matches in
   Alcotest.(check int) "two volume manuals" 2 (List.length values);
@@ -73,7 +73,7 @@ let test_singlewildcard_mixer_volume () =
 (* --- Regex tests --- *)
 
 let test_regex_track_type () =
-  let results = run_queries [ q 0 "/Tracks/'(Midi|Audio)Track'" ] in
+  let results = run_queries [ q "/Tracks/'(Midi|Audio)Track'" ] in
   let matches = find_by_qid results 0 in
   let ids = List.filter_map (fun r -> Upath2.get_attr r "Id") matches in
   Alcotest.(check int) "two tracks" 2 (List.length ids);
@@ -83,7 +83,7 @@ let test_regex_track_type () =
 (* --- ParentNode tests --- *)
 
 let test_parentnode_on_manual () =
-  let results = run_queries [ q 0 "/Mixer/On/LomId/../Manual@Value" ] in
+  let results = run_queries [ q "/Mixer/On/LomId/../Manual@Value" ] in
   let matches = find_by_qid results 0 in
   let values = List.filter_map get_value matches in
   (* Should find On/Manual across MidiTrack, AudioTrack, MainTrack *)
@@ -91,14 +91,14 @@ let test_parentnode_on_manual () =
   Alcotest.(check bool) "contains 'true'" true (List.mem "true" values)
 
 let test_parentnode_volume_manual () =
-  let results = run_queries [ q 0 "/Mixer/Volume/LomId/../Manual@Value" ] in
+  let results = run_queries [ q "/Mixer/Volume/LomId/../Manual@Value" ] in
   let matches = find_by_qid results 0 in
   let values = List.filter_map get_value matches in
   Alcotest.(check bool) "at least 1 match" true (List.length values >= 1);
   Alcotest.(check bool) "contains '1'" true (List.mem "1" values)
 
 let test_multiwildcard_parentnode () =
-  let results = run_queries [ q 0 "/**/On/LomId/../Manual@Value" ] in
+  let results = run_queries [ q "/**/On/LomId/../Manual@Value" ] in
   let matches = find_by_qid results 0 in
   let values = List.filter_map get_value matches in
   (* MultiWildcard + ParentNode: find LomId under On anywhere, navigate up to Manual sibling *)
@@ -109,14 +109,14 @@ let test_multiwildcard_parentnode () =
 (* --- CurrentNode tests --- *)
 
 let test_currentnode_name () =
-  let results = run_queries [ q 0 "/Tracks/MidiTrack/Name/." ] in
+  let results = run_queries [ q "/Tracks/MidiTrack/Name/." ] in
   let matches = find_by_qid results 0 in
   Alcotest.(check int) "one match" 1 (List.length matches);
   let r = List.hd matches in
   Alcotest.(check string) "element is Name" "Name" r.Upath2.element_name
 
 let test_currentnode_effective_name () =
-  let results = run_queries [ q 0 "/Tracks/MidiTrack/Name/EffectiveName@Value" ] in
+  let results = run_queries [ q "/Tracks/MidiTrack/Name/EffectiveName@Value" ] in
   let matches = find_by_qid results 0 in
   Alcotest.(check int) "one match" 1 (List.length matches);
   Alcotest.(check string) "value is 1-Tela" "1-Tela" (Option.get (get_value (List.hd matches)))
@@ -124,14 +124,14 @@ let test_currentnode_effective_name () =
 (* --- Combined tests --- *)
 
 let test_combined_volume_manual () =
-  let results = run_queries [ q 0 "/**/Volume/Manual@Value" ] in
+  let results = run_queries [ q "/**/Volume/Manual@Value" ] in
   let matches = find_by_qid results 0 in
   let values = List.filter_map get_value matches in
   Alcotest.(check bool) "at least 2 matches" true (List.length values >= 2);
   Alcotest.(check bool) "contains '1'" true (List.mem "1" values)
 
 let test_combined_multiwildcard_regex () =
-  let results = run_queries [ q 0 "/**/'(Midi|Audio)Track'/Name/EffectiveName@Value" ] in
+  let results = run_queries [ q "/**/'(Midi|Audio)Track'/Name/EffectiveName@Value" ] in
   let matches = find_by_qid results 0 in
   let values = List.filter_map get_value matches in
   Alcotest.(check int) "two tracks" 2 (List.length values);

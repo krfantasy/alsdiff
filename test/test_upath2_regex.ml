@@ -16,7 +16,7 @@ let resolve_test_data_path filename =
 let regex_xml_path = lazy (resolve_test_data_path "regex_match.xml")
 
 let eval_query path_str : Upath2.match_result list =
-  let q = Upath2.query_of_path ~qid:0 path_str in
+  let q = Upath2.query_of_path path_str in
   let nfa = Upath2.compile [ q ] in
   let stream = Xml2.stream_from_file (Lazy.force regex_xml_path) in
   Upath2.evaluate nfa stream
@@ -97,14 +97,14 @@ let test_regex_no_matches () =
 
 let test_regex_escape_preservation () =
   let xml_str = "<Root><a.b/><axb/></Root>" in
-  let q = Upath2.query_of_path ~qid:0 "/**/'a\\.b$'" in
+  let q = Upath2.query_of_path "/**/'a\\.b$'" in
   let nfa = Upath2.compile [ q ] in
   let stream = Xml2.stream_from_string xml_str in
   let escaped = Upath2.evaluate nfa stream in
   check_count "escaped dot regex matches one element" 1 escaped;
   check_has_element "matches a.b" "a.b" escaped;
 
-  let q2 = Upath2.query_of_path ~qid:0 "/**/'a.b$'" in
+  let q2 = Upath2.query_of_path "/**/'a.b$'" in
   let nfa2 = Upath2.compile [ q2 ] in
   let stream2 = Xml2.stream_from_string xml_str in
   let unescaped = Upath2.evaluate nfa2 stream2 in
