@@ -79,7 +79,7 @@ type transition = {
 
 type nfa_state = {
   id : state_id;
-  mutable transitions : transition list;
+  mutable transitions : transition array;
   mutable accepting : (query_id * attr_constraint list) list;
   mutable is_wildcard_loop : bool;      (* MultiWildcard self-propagation *)
   mutable end_transitions : state_id list;  (* ParentNode: activate on El_end *)
@@ -367,7 +367,7 @@ let full_signature states partition i =
   let s = states.(i) in
   let trans_keys =
     List.sort String.compare
-      (List.map (transition_sig partition) s.transitions)
+      (Array.to_list (Array.map (transition_sig partition) s.transitions))
   in
   let end_keys =
     List.sort_uniq Int.compare
@@ -419,17 +419,19 @@ let minimize_nfa states start_id =
           let rep = states.(i) in
           let fresh_trans =
             let seen = Hashtbl.create 8 in
-            List.filter_map (fun t ->
-                let target_block = partition.(t.target) in
-                let key = trans_dedup_key t.matcher t.constraints
-                    t.index t.depth_limit target_block in
-                if Hashtbl.mem seen key then None
-                else begin
-                  Hashtbl.add seen key ();
-                  let tid = !next_tid in incr next_tid;
-                  Some { t with tid; target = target_block }
-                end
-              ) rep.transitions
+            Array.of_list (
+              List.filter_map (fun t ->
+                  let target_block = partition.(t.target) in
+                  let key = trans_dedup_key t.matcher t.constraints
+                      t.index t.depth_limit target_block in
+                  if Hashtbl.mem seen key then None
+                  else begin
+                    Hashtbl.add seen key ();
+                    let tid = !next_tid in incr next_tid;
+                    Some { t with tid; target = target_block }
+                  end
+                ) (Array.to_list rep.transitions)
+            )
           in
           let fresh_end =
             List.sort_uniq Int.compare
@@ -472,7 +474,7 @@ let compile (queries : query list) =
   let make_state () =
     let id = !next_id in
     incr next_id;
-    let s = { id; transitions = []; accepting = [];
+    let s = { id; transitions = [||]; accepting = [];
               is_wildcard_loop = false; end_transitions = [] } in
     Hashtbl.add states id s;
     s
@@ -493,32 +495,32 @@ let compile (queries : query list) =
           | Tag (name_comp, attrs) ->
             let matcher = name_component_to_matcher name_comp in
             let cattrs = attributes_to_constraints attrs in
-            (match List.find_opt (fun t -> equal_transition_key t matcher cattrs None None) state.transitions with
+            (match Array.find_opt (fun t -> equal_transition_key t matcher cattrs None None) state.transitions with
              | Some t ->
                walk rest (Hashtbl.find states t.target)
              | None ->
                let new_state = make_state () in
                let tid = !next_tid in
                incr next_tid;
-               state.transitions <- { tid; matcher; constraints = cattrs; target = new_state.id; index = None; depth_limit = None } :: state.transitions;
+               state.transitions <- Array.append state.transitions [| { tid; matcher; constraints = cattrs; target = new_state.id; index = None; depth_limit = None } |];
                walk rest new_state)
           | SingleWildcard attrs ->
             let cattrs = attributes_to_constraints attrs in
             let depth_limit = if state.id = start_state.id then Some 2 else None in
-            (match List.find_opt (fun t -> equal_transition_key t Any cattrs None depth_limit) state.transitions with
+            (match Array.find_opt (fun t -> equal_transition_key t Any cattrs None depth_limit) state.transitions with
              | Some t ->
                walk rest (Hashtbl.find states t.target)
              | None ->
                let new_state = make_state () in
                let tid = !next_tid in
                incr next_tid;
-               state.transitions <- { tid; matcher = Any; constraints = cattrs; target = new_state.id; index = None; depth_limit } :: state.transitions;
+               state.transitions <- Array.append state.transitions [| { tid; matcher = Any; constraints = cattrs; target = new_state.id; index = None; depth_limit } |];
                walk rest new_state)
           | MultiWildcard attrs ->
             let cattrs = attributes_to_constraints attrs in
             (* Find or create a wildcard-loop state *)
             let wl_state =
-              match List.find_opt (fun t ->
+              match Array.find_opt (fun t ->
                   t.matcher = Any && equal_attr_constraints t.constraints cattrs &&
                   t.index = None && t.depth_limit = None
                 ) state.transitions with
@@ -528,7 +530,7 @@ let compile (queries : query list) =
                 new_state.is_wildcard_loop <- true;
                 let tid = !next_tid in
                 incr next_tid;
-                state.transitions <- { tid; matcher = Any; constraints = cattrs; target = new_state.id; index = None; depth_limit = None } :: state.transitions;
+                state.transitions <- Array.append state.transitions [| { tid; matcher = Any; constraints = cattrs; target = new_state.id; index = None; depth_limit = None } |];
                 new_state
             in
             if rest = [] then begin
@@ -552,14 +554,14 @@ let compile (queries : query list) =
               | None -> Any
             in
             let depth_limit = if state.id = start_state.id then Some 2 else None in
-            (match List.find_opt (fun t -> equal_transition_key t matcher [] (Some n) depth_limit) state.transitions with
+            (match Array.find_opt (fun t -> equal_transition_key t matcher [] (Some n) depth_limit) state.transitions with
              | Some t ->
                walk rest (Hashtbl.find states t.target)
              | None ->
                let new_state = make_state () in
                let tid = !next_tid in
                incr next_tid;
-               state.transitions <- { tid; matcher; constraints = []; target = new_state.id; index = Some n; depth_limit } :: state.transitions;
+               state.transitions <- Array.append state.transitions [| { tid; matcher; constraints = []; target = new_state.id; index = Some n; depth_limit } |];
                walk rest new_state)
       in
       walk q.path start_state
@@ -600,7 +602,7 @@ let evaluate_core nfa ~get_depth ~feed_signals =
                 new_active := sid :: !new_active
             end;
             (* Normal transitions *)
-            List.iter (fun t ->
+            Array.iter (fun t ->
                 if match_name name t.matcher && check_attrs attrs t.constraints then begin
                   let depth_ok = match t.depth_limit with
                     | None -> true
@@ -800,7 +802,7 @@ let pp_nfa_state fmt s =
     (if s.is_wildcard_loop then " [wildcard-loop]" else "")
     (match s.end_transitions with [] -> "" | targets -> Printf.sprintf " [end->%s]"
                                                           (String.concat "," (List.map string_of_int targets)))
-    (Fmt.list pp_transition) s.transitions
+    (Fmt.array pp_transition) s.transitions
 
 let pp_nfa fmt nfa =
   Fmt.pf fmt "NFA: %d states, start=%d@\n%a"
