@@ -147,9 +147,9 @@ let test_group_track_diff () =
 
   let patch = Track.diff old_track new_track in
 
-  (* Check that we got an AudioPatch (Group tracks use AudioTrack internally) *)
+  (* Check that we got a GroupPatch (Group tracks produce GroupPatch; payload is AudioTrack.Patch.t) *)
   (match patch with
-   | Track.Patch.AudioPatch audio_patch ->
+   | Track.Patch.GroupPatch audio_patch ->
      (* Check mixer volume change *)
      (match audio_patch.Track.AudioTrack.Patch.mixer with
       | `Modified mixer_patch ->

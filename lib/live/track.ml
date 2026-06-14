@@ -499,11 +499,13 @@ module Patch = struct
   type t =
     | MidiPatch of MidiTrack.Patch.t
     | AudioPatch of AudioTrack.Patch.t
+    | GroupPatch of AudioTrack.Patch.t
     | MainPatch of MainTrack.Patch.t
 
   let is_empty = function
     | MidiPatch patch -> MidiTrack.Patch.is_empty patch
     | AudioPatch patch -> AudioTrack.Patch.is_empty patch
+    | GroupPatch patch -> AudioTrack.Patch.is_empty patch
     | MainPatch patch -> MainTrack.Patch.is_empty patch
 end
 
@@ -527,10 +529,11 @@ let diff (old_track : t) (new_track : t) : Patch.t =
     let midi_patch = MidiTrack.diff old_midi new_midi in
     Patch.MidiPatch midi_patch
   | Audio old_audio, Audio new_audio
-  | Group old_audio, Group new_audio
   | Return old_audio, Return new_audio ->
     let audio_patch = AudioTrack.diff old_audio new_audio in
     Patch.AudioPatch audio_patch
+  | Group old_audio, Group new_audio ->
+    Patch.GroupPatch (AudioTrack.diff old_audio new_audio)
   | Main old_main, Main new_main ->
     let main_patch = MainTrack.diff old_main new_main in
     Patch.MainPatch main_patch

@@ -1064,6 +1064,7 @@ let dispatch_track_change
   (* Group tracks *)
   | `Added (Track.Group t) -> Some (Item (create_group_track_item ~get_pointee_name ~note_name_style ~format_time (`Added t)))
   | `Removed (Track.Group t) -> Some (Item (create_group_track_item ~get_pointee_name ~note_name_style ~format_time (`Removed t)))
+  | `Modified (Track.Patch.GroupPatch pt) -> Some (Item (create_group_track_item ~get_pointee_name ~note_name_style ~format_time (`Modified pt)))
   (* Return tracks - use audio track builder since ReturnTrack = AudioTrack *)
   | `Added (Track.Return t) -> Some (Item (create_audio_track_item ~get_pointee_name ~note_name_style ~format_time (`Added t)))
   | `Removed (Track.Return t) -> Some (Item (create_audio_track_item ~get_pointee_name ~note_name_style ~format_time (`Removed t)))
