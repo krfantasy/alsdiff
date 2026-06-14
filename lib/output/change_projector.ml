@@ -1232,13 +1232,29 @@ let create_liveset_item
       ~domain_type:DTLocator
   in
 
+  (* Tracks/Returns are wrapped as collections (like Locators) so they respect
+     [max_collection_items] truncation. A flat view list bypasses the cap, which
+     floods output for large livesets (see review_0614.org). *)
+  let mk_collection name items =
+    if items = [] then None
+    else Some ({ name; change = change_type; domain_type = DTTrack; items } : collection)
+  in
+  let tracks_collection =
+    mk_collection "Tracks"
+      (build_liveset_tracks_items ~get_pointee_name ~note_name_style ~format_time c)
+  in
+  let returns_collection =
+    mk_collection "Returns"
+      (build_liveset_returns_items ~get_pointee_name ~note_name_style ~format_time c)
+  in
+
   (* Combine all children *)
   let children =
     atomic_children
     @ (version_item |> Option.map (fun i -> Item i) |> option_to_list)
     @ (main_track_item |> Option.map (fun i -> Item i) |> option_to_list)
-    @ build_liveset_tracks_items ~get_pointee_name ~note_name_style ~format_time c
-    @ build_liveset_returns_items ~get_pointee_name ~note_name_style ~format_time c
+    @ (tracks_collection |> Option.map (fun c -> Collection c) |> option_to_list)
+    @ (returns_collection |> Option.map (fun c -> Collection c) |> option_to_list)
     @ (locators_collection |> Option.map (fun c -> Collection c) |> option_to_list)
   in
 

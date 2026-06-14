@@ -75,11 +75,10 @@ and collection_to_yojson (cfg : detail_config) (col : collection) : Yojson.Safe.
        (mirrors text_renderer.ml:117-119). *)
     let breakdown = count_elements_breakdown cfg col in
     Some (`Assoc (base @ [("counts", change_breakdown_to_yojson breakdown)]))
-  | Compact ->
-    (* Compact mode: node only, and only if any element renders. *)
-    let filtered, _ = filter_collection_elements_with_info cfg col in
-    if filtered = [] then None else Some (`Assoc base)
-  | Inline | Full ->
+  | Compact | Inline | Full ->
+    (* Compact/Inline/Full: list elements, truncated by [max_collection_items].
+       Compact previously emitted a bare node, but no existing collection
+       renders at Compact, so this only enables Tracks/Returns capping. *)
     let filtered, truncation_info = filter_collection_elements_with_info cfg col in
     if filtered = [] then None
     else
