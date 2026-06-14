@@ -103,14 +103,42 @@ let get_detail_level_by_change (cfg : detail_config) (ct : change_type) : detail
   | Removed -> cfg.removed
   | Modified -> cfg.modified
 
+(* Precomputed override index: domain_type -> per_change_override, for O(1) lookup.
+   Built lazily and cached in a single mutable slot keyed by config identity. Because
+   detail_config is immutable, identity is a valid key, and the slot auto-replaces
+   whenever a different config is seen (e.g. TUI switching detail modes), keeping
+   memory bounded without an explicit clear. *)
+type detail_index = {
+  overrides : (domain_type, per_change_override) Hashtbl.t;
+}
+
+let build_index (cfg : detail_config) : detail_index =
+  let h = Hashtbl.create 16 in
+  List.iter
+    (fun (e : type_override_entry) -> Hashtbl.replace h e.domain_type e.override)
+    cfg.type_overrides;
+  { overrides = h }
+
+(* Single-slot cache. The identity check (==) is O(1); correctness holds because
+   detail_config is immutable — the same object always yields the same index. *)
+let index_cache : (detail_config * detail_index) option ref = ref None
+
+let index_for (cfg : detail_config) : detail_index =
+  match !index_cache with
+  | Some (c, idx) when c == cfg -> idx
+  | _ ->
+    let idx = build_index cfg in
+    index_cache := Some (cfg, idx);
+    idx
+
 (* Helper to get effective detail level considering type-based overrides *)
 (* Type-based control takes precedence over change-type control *)
 let get_effective_detail (cfg : detail_config) (ct : change_type) (dt : domain_type) : detail_level =
-  (* Step 1: Check type-specific override *)
-  match List.find_opt (fun entry -> entry.domain_type = dt) cfg.type_overrides with
-  | Some entry ->
+  let idx = index_for cfg in
+  (* Step 1: Check type-specific override (O(1) Hashtbl lookup) *)
+  match Hashtbl.find_opt idx.overrides dt with
+  | Some overrides ->
     (* Step 2: Check for change-specific override within this type *)
-    let overrides = entry.override in
     (match ct with
      | Added -> begin match overrides.added with
          | Some level -> level
