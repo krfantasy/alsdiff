@@ -403,6 +403,67 @@ let test_create_automation_item_curve_modified_summary () =
      check (float 0.001) "c1x new" 0.2 n
    | _ -> fail "Expected Ffloat for Curve1 X")
 
+(* Added/Removed automations must render their events, wrapped in an Events
+   Collection (review_0614.org [#B], change_projector.ml:837). *)
+let build_automation_item_added () =
+  let automation = {
+    Automation.id = 1;
+    target = 2;
+    events = [{
+        Automation.EnvelopeEvent.id = 42;
+        time = 1.0;
+        value = Automation.FloatEvent 10.0;
+        curve = None;
+      }];
+  } in
+  create_automation_item ~get_pointee_name:(fun _ -> "Target") (`Added automation)
+
+let build_automation_item_removed () =
+  let automation = {
+    Automation.id = 1;
+    target = 2;
+    events = [{
+        Automation.EnvelopeEvent.id = 42;
+        time = 1.0;
+        value = Automation.FloatEvent 10.0;
+        curve = None;
+      }];
+  } in
+  create_automation_item ~get_pointee_name:(fun _ -> "Target") (`Removed automation)
+
+let test_create_automation_item_added_event_summary () =
+  let item = build_automation_item_added () in
+  check string "automation name" "Automation (id=1, target=Target)" item.name;
+  check bool "automation change is Added" true (item.change = Added);
+  let event_item = get_single_event_item item in
+  check string "event uses real id" "Event[42]" event_item.name;
+  check bool "event change is Added" true (event_item.change = Added);
+  let time_field = get_field (find_view_by_name "Time" event_item.children) in
+  check bool "time field change is Added" true (time_field.change = Added);
+  check bool "time field oldval is None" true (time_field.oldval = None);
+  (match time_field.newval with
+   | Some (Ffloat n) -> check (float 0.001) "time new" 1.0 n
+   | _ -> fail "Expected Ffloat for Time");
+  let value_field = get_field (find_view_by_name "Value" event_item.children) in
+  check bool "value field change is Added" true (value_field.change = Added);
+  (match value_field.newval with
+   | Some (Ffloat n) -> check (float 0.001) "value new" 10.0 n
+   | _ -> fail "Expected Ffloat for Value")
+
+let test_create_automation_item_removed_event_summary () =
+  let item = build_automation_item_removed () in
+  check string "automation name" "Automation (id=1, target=Target)" item.name;
+  check bool "automation change is Removed" true (item.change = Removed);
+  let event_item = get_single_event_item item in
+  check string "event uses real id" "Event[42]" event_item.name;
+  check bool "event change is Removed" true (event_item.change = Removed);
+  let time_field = get_field (find_view_by_name "Time" event_item.children) in
+  check bool "time field change is Removed" true (time_field.change = Removed);
+  check bool "time field newval is None" true (time_field.newval = None);
+  (match time_field.oldval with
+   | Some (Ffloat o) -> check (float 0.001) "time old" 1.0 o
+   | _ -> fail "Expected Ffloat for Time")
+
 let test_create_liveset_item_with_main_only_change () =
   let path = Utils.resolve_test_data_path "t4.xml" in
   let xml = read_file path in
@@ -454,6 +515,8 @@ let () =
       test_case "Combined summary includes added curve details" `Quick test_create_automation_item_curve_added_summary;
       test_case "Combined summary includes removed curve details" `Quick test_create_automation_item_curve_removed_summary;
       test_case "Combined summary includes modified curve details" `Quick test_create_automation_item_curve_modified_summary;
+      test_case "Added automation renders its events" `Quick test_create_automation_item_added_event_summary;
+      test_case "Removed automation renders its events" `Quick test_create_automation_item_removed_event_summary;
     ];
     "create_liveset_item", [
       test_case "Renders main track when it is the only change" `Quick test_create_liveset_item_with_main_only_change;

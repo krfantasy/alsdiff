@@ -813,7 +813,16 @@ let create_automation_item
     | `Unchanged -> "Automation"
   in
 
-  let event_children : view list = match c with
+  (* Wrap a list of event items in an [Events] Collection, so that
+     [max_collection_items] truncation applies uniformly to Modified, Added
+     and Removed automations. Empty event lists yield no children. *)
+  let wrap_events (event_items : view list) : view list =
+    match event_items with
+    | [] -> []
+    | _ -> [ Collection { name = "Events"; change = change_type; domain_type = DTEvent; items = event_items } ]
+  in
+  let event_children : view list =
+    match c with
     | `Modified patch ->
       let events = patch.events |> List.mapi (fun i event_change ->
           let event_id = match event_change with
@@ -828,13 +837,24 @@ let create_automation_item
             let event_item = create_events_item ~format_time event_change in
             Some (Item { event_item with name = Printf.sprintf "Event[%d]" event_id })
         ) |> List.filter_map Fun.id in
-      (match events with
-       | [] -> []
-       | _ ->
-         [ Collection
-             { name = "Events"; change = change_type; domain_type = DTEvent; items = events }
-         ])
-    | `Added _ | `Removed _ | `Unchanged -> []
+      wrap_events events
+    | `Added a ->
+      let events =
+        a.events
+        |> List.map (fun e ->
+            let event_item = create_events_item ~format_time (`Added e) in
+            Item { event_item with name = Printf.sprintf "Event[%d]" e.Automation.EnvelopeEvent.id })
+      in
+      wrap_events events
+    | `Removed r ->
+      let events =
+        r.events
+        |> List.map (fun e ->
+            let event_item = create_events_item ~format_time (`Removed e) in
+            Item { event_item with name = Printf.sprintf "Event[%d]" e.Automation.EnvelopeEvent.id })
+      in
+      wrap_events events
+    | `Unchanged -> []
   in
 
   { name = automation_name; change = change_type; domain_type = DTAutomation; children = event_children }
