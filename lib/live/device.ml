@@ -195,13 +195,13 @@ module GenericParam = struct
 
     let section_specs = [
       B.Spec.inline_fields ~specs:field_specs
-        ~domain_type:(B.domain_type_of_name "DTDefault")
+        ~domain_type:(B.domain_type_of_name "DTParam")
     ]
 
-    let build_value_fields ?(domain_type = B.domain_type_of_name "DTDefault") ct v =
+    let build_value_fields ?(domain_type = B.domain_type_of_name "DTParam") ct v =
       B.build_value_field_views field_specs ct v ~domain_type
 
-    let build_patch_fields ?(domain_type = B.domain_type_of_name "DTDefault") p =
+    let build_patch_fields ?(domain_type = B.domain_type_of_name "DTParam") p =
       B.build_patch_field_views field_specs p ~domain_type
   end
 end
@@ -423,14 +423,16 @@ module PluginParam = struct
       let module Vs = (GenericParam.ViewSpec)(B) in
       B.map_specs (fun (v : t) -> v.base) (fun (p : Patch.t) -> p.base) Vs.field_specs
     let field_specs = List.append [] __inline_base
+    (* PluginParam is a device parameter → DTParam (see DTParam usages and
+       [@view.child "DTParam"] annotations on param fields). *)
     let section_specs = [
-      B.Spec.inline_fields ~specs:field_specs ~domain_type:(B.domain_type_of_name "DTDefault")
+      B.Spec.inline_fields ~specs:field_specs ~domain_type:(B.domain_type_of_name "DTParam")
     ]
-    let build_value_fields ?(domain_type = B.domain_type_of_name "DTDefault") ct v =
+    let build_value_fields ?(domain_type = B.domain_type_of_name "DTParam") ct v =
       B.build_value_field_views field_specs ct v ~domain_type
-    let build_patch_fields ?(domain_type = B.domain_type_of_name "DTDefault") p =
+    let build_patch_fields ?(domain_type = B.domain_type_of_name "DTParam") p =
       B.build_patch_field_views field_specs p ~domain_type
-    let build_item ?(name = "") ?(domain_type = B.domain_type_of_name "DTDefault") c =
+    let build_item ?(name = "") ?(domain_type = B.domain_type_of_name "DTParam") c =
       B.build_item_from_specs ~name ~domain_type ~specs:section_specs c
   end
 end

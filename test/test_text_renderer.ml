@@ -443,6 +443,39 @@ let test_collection_no_truncation () =
   Alcotest.(check bool) "no truncation message"
     false (Re.execp (Re.compile (Re.str "... and")) output)
 
+(* E2E: a base modified=Ignore + DTClip override=Full must render an item's own
+   inline fields, not just its header. Before the domain restamp fix, inline
+   fields carried DTOther and were dropped by the base Ignore. *)
+let test_inline_field_survives_type_override () =
+  let clip_patch = {
+    Alsdiff_live.Clip.MidiClip.Patch.
+    id = 1;
+    name = `Modified { oldval = "aaa"; newval = "bbb" };
+    start_time = `Unchanged;
+    end_time = `Unchanged;
+    loop = `Unchanged;
+    signature = `Unchanged;
+    notes = [];
+  } in
+  let view = Item (create_midi_clip_item (`Modified clip_patch)) in
+  let cfg = {
+    full with
+    modified = Ignore;
+    type_overrides = [
+      { domain_type = DTClip; override = uniform_override Full };
+    ];
+  } in
+  let buffer = Buffer.create 1024 in
+  let ppf = Format.formatter_of_buffer buffer in
+  Fmt.set_style_renderer ppf `None;
+  pp cfg ppf view;
+  Format.pp_print_flush ppf ();
+  let output = Buffer.contents buffer in
+  (* The "Name" field label only appears when the inline field renders; the
+     clip header never contains it. *)
+  Alcotest.(check bool) "inline Name field survives DTClip override" true
+    (Re.execp (Re.compile (Re.str "Name")) output)
+
 let tests = [
   "compact", `Quick, test_compact;
   "full", `Quick, test_full;
@@ -459,6 +492,7 @@ let tests = [
   "validation", `Quick, test_validation;
   "edge cases", `Quick, test_edge_cases;
   "rendering with nested overrides", `Quick, test_rendering_with_nested_overrides;
+  "inline field survives type override", `Quick, test_inline_field_survives_type_override;
   "inline", `Quick, test_inline;
   "inline no fields", `Quick, test_inline_no_fields;
   "inline with nested", `Quick, test_inline_with_nested;

@@ -612,9 +612,7 @@ let generate_view_spec_impl ~ctxt:_ (_rec_flag, type_decls) =
     let inline_section =
       pexp_apply ~loc (mk_lid_expr loc (Ldot (Ldot (Lident "B", "Spec"), "inline_fields")))
         [ Labelled "specs", specs_arg
-        ; Labelled "domain_type", pexp_apply ~loc
-            (mk_lid_expr loc (Ldot (Lident "B", "domain_type_of_name")))
-            [Nolabel, mk_str loc "DTDefault"] ]
+        ; Labelled "domain_type", mk_lid_expr loc (Ldot (Lident "B", "default_domain_type")) ]
     in
     let all_sections = inline_section :: child_section_specs in
     let section_specs_list = mk_list_expr loc all_sections in
@@ -668,8 +666,7 @@ let generate_view_spec_impl ~ctxt:_ (_rec_flag, type_decls) =
       in
       let inner2 =
         pexp_fun ~loc (Optional "domain_type")
-          (Some (pexp_apply ~loc (mk_lid_expr loc (Ldot (Lident "B", "domain_type_of_name")))
-                   [Nolabel, mk_str loc "DTDefault"]))
+          (Some (mk_lid_expr loc (Ldot (Lident "B", "default_domain_type"))))
           (ppat_var ~loc { txt = "domain_type"; loc })
           inner
       in
@@ -711,8 +708,7 @@ let generate_view_spec_impl ~ctxt:_ (_rec_flag, type_decls) =
       in
       let inner2 =
         pexp_fun ~loc (Optional "domain_type")
-          (Some (pexp_apply ~loc (mk_lid_expr loc (Ldot (Lident "B", "domain_type_of_name")))
-                   [Nolabel, mk_str loc "DTDefault"]))
+          (Some (mk_lid_expr loc (Ldot (Lident "B", "default_domain_type"))))
           (ppat_var ~loc { txt = "domain_type"; loc })
           inner
       in
@@ -763,8 +759,7 @@ let generate_view_spec_impl ~ctxt:_ (_rec_flag, type_decls) =
       in
       let inner2 =
         pexp_fun ~loc (Optional "domain_type")
-          (Some (pexp_apply ~loc (mk_lid_expr loc (Ldot (Lident "B", "domain_type_of_name")))
-                   [Nolabel, mk_str loc "DTDefault"]))
+          (Some (mk_lid_expr loc (Ldot (Lident "B", "default_domain_type"))))
           (ppat_var ~loc { txt = "domain_type"; loc })
           inner
       in

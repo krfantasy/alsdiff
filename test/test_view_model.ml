@@ -248,6 +248,27 @@ let test_create_midi_clip_item () =
    | _ -> fail "Expected Note Time to be Modified")
 
 
+(* Inline fields must carry their parent Item's domain_type, not the PPX's
+   DTOther placeholder — otherwise type_overrides match the item header but
+   filter out its own inline fields. *)
+let test_inline_field_inherits_parent_domain () =
+  let clip_patch = {
+    MidiClip.Patch.
+    id = 1;
+    name = `Modified { oldval = "A"; newval = "B" };
+    start_time = `Unchanged;
+    end_time = `Unchanged;
+    loop = `Unchanged;
+    signature = `Unchanged;
+    notes = [];
+  } in
+  let item = create_midi_clip_item (`Modified clip_patch) in
+  check bool "parent item keeps DTClip domain" true (item.domain_type = DTClip);
+  let name_field = get_field (find_view_by_name "Name" item.children) in
+  check bool "inline Name field inherits parent DTClip domain" true
+    (name_field.domain_type = DTClip)
+
+
 let test_create_audio_clip_item_added () =
   let sample_ref = { SampleRef.file_path = "/path/to/sample.wav"; crc = "abc123"; last_modified_date = 12345 } in
   let loop = { Loop.start_time = 0.0; end_time = 4.0; on = true } in
@@ -507,6 +528,8 @@ let () =
     ];
     "create_midi_clip_item", [
       test_case "Create item from patch" `Quick test_create_midi_clip_item;
+      test_case "Inline field inherits parent domain" `Quick
+        test_inline_field_inherits_parent_domain;
     ];
     "create_audio_clip_item", [
       test_case "Create item for Added clip" `Quick test_create_audio_clip_item_added;

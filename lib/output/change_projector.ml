@@ -414,12 +414,26 @@ module Spec = struct
 end
 
 
+(** [set_domain_type dt v] returns [v] with its top-level [domain_type] set to [dt].
+    Shallow by design: the only producer of the inline (name = "") splice marker is
+    [Spec.inline_fields], whose children are flat [Field] views, so there are no nested
+    children whose own domain would be clobbered. *)
+let set_domain_type (dt : domain_type) (v : view) : view =
+  match v with
+  | Field f -> Field { f with domain_type = dt }
+  | Item i -> Item { i with domain_type = dt }
+  | Collection c -> Collection { c with domain_type = dt }
+
+
 (** [build_item_from_specs ~name ~domain_type ~specs c] builds an item from a list of section specs.
     This is the main entry point for declaratively building complex items.
     Each spec in the list is applied to the change, and the resulting views are concatenated.
 
-    For inline_fields specs (name = ""), the children are extracted and added directly.
-    For other specs, the resulting view is added as-is.
+    For inline_fields specs (name = ""), the children are extracted and restamped with the
+    parent's [domain_type] before being spliced in. The PPX emits [B.default_domain_type]
+    ([DTOther]) as a placeholder for inline_fields — a type's own domain is not known at PPX
+    time — so the real domain is the parent's, which is only known here. For other specs, the
+    resulting view is added as-is.
 *)
 let build_item_from_specs
     (type parent patch)
@@ -433,11 +447,11 @@ let build_item_from_specs
       match spec.build c with
       | None -> None
       | Some view ->
-        (* For inline_fields (name = ""), extract children directly *)
         if spec.name = "" then
+          (* inline_fields: splice children in, restamped with the parent's domain *)
           match view with
-          | Item { children; _ } -> Some children
-          | _ -> Some [view]
+          | Item { children; _ } -> Some (List.map (set_domain_type domain_type) children)
+          | _ -> Some [set_domain_type domain_type view]
         else
           Some [view]
     ) |> List.flatten in
