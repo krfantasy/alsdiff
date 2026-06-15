@@ -143,21 +143,8 @@ and pp_section cfg fmt (section : item) =
   let level = get_effective_detail cfg section.change section.domain_type in
   if not (should_render_level level) then ()
   else
-    (* Filter sub_views based on detail levels *)
-    let sub_views = List.filter (fun v ->
-        match v with
-        | Field f -> should_render_level (get_effective_detail cfg f.change f.domain_type)
-        | Item e -> should_render_level (get_effective_detail cfg e.change e.domain_type)
-        | Collection c ->
-          let col_level = get_effective_detail cfg c.change c.domain_type in
-          if not (should_render_level col_level) then false
-          else if col_level = Summary then
-            (* Summary mode: always include collections, they show counts even without elements *)
-            true
-          else
-            (* Other modes: check if any elements would render *)
-            (filter_collection_elements cfg c) <> []
-      ) section.children in
+    (* Sub-views that render under the current config (level-filtered). *)
+    let sub_views = renderable_sub_views cfg section in
     (* Render section header *)
     if level = Summary then begin
       (* Don't show count for LiveSet - it shows sub-views in Summary mode *)

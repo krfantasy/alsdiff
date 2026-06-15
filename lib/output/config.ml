@@ -249,20 +249,20 @@ let count_changed_elements (cfg : detail_config) (col : collection) : int =
   let filtered = filter_collection_elements cfg col in
   List.length filtered
 
-(* Count filtered sub-views in a section *)
-let count_changed_sub_views (cfg : detail_config) (section : item) : int =
-  (* Filter views that will render based on detail levels *)
-  let sub_views = List.filter (fun v ->
+(* Sub-views of a section that actually render under [cfg]. Single source of
+   truth shared by the renderers and the Summary breakdown, so the reported
+   count always matches the rendered content. *)
+let renderable_sub_views (cfg : detail_config) (section : item) : view list =
+  List.filter (fun v ->
       match v with
       | Field f -> should_render_level (get_effective_detail cfg f.change f.domain_type)
       | Item e -> should_render_level (get_effective_detail cfg e.change e.domain_type)
       | Collection c ->
         let col_level = get_effective_detail cfg c.change c.domain_type in
-        should_render_level col_level &&
-        (filter_collection_elements cfg c) <> []
-    ) section.children
-  in
-  List.length sub_views
+        if not (should_render_level col_level) then false
+        else if col_level = Summary then true
+        else (filter_collection_elements cfg c) <> [])
+    section.children
 
 (* ==================== Change Breakdown for Summary Mode ==================== *)
 
@@ -297,25 +297,30 @@ let count_fields_breakdown (elem : item) : change_breakdown =
       | _ -> acc
     ) ({ added = 0; removed = 0; modified = 0 } : change_breakdown) elem.children
 
-(* Count ALL elements by change type for summary display, not just filtered ones *)
-let count_elements_breakdown (_cfg : detail_config) (col : collection) : change_breakdown =
-  (* Extract all Item views from the collection, without filtering by detail level *)
+(* Count elements by change type for Summary display. Elements configured to
+   Ignore are excluded so the count matches what renders; the total is NOT
+   capped by max_collection_items (that is a display limit only — see
+   test_max_collection_items_zero_summary). *)
+let count_elements_breakdown (cfg : detail_config) (col : collection) : change_breakdown =
   List.fold_left (fun (acc : change_breakdown) (v : view) ->
       match v with
-      | Item e -> increment_breakdown acc e.change
-      | _ -> acc
-    ) ({ added = 0; removed = 0; modified = 0 } : change_breakdown) col.items
+      | Item e ->
+        if should_render_level (get_effective_detail cfg e.change e.domain_type)
+        then increment_breakdown acc e.change else acc
+      | _ -> acc)
+    ({ added = 0; removed = 0; modified = 0 } : change_breakdown) col.items
 
-(* Count ALL sub-views by change type for Summary mode display *)
-let count_sub_views_breakdown (_cfg : detail_config) (section : item) : change_breakdown =
-  (* Count all sub-views regardless of whether they would render.
-     Summary mode shows counts of sub-items, so we count everything. *)
+(* Count renderable sub-views by change type for Summary mode display. Folds
+   over [renderable_sub_views] so the count matches the rendered list —
+   children configured to Ignore are not tallied. *)
+let count_sub_views_breakdown (cfg : detail_config) (section : item) : change_breakdown =
   List.fold_left (fun (acc : change_breakdown) v ->
       match v with
       | Field f -> increment_breakdown acc f.change
       | Item e -> increment_breakdown acc e.change
       | Collection c -> increment_breakdown acc c.change
-    ) ({ added = 0; removed = 0; modified = 0 } : change_breakdown) section.children
+    ) ({ added = 0; removed = 0; modified = 0 } : change_breakdown)
+    (renderable_sub_views cfg section)
 
 (* Preset configurations for common use cases *)
 

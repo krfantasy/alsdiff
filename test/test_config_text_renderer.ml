@@ -413,6 +413,35 @@ let test_max_collection_items_zero_summary () =
   (* Summary mode shows counts regardless of max_collection_items *)
   Alcotest.(check string) "summary ignores max" "+ Items (10 Added)" output
 
+(* review_0614.org#L125: section Summary count must exclude children configured
+   to Ignore. The "Hidden" child is Added -> Ignore, so only "Shown" counts. *)
+let test_summary_excludes_ignored_child () =
+  let cfg = { full with added = Ignore; modified = Summary;
+                        removed = Summary; unchanged = Ignore } in
+  let view = Item {
+      name = "Track"; change = Modified; domain_type = DTTrack;
+      children = [
+        Item { name = "Hidden"; change = Added;    domain_type = DTOther; children = [] };
+        Item { name = "Shown";  change = Modified; domain_type = DTOther; children = [] };
+      ] } in
+  let output = render_view cfg view |> normalize_output in
+  Alcotest.(check bool) "section ignores ignored child" false (contains_string "Added" output);
+  Alcotest.(check bool) "section counts shown child"     true  (contains_string "(1 Modified)" output)
+
+(* count_elements_breakdown must exclude elements configured to Ignore. *)
+let test_collection_summary_excludes_ignored_element () =
+  let cfg = { full with added = Ignore; modified = Summary;
+                        removed = Summary; unchanged = Ignore; max_collection_items = None } in
+  let view = Collection {
+      name = "Devices"; change = Modified; domain_type = DTDevice;
+      items = [
+        Item { name = "Hidden"; change = Added;    domain_type = DTOther; children = [] };
+        Item { name = "Shown";  change = Modified; domain_type = DTOther; children = [] };
+      ] } in
+  let output = render_view cfg view |> normalize_output in
+  Alcotest.(check bool) "collection ignores ignored element" false (contains_string "Added" output);
+  Alcotest.(check bool) "collection counts shown element"     true  (contains_string "(1 Modified)" output)
+
 (* ==================== Test Suite ==================== *)
 
 let tests = [
@@ -466,6 +495,9 @@ let tests = [
   "compact collection lists items", `Quick, test_compact_collection_lists_items;
   "indent width negative", `Quick, test_indent_width_negative;
   "max_items zero summary", `Quick, test_max_collection_items_zero_summary;
+  "summary excludes ignored child", `Quick, test_summary_excludes_ignored_child;
+  "collection summary excludes ignored element", `Quick,
+  test_collection_summary_excludes_ignored_element;
 ]
 
 let () =
