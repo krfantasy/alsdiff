@@ -838,11 +838,11 @@ let create_automation_item
   let event_children : view list =
     match c with
     | `Modified patch ->
-      let events = patch.events |> List.mapi (fun i event_change ->
+      let events = patch.events |> List.map (fun event_change ->
           let event_id = match event_change with
             | `Added e -> e.Automation.EnvelopeEvent.id
             | `Removed e -> e.Automation.EnvelopeEvent.id
-            | `Modified _ -> i
+            | `Modified p -> p.Automation.EnvelopeEvent.Patch.id
             | `Unchanged -> -1
           in
           match event_change with
@@ -1019,7 +1019,7 @@ let create_locator_item
   let locator_name = match c with
     | `Added l -> Printf.sprintf "Locator (id=%d)" l.Liveset.Locator.id
     | `Removed l -> Printf.sprintf "Locator (id=%d)" l.Liveset.Locator.id
-    | `Modified _ -> "Locator"
+    | `Modified p -> Printf.sprintf "Locator (id=%d)" p.Liveset.Locator.Patch.id
     | `Unchanged -> "Locator"
   in
   build_item_from_specs ~name:locator_name ~domain_type:DTLocator ~specs:(locator_section_specs ~format_time ()) c

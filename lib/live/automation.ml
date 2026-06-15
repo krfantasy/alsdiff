@@ -20,7 +20,7 @@ type event_value =
 
 module EnvelopeEvent = struct
   type t = {
-    id : int; [@id.id] [@patch.skip]
+    id : int; [@id.id] [@patch.identity] [@view.skip]
     time : float;
     value : event_value;       [@view.skip]
     curve : CurveControls.t option;  [@view.skip]

@@ -218,12 +218,14 @@ let test_envelope_event_identity_functions () =
 (** Test EnvelopeEvent.Patch.is_empty *)
 let test_envelope_event_patch_is_empty () =
   let empty_patch = {
-    Automation.EnvelopeEvent.Patch.time = `Unchanged;
+    Automation.EnvelopeEvent.Patch.id = 42;
+    time = `Unchanged;
     value = `Unchanged;
     curve = `Unchanged;
   } in
   let time_changed_patch = {
-    Automation.EnvelopeEvent.Patch.time = `Modified { Diff.oldval = 0.0; newval = 1.0 };
+    Automation.EnvelopeEvent.Patch.id = 42;
+    time = `Modified { Diff.oldval = 0.0; newval = 1.0 };
     value = `Unchanged;
     curve = `Unchanged;
   } in

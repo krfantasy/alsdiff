@@ -4,7 +4,7 @@ open Alsdiff_base.Diff
 
 module Locator = struct
   type t = {
-    id : int; [@id.id] [@patch.skip] [@view.const]
+    id : int; [@id.id] [@patch.identity] [@view.const]
     name : string;
     time : float; [@view.scalar time]
   } [@@deriving eq, id, patch, view_spec] [@@patch.generate_diff]

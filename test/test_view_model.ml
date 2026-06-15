@@ -326,7 +326,8 @@ let get_single_event_item item =
 
 let test_create_automation_item_curve_added_summary () =
   let event_patch = {
-    Automation.EnvelopeEvent.Patch.time = `Modified { oldval = 1.0; newval = 2.0 };
+    Automation.EnvelopeEvent.Patch.id = 42;
+    time = `Modified { oldval = 1.0; newval = 2.0 };
     value = `Modified { oldval = Automation.FloatEvent 10.0; newval = Automation.FloatEvent 11.0 };
     curve = `Added {
         Automation.CurveControls.curve1_x = 0.1;
@@ -337,7 +338,7 @@ let test_create_automation_item_curve_added_summary () =
   } in
   let item = build_automation_item_from_event_patch event_patch in
   let event_item = get_single_event_item item in
-  check string "event name" "Event[0]" event_item.name;
+  check string "event name" "Event[42]" event_item.name;
   check bool "event change" true (event_item.change = Modified);
   (* Check Time field *)
   let time_field = get_field (find_view_by_name "Time" event_item.children) in
@@ -361,7 +362,8 @@ let test_create_automation_item_curve_added_summary () =
 
 let test_create_automation_item_curve_removed_summary () =
   let event_patch = {
-    Automation.EnvelopeEvent.Patch.time = `Modified { oldval = 1.0; newval = 2.0 };
+    Automation.EnvelopeEvent.Patch.id = 42;
+    time = `Modified { oldval = 1.0; newval = 2.0 };
     value = `Unchanged;
     curve = `Removed {
         Automation.CurveControls.curve1_x = 0.5;
@@ -372,7 +374,7 @@ let test_create_automation_item_curve_removed_summary () =
   } in
   let item = build_automation_item_from_event_patch event_patch in
   let event_item = get_single_event_item item in
-  check string "event name" "Event[0]" event_item.name;
+  check string "event name" "Event[42]" event_item.name;
   check bool "event change" true (event_item.change = Modified);
   (* Check Time field *)
   let time_field = get_field (find_view_by_name "Time" event_item.children) in
@@ -387,7 +389,8 @@ let test_create_automation_item_curve_removed_summary () =
 
 let test_create_automation_item_curve_modified_summary () =
   let event_patch = {
-    Automation.EnvelopeEvent.Patch.time = `Modified { oldval = 1.0; newval = 2.0 };
+    Automation.EnvelopeEvent.Patch.id = 42;
+    time = `Modified { oldval = 1.0; newval = 2.0 };
     value = `Modified { oldval = Automation.FloatEvent 10.0; newval = Automation.FloatEvent 11.0 };
     curve = `Modified {
         Automation.CurveControls.Patch.curve1_x = `Modified { oldval = 0.1; newval = 0.2 };
@@ -398,7 +401,7 @@ let test_create_automation_item_curve_modified_summary () =
   } in
   let item = build_automation_item_from_event_patch event_patch in
   let event_item = get_single_event_item item in
-  check string "event name" "Event[0]" event_item.name;
+  check string "event name" "Event[42]" event_item.name;
   check bool "event change" true (event_item.change = Modified);
   (* Check Time field *)
   let time_field = get_field (find_view_by_name "Time" event_item.children) in
