@@ -442,6 +442,29 @@ let test_collection_summary_excludes_ignored_element () =
   Alcotest.(check bool) "collection ignores ignored element" false (contains_string "Added" output);
   Alcotest.(check bool) "collection counts shown element"     true  (contains_string "(1 Modified)" output)
 
+(* is_element_like_item must route on RENDERABLE children,
+   not raw children, so routing agrees with rendering. The predicate's return
+   changes even though renderer output is neutral. *)
+let test_is_element_like_item_uses_renderable_children () =
+  let cfg = { full with unchanged = Ignore; modified = Full } in
+  (* Empty-children leaf: element-like (was section-like under raw inspection. *)
+  let empty_leaf = { name = "T"; change = Modified; domain_type = DTOther; children = [] } in
+  Alcotest.(check bool) "empty leaf is element-like" true (is_element_like_item cfg empty_leaf);
+  (* Leaf whose only nested child is Unchanged (filtered out): element-like. *)
+  let leaf_with_ignored_child = {
+    name = "T"; change = Modified; domain_type = DTOther;
+    children = [Item { name = "Sub"; change = Unchanged; domain_type = DTOther; children = [] }];
+  } in
+  Alcotest.(check bool) "leaf with ignored nested child is element-like" true
+    (is_element_like_item cfg leaf_with_ignored_child);
+  (* Genuinely nested renderable child: section-like. *)
+  let section = {
+    name = "T"; change = Modified; domain_type = DTOther;
+    children = [Item { name = "Sub"; change = Modified; domain_type = DTOther; children = [] }];
+  } in
+  Alcotest.(check bool) "item with renderable nested child is section-like" false
+    (is_element_like_item cfg section)
+
 (* ==================== Test Suite ==================== *)
 
 let tests = [
@@ -498,6 +521,8 @@ let tests = [
   "summary excludes ignored child", `Quick, test_summary_excludes_ignored_child;
   "collection summary excludes ignored element", `Quick,
   test_collection_summary_excludes_ignored_element;
+  "is_element_like_item uses renderable children", `Quick,
+  test_is_element_like_item_uses_renderable_children;
 ]
 
 let () =

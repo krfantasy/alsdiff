@@ -513,6 +513,40 @@ let test_create_liveset_item_with_main_only_change () =
   check bool "main track section exists" true (main_track_section.name = "Main Track");
   check bool "main track child rendered" true (String.starts_with ~prefix:"MainTrack" main_track_item.name)
 
+(* When only part of the liveset changes, the unchanged
+   nested sections (here Version) must NOT leak as a {change=Unchanged; children=[]}
+   placeholder item. Before the fix, build_item_from_children returned Some for the
+   `Modified`+`Unchanged` case and create_liveset_item concatenated it, surfacing a
+   stray "= Version" line under verbose. Now it returns None and is omitted. *)
+let test_unchanged_section_does_not_leak () =
+  let path = Utils.resolve_test_data_path "t4.xml" in
+  let xml = read_file path in
+  let liveset1 = Liveset.create xml path in
+  let liveset2 = Liveset.create xml path in
+  let updated_main =
+    match liveset2.Liveset.main with
+    | Track.Main main_track ->
+      let updated_tempo =
+        { main_track.Track.MainTrack.mixer.tempo with value = Device.Float 128.0 }
+      in
+      Track.Main {
+        main_track with
+        mixer = { main_track.Track.MainTrack.mixer with tempo = updated_tempo };
+      }
+    | _ -> fail "Expected Track.Main type for main track"
+  in
+  (* Only the main track's tempo changes, so version is `Unchanged in the patch. *)
+  let patch = Liveset.diff liveset1 { liveset2 with main = updated_main } in
+  let item = create_liveset_item (`Modified patch) in
+  let has_unchanged_version =
+    List.exists (fun v ->
+        match v with
+        | Item i -> i.name = "Version" && i.change = Unchanged
+        | _ -> false) item.children
+  in
+  check bool "unchanged Version section does not leak as placeholder" false
+    has_unchanged_version
+
 let () =
   run "ViewModel" [
     "ViewBuilder.change_type_of", [
@@ -546,5 +580,6 @@ let () =
     ];
     "create_liveset_item", [
       test_case "Renders main track when it is the only change" `Quick test_create_liveset_item_with_main_only_change;
+      test_case "Unchanged section does not leak as placeholder" `Quick test_unchanged_section_does_not_leak;
     ];
   ]

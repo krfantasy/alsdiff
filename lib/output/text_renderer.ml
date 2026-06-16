@@ -205,7 +205,7 @@ and pp_view cfg fmt = function
   | Field field -> pp_field cfg fmt field
   | Item elem ->
     (* Dispatch to pp_item for element-like items, pp_section for section-like items *)
-    if is_element_like_item elem then
+    if is_element_like_item cfg elem then
       pp_item cfg fmt elem
     else
       pp_section cfg fmt elem

@@ -176,16 +176,6 @@ let should_show_fields (cfg : detail_config) (elem : item) : bool =
   let level = get_effective_detail cfg elem.change elem.domain_type in
   (level = Full || level = Inline) && elem.children <> []
 
-(* Helper to check if an item is element-like (all children are Field views) *)
-let is_element_like_item (elem : item) : bool =
-  elem.children <> [] &&
-  List.for_all (fun (v : view) ->
-      match v with
-      | Field _ -> true
-      | Item _ -> false
-      | Collection _ -> false
-    ) elem.children
-
 (* Truncation info for collections when max_collection_items is applied *)
 type truncation_info = {
   total: int;
@@ -263,6 +253,20 @@ let renderable_sub_views (cfg : detail_config) (section : item) : view list =
         else if col_level = Summary then true
         else (filter_collection_elements cfg c) <> [])
     section.children
+
+(* Helper to check if an item is element-like (a leaf). Routing must agree with
+   rendering: pp_section renders only renderable_sub_views, so we decide from
+   those rather than raw children. Otherwise structurally-identical items diverge
+   — a leaf with all fields filtered out, or one polluted by a leaked
+   {Unchanged, []} placeholder, would route to pp_section (empty) instead of
+   pp_item. Element-like = no renderable nested
+   Item/Collection child. *)
+let is_element_like_item (cfg : detail_config) (elem : item) : bool =
+  not (List.exists (fun (v : view) ->
+      match v with
+      | Item _ | Collection _ -> true
+      | Field _ -> false)
+      (renderable_sub_views cfg elem))
 
 (* ==================== Change Breakdown for Summary Mode ==================== *)
 

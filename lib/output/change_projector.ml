@@ -77,10 +77,11 @@ module ViewBuilder = struct
     | `Modified patch ->
       (match of_patch patch with
        | `Unchanged ->
-         (* Nested content is unchanged but parent is Modified.
-            Create a placeholder item with empty children - the rendering layer
-            will decide whether to show it based on the preset. *)
-         Some { name; change = Unchanged; domain_type; children = [] }
+         (* Nested content is unchanged: there is nothing to render. A
+            placeholder {change=Unchanged; children=[]} would only leak a bare
+            "= <name>" header under verbose, so emit
+            nothing — matching build_item_from_children_with_change below. *)
+         None
        | `Modified np ->
          let children = build_patch_children np in
          if children = [] then None

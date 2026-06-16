@@ -38,7 +38,7 @@ let rec item_to_yojson (cfg : detail_config) (item : item) : Yojson.Safe.t optio
       Some (node (List.filter_map (view_to_yojson cfg) item.children))
     else
       let breakdown =
-        if is_element_like_item item then count_fields_breakdown item
+        if is_element_like_item cfg item then count_fields_breakdown item
         else count_sub_views_breakdown cfg item
       in
       Some (`Assoc (base @ [("counts", change_breakdown_to_yojson breakdown)]))
