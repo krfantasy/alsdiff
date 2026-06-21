@@ -5,7 +5,16 @@ open Config
 let field_value_to_yojson (v : field_value) : Yojson.Safe.t =
   match v with
   | Fint i -> `Int i
-  | Ffloat f -> `Float f
+  (* Ffloat NaN/Infinity would make Yojson.Safe.to_string raise
+     "NaN value not allowed in standard JSON", crashing the whole diff
+     command on a single bad automation value from a corrupt .als. RFC 8259
+     forbids NaN/Inf; emit `Null instead so the document stays parseable by
+     strict consumers (jq, Python json.loads). Matches the convention in
+     seconds_to_mmssms (track.ml). See review_0614.org
+     "Ffloat NaN/Inf serializes to invalid JSON". *)
+  | Ffloat f ->
+    if Float.is_nan f || Float.is_infinite f then `Null
+    else `Float f
   | Fbool b -> `Bool b
   | Fstring s -> `String s
 

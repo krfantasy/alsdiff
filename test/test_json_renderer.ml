@@ -161,6 +161,57 @@ let test_ignore () =
   let items = render_one (cfg_of Ignore) elem_item in
   Alcotest.(check int) "ignore renders nothing" 0 (List.length items)
 
+(* Ffloat NaN/Inf must serialize to JSON null, not the raw NaN/Infinity tokens.
+   RFC 8259 forbids NaN/Infinity, so emitting them makes the whole document
+   unparseable by strict consumers (jq, Python json.loads). NaN/Inf is
+   reachable from corrupt .als automation values (change_projector wraps
+   Automation.FloatEvent as Ffloat with no validation). See review_0614.org
+   "Ffloat NaN/Inf serializes to invalid JSON". *)
+let float_field new_val =
+  Field
+    {
+      name = "Value";
+      change = Modified;
+      domain_type = DTOther;
+      oldval = None;
+      newval = Some (Ffloat new_val);
+    }
+
+(* Extract the new_value JSON node from a rendered field object. *)
+let new_value_of = function
+  | `Assoc fields -> (List.assoc_opt "new_value" fields : Yojson.Safe.t option)
+  | _ -> None
+
+let test_nan_float_is_null () =
+  let items = render_one (cfg_of Full) (float_field Float.nan) in
+  let field_obj = one items in
+  (* Must parse cleanly — the bug made the document unparseable. *)
+  match new_value_of field_obj with
+  | Some `Null -> () (* expected *)
+  | other ->
+    Alcotest.failf "expected `Null for NaN, got %s"
+      (Yojson.Safe.to_string (Option.value other ~default:`Null))
+
+let test_infinity_float_is_null () =
+  let items = render_one (cfg_of Full) (float_field infinity) in
+  let field_obj = one items in
+  match new_value_of field_obj with
+  | Some `Null -> () (* expected *)
+  | other ->
+    Alcotest.failf "expected `Null for Infinity, got %s"
+      (Yojson.Safe.to_string (Option.value other ~default:`Null))
+
+(* Finite Ffloat must still serialize as a JSON number (regression guard so
+   the sanitization branch doesn't accidentally coerce all floats to null). *)
+let test_finite_float_is_number () =
+  let items = render_one (cfg_of Full) (float_field 1.5) in
+  let field_obj = one items in
+  match new_value_of field_obj with
+  | Some (`Float f) -> Alcotest.(check bool) "finite float preserved" true (Float.equal f 1.5)
+  | other ->
+    Alcotest.failf "expected `Float 1.5, got %s"
+      (Yojson.Safe.to_string (Option.value other ~default:`Null))
+
 let tests =
   [
     "element Summary", `Quick, test_elem_summary;
@@ -171,6 +222,9 @@ let tests =
     "collection Summary", `Quick, test_collection_summary;
     "collection Compact empty", `Quick, test_collection_compact_empty;
     "ignore", `Quick, test_ignore;
+    "NaN float serializes to null", `Quick, test_nan_float_is_null;
+    "Infinity float serializes to null", `Quick, test_infinity_float_is_null;
+    "finite float stays a number", `Quick, test_finite_float_is_number;
   ]
 
 let () = Alcotest.run "Json renderer detail levels" [ "json_renderer", tests ]
