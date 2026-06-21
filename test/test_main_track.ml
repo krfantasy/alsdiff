@@ -288,6 +288,26 @@ let test_time_to_position_48to138 () =
   check_pos 254.0 (89, 1, 1);
   check_pos 278.0 (93, 1, 1)
 
+(* The _precomputed variant is what the BeatTime format path in
+   change_projector.make_format_time calls directly (unlike time_to_position,
+   which guards time <= 0.0 first). Malformed/unusual .als locator times can
+   be <= 0.0; without a guard the walk math runs on negative input and emits
+   bar 0/negative (e.g. "0:1:1"), asymmetric with the RealTime path which
+   clamps to 0:00.000. See review_0614.org "BeatTime path skips the time<=0
+   clamp". *)
+let test_time_to_position_precomputed_zero_and_negative () =
+  let segments = MainTrack.prepare_ts_segments [] in
+  let check_zero_or_negative time =
+    let bar, beat, sixteenth = MainTrack.time_to_position_precomputed segments time in
+    let label = Printf.sprintf "Time=%.1f -> (1,1,1)" time in
+    Alcotest.(check int) (label ^ " bar") 1 bar;
+    Alcotest.(check int) (label ^ " beat") 1 beat;
+    Alcotest.(check int) (label ^ " sixteenth") 1 sixteenth
+  in
+  check_zero_or_negative 0.0;
+  check_zero_or_negative (-1.0);
+  check_zero_or_negative (-63072000.0)
+
 let test_time_to_realtime_constant_tempo () =
   (* Constant 120 BPM: 1 quarter note = 0.5 seconds *)
   let events : (float * float * Alsdiff_live.Automation.CurveControls.t option) list = [
@@ -362,6 +382,8 @@ let () =
     ];
     "time_to_position", [
       Alcotest.test_case "48to138 bar-boundary mappings" `Quick test_time_to_position_48to138;
+      Alcotest.test_case "precomputed clamps time<=0 to (1,1,1)" `Quick
+        test_time_to_position_precomputed_zero_and_negative;
     ];
     "time_to_realtime", [
       Alcotest.test_case "constant 120 BPM" `Quick test_time_to_realtime_constant_tempo;
