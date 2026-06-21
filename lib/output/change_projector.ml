@@ -196,21 +196,6 @@ module ViewBuilder = struct
 end
 
 
-(** [structured_update_to_field_views] flattens a [structured_update] into multiple [field_view] items.
-    @param build_fields function that takes the patch and returns a list of field options
-    @param update the structured update
-*)
-let structured_update_to_field_views
-    ~(build_fields : 'p -> field option list)
-    (update : 'p structured_update)
-  : field list =
-  match update with
-  | `Unchanged -> []
-  | `Modified patch ->
-    patch |> build_fields |> List.filter_map Fun.id
-
-
-
 (* ==================== Unified Field Spec System ==================== *)
 
 (** A unified field specification that can generate field views for both
@@ -459,35 +444,6 @@ let build_item_from_specs
   { name; change = change_type; domain_type; children }
 
 
-(** [child_from_specs ~name ~of_value ~of_patch ~specs ~child_domain_type ~domain_type]
-    builds a section_spec for a nested item using its own section_spec list.
-    This eliminates the need for manual paired build_value/build_patch functions.
-*)
-let child_from_specs
-    (type parent patch nested np)
-    ~(name : string)
-    ~(of_value : parent -> nested)
-    ~(of_patch : patch -> np structured_update)
-    ~(specs : (nested, np) section_spec list)
-    ~(child_domain_type : domain_type)
-    ~(domain_type : domain_type)
-  : (parent, patch) section_spec =
-  let build_value ct v =
-    let c : (nested, np) structured_change =
-      match ct with Added -> `Added v | Removed -> `Removed v | _ -> `Unchanged
-    in
-    let item = build_item_from_specs ~name ~domain_type:child_domain_type ~specs c in
-    item.children
-  and build_patch p =
-    let item = build_item_from_specs ~name ~domain_type:child_domain_type ~specs (`Modified p) in
-    item.children
-  in
-  Spec.child ~name ~of_value ~of_patch
-    ~build_value_children:build_value
-    ~build_patch_children:build_patch
-    ~domain_type
-
-
 (** Helper functions for creating field descriptors with common wrappers *)
 let make_spec
     (wrapper : 'a -> field_value)
@@ -678,27 +634,7 @@ module DeviceViewSpecB : Alsdiff_view_spec_types.View_spec_types.S
   let bool_value = bool_value
   let string_value = string_value
   let default_domain_type = DTOther
-  let domain_type_of_name = function
-    | "DTLiveset" -> DTLiveset
-    | "DTTrack" -> DTTrack
-    | "DTDevice" -> DTDevice
-    | "DTClip" -> DTClip
-    | "DTAutomation" -> DTAutomation
-    | "DTMixer" -> DTMixer
-    | "DTRouting" -> DTRouting
-    | "DTLocator" -> DTLocator
-    | "DTParam" -> DTParam
-    | "DTNote" -> DTNote
-    | "DTEvent" -> DTEvent
-    | "DTSend" -> DTSend
-    | "DTPreset" -> DTPreset
-    | "DTMacro" -> DTMacro
-    | "DTSnapshot" -> DTSnapshot
-    | "DTLoop" -> DTLoop
-    | "DTSignature" -> DTSignature
-    | "DTSampleRef" -> DTSampleRef
-    | "DTVersion" -> DTVersion
-    | _ -> DTOther
+  let domain_type_of_name = Output_types.domain_type_of_name
   let format_unix_timestamp = Display_context.format_unix_timestamp
 
   let make_spec = make_spec

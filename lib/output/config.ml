@@ -161,10 +161,6 @@ let get_effective_detail (cfg : detail_config) (ct : change_type) (dt : domain_t
     (* Step 3: Fall back to change-type base default *)
     get_detail_level_by_change cfg ct
 
-(* Backward-compatible helper - defaults to DTOther for views without domain_type consideration *)
-let get_detail_level (cfg : detail_config) (ct : change_type) : detail_level =
-  get_detail_level_by_change cfg ct
-
 (* Helper to check if we should render based on detail level *)
 let should_render_level (level : detail_level) : bool =
   match level with
@@ -816,29 +812,11 @@ let with_type_override cfg dt
   let filtered = List.filter (fun e -> e.domain_type <> dt) cfg.type_overrides in
   { cfg with type_overrides = { domain_type = dt; override = new_override } :: filtered }
 
-(* Helper: Convert domain_type to string for debugging/validation *)
+(* Helper: Convert domain_type to string for debugging/validation.
+   Delegates to the single canonical map in Output_types so this cannot
+   drift when a variant is added. *)
 let domain_type_to_string (dt : domain_type) : string =
-  match dt with
-  | DTLiveset -> "Liveset"
-  | DTTrack -> "Track"
-  | DTDevice -> "Device"
-  | DTClip -> "Clip"
-  | DTAutomation -> "Automation"
-  | DTMixer -> "Mixer"
-  | DTRouting -> "Routing"
-  | DTLocator -> "Locator"
-  | DTParam -> "Param"
-  | DTNote -> "Note"
-  | DTEvent -> "Event"
-  | DTSend -> "Send"
-  | DTPreset -> "Preset"
-  | DTMacro -> "Macro"
-  | DTSnapshot -> "Snapshot"
-  | DTLoop -> "Loop"
-  | DTSignature -> "Signature"
-  | DTSampleRef -> "SampleRef"
-  | DTVersion -> "Version"
-  | DTOther -> "Other"
+  Output_types.domain_type_to_display dt
 
 (* Validate config - check for suspicious patterns *)
 (* Returns list of warning messages *)
