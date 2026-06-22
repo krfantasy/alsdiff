@@ -64,7 +64,7 @@ module MidiClip = struct
     name : string;
     start_time : float; [@view.scalar time]
     end_time : float; [@view.scalar time]
-    loop : Loop.t; [@view.skip]
+    loop : Loop.t; [@view.child "DTLoop"] [@view.label "Loop"]
     signature : TimeSignature.t; [@view.child "DTSignature"] [@view.label "TimeSignature"]
     notes : MidiNote.t list; [@view.collection "DTNote"] [@view.builder "build_notes"]
   } [@@deriving eq, id, patch, view_spec] [@@patch.generate_diff]
@@ -165,7 +165,7 @@ module AudioClip = struct
     name : string;
     start_time : float; [@view.scalar time]
     end_time : float; [@view.scalar time]
-    loop : Loop.t; [@view.skip]
+    loop : Loop.t; [@view.child "DTLoop"] [@view.label "Loop"]
     signature : TimeSignature.t; [@view.child "DTSignature"] [@view.label "TimeSignature"]
     sample_ref : SampleRef.t; [@view.child "DTSampleRef"] [@view.label "SampleRef"]
     fade : Fade.t option; [@view.optional_child "DTClip"]

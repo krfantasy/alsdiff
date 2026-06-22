@@ -28,6 +28,7 @@ module type S = sig
   val string_value : string -> field_value
   val default_domain_type : domain_type
   val domain_type_of_name : string -> domain_type
+  val default_dual_time_formatter : dual_time_formatter
   val format_unix_timestamp : int -> string
 
   val make_spec :

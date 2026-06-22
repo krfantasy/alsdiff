@@ -635,6 +635,7 @@ module DeviceViewSpecB : Alsdiff_view_spec_types.View_spec_types.S
   let string_value = string_value
   let default_domain_type = DTOther
   let domain_type_of_name = Output_types.domain_type_of_name
+  let default_dual_time_formatter = Display_context.default_dual_time_formatter
   let format_unix_timestamp = Display_context.format_unix_timestamp
 
   let make_spec = make_spec
@@ -665,7 +666,6 @@ module MainMixerVS = Track.MainMixer.ViewSpec(DeviceViewSpecB)
 module RoutingSetVS = Track.RoutingSet.ViewSpec(DeviceViewSpecB)
 module MidiClipVS = Clip.MidiClip.ViewSpec(DeviceViewSpecB)
 module AudioClipVS = Clip.AudioClip.ViewSpec(DeviceViewSpecB)
-module LoopVS = Clip.Loop.ViewSpec(DeviceViewSpecB)
 module CurveControlsVS = Automation.CurveControls.ViewSpec(DeviceViewSpecB)
 module VersionVS = Liveset.Version.ViewSpec(DeviceViewSpecB)
 
@@ -686,8 +686,8 @@ let create_events_item
       ~name:"Curve"
       ~of_value:(fun (e : EnvelopeEvent.t) -> e.curve)
       ~of_patch:(fun (p : EnvelopeEvent.Patch.t) -> p.curve)
-      ~build_value_children:(CurveControlsVS.build_value_fields ~domain_type:DTEvent)
-      ~build_patch_children:(CurveControlsVS.build_patch_fields ~domain_type:DTEvent)
+      ~build_value_children:(CurveControlsVS.build_value_fields ~format_time ~domain_type:DTEvent)
+      ~build_patch_children:(CurveControlsVS.build_patch_fields ~format_time ~domain_type:DTEvent)
       ~domain_type:DTEvent
   in
   let base_section_spec = Spec.inline_fields ~specs:base_specs ~domain_type:DTEvent in
@@ -697,49 +697,29 @@ let create_events_item
 (* ==================== Clip Item Builders (after VS instantiations) ==================== *)
 
 (** [create_midi_clip_item] creates a [item] from a MidiClip structured change.
-    PPX generates inline fields (name, start/end time), TimeSignature child, and Notes collection.
-    Loop is manually composed because the PPX's child spec generator doesn't thread format_time to children.
-*)
+    The PPX generates inline fields (name, start/end time), the Loop child,
+    the TimeSignature child, and the Notes collection, threading format_time
+    parent->child so Loop's time fields render correctly. *)
 let create_midi_clip_item
     ?(note_name_style : note_display_style = default_note_name_style)
     ?(format_time : dual_time_formatter = default_dual_time_formatter)
     (c : (Clip.MidiClip.t, Clip.MidiClip.Patch.t) structured_change)
   : item =
   let name = build_midi_clip_section_name c in
-  let loop_child = Spec.child ~name:"Loop"
-      ~of_value:(fun (c : Clip.MidiClip.t) -> c.loop)
-      ~of_patch:(fun (p : Clip.MidiClip.Patch.t) -> p.loop)
-      ~build_value_children:(LoopVS.build_value_fields ~format_time ~domain_type:DTLoop)
-      ~build_patch_children:(LoopVS.build_patch_fields ~format_time ~domain_type:DTLoop)
-      ~domain_type:DTLoop in
-  let ppx_specs = MidiClipVS.section_specs ~format_time
+  let specs = MidiClipVS.section_specs ~format_time
       ~build_notes:(create_note_item ~note_name_style ~format_time) in
-  let specs = match ppx_specs with
-    | first :: rest -> first :: loop_child :: rest
-    | _ -> assert false
-  in
   build_item_from_specs ~name ~domain_type:DTClip ~specs c
 
 (** [create_audio_clip_item] creates a [item] from an AudioClip structured change.
-    PPX generates inline fields (name, start/end time), TimeSignature child, SampleRef child, and Fade child.
-    Loop is manually composed because the PPX's child spec generator doesn't thread format_time to children.
-*)
+    The PPX generates inline fields (name, start/end time), the Loop child,
+    the TimeSignature child, the SampleRef child, and the Fade child, threading
+    format_time parent->child so Loop's time fields render correctly. *)
 let create_audio_clip_item
     ?(format_time : dual_time_formatter = default_dual_time_formatter)
     (c : (Clip.AudioClip.t, Clip.AudioClip.Patch.t) structured_change)
   : item =
   let name = build_audio_clip_section_name c in
-  let loop_child = Spec.child ~name:"Loop"
-      ~of_value:(fun (c : Clip.AudioClip.t) -> c.loop)
-      ~of_patch:(fun (p : Clip.AudioClip.Patch.t) -> p.loop)
-      ~build_value_children:(LoopVS.build_value_fields ~format_time ~domain_type:DTLoop)
-      ~build_patch_children:(LoopVS.build_patch_fields ~format_time ~domain_type:DTLoop)
-      ~domain_type:DTLoop in
-  let ppx_specs = AudioClipVS.section_specs ~format_time in
-  let specs = match ppx_specs with
-    | first :: rest -> first :: loop_child :: rest
-    | _ -> assert false
-  in
+  let specs = AudioClipVS.section_specs ~format_time in
   build_item_from_specs ~name ~domain_type:DTClip ~specs c
 
 
@@ -815,44 +795,45 @@ let create_automation_item
     @param c the device structured change
 *)
 let create_device_item
+    ?(format_time : dual_time_formatter = default_dual_time_formatter)
     (c : (Device.t, Device.Patch.t) structured_change)
   : item =
   match c with
   | `Added (Device.Regular d) ->
-    RegularDeviceVS.build_item ~name:(RegularDeviceVS.build_section_name (`Added d))
+    RegularDeviceVS.build_item ~format_time ~name:(RegularDeviceVS.build_section_name (`Added d))
       ~domain_type:DTDevice (`Added d)
   | `Removed (Device.Regular d) ->
-    RegularDeviceVS.build_item ~name:(RegularDeviceVS.build_section_name (`Removed d))
+    RegularDeviceVS.build_item ~format_time ~name:(RegularDeviceVS.build_section_name (`Removed d))
       ~domain_type:DTDevice (`Removed d)
   | `Modified (Device.Patch.RegularPatch p) ->
-    RegularDeviceVS.build_item ~name:(RegularDeviceVS.build_section_name (`Modified p))
+    RegularDeviceVS.build_item ~format_time ~name:(RegularDeviceVS.build_section_name (`Modified p))
       ~domain_type:DTDevice (`Modified p)
   | `Added (Device.Plugin d) ->
-    PluginDeviceVS.build_item ~name:(PluginDeviceVS.build_section_name (`Added d))
+    PluginDeviceVS.build_item ~format_time ~name:(PluginDeviceVS.build_section_name (`Added d))
       ~domain_type:DTDevice (`Added d)
   | `Removed (Device.Plugin d) ->
-    PluginDeviceVS.build_item ~name:(PluginDeviceVS.build_section_name (`Removed d))
+    PluginDeviceVS.build_item ~format_time ~name:(PluginDeviceVS.build_section_name (`Removed d))
       ~domain_type:DTDevice (`Removed d)
   | `Modified (Device.Patch.PluginPatch p) ->
-    PluginDeviceVS.build_item ~name:(PluginDeviceVS.build_section_name (`Modified p))
+    PluginDeviceVS.build_item ~format_time ~name:(PluginDeviceVS.build_section_name (`Modified p))
       ~domain_type:DTDevice (`Modified p)
   | `Added (Device.Max4Live d) ->
-    Max4LiveDeviceVS.build_item ~name:(Max4LiveDeviceVS.build_section_name (`Added d))
+    Max4LiveDeviceVS.build_item ~format_time ~name:(Max4LiveDeviceVS.build_section_name (`Added d))
       ~domain_type:DTDevice (`Added d)
   | `Removed (Device.Max4Live d) ->
-    Max4LiveDeviceVS.build_item ~name:(Max4LiveDeviceVS.build_section_name (`Removed d))
+    Max4LiveDeviceVS.build_item ~format_time ~name:(Max4LiveDeviceVS.build_section_name (`Removed d))
       ~domain_type:DTDevice (`Removed d)
   | `Modified (Device.Patch.Max4LivePatch p) ->
-    Max4LiveDeviceVS.build_item ~name:(Max4LiveDeviceVS.build_section_name (`Modified p))
+    Max4LiveDeviceVS.build_item ~format_time ~name:(Max4LiveDeviceVS.build_section_name (`Modified p))
       ~domain_type:DTDevice (`Modified p)
   | `Added (Device.Group d) ->
-    GroupDeviceVS.build_item ~name:(GroupDeviceVS.build_section_name (`Added d))
+    GroupDeviceVS.build_item ~format_time ~name:(GroupDeviceVS.build_section_name (`Added d))
       ~domain_type:DTDevice (`Added d)
   | `Removed (Device.Group d) ->
-    GroupDeviceVS.build_item ~name:(GroupDeviceVS.build_section_name (`Removed d))
+    GroupDeviceVS.build_item ~format_time ~name:(GroupDeviceVS.build_section_name (`Removed d))
       ~domain_type:DTDevice (`Removed d)
   | `Modified (Device.Patch.GroupPatch p) ->
-    GroupDeviceVS.build_item ~name:(GroupDeviceVS.build_section_name (`Modified p))
+    GroupDeviceVS.build_item ~format_time ~name:(GroupDeviceVS.build_section_name (`Modified p))
       ~domain_type:DTDevice (`Modified p)
   | `Unchanged ->
     { name = "Device"; change = Unchanged; domain_type = DTDevice; children = [] }
@@ -873,9 +854,10 @@ let create_midi_track_item
     (c : (Track.MidiTrack.t, Track.MidiTrack.Patch.t) structured_change)
   : item =
   MidiTrackVS.build_item
+    ~format_time
     ~build_clips:(create_midi_clip_item ~note_name_style ~format_time)
     ~build_automations:(create_automation_item ~get_pointee_name ~format_time)
-    ~build_devices:create_device_item
+    ~build_devices:(create_device_item ~format_time)
     ~name:(MidiTrackVS.build_section_name c)
     ~domain_type:DTTrack c
 
@@ -892,9 +874,10 @@ let create_audio_like_track_item
     (c : (Track.AudioTrack.t, Track.AudioTrack.Patch.t) structured_change)
   : item =
   AudioTrackVS.build_item
+    ~format_time
     ~build_clips:(create_audio_clip_item ~format_time)
     ~build_automations:(create_automation_item ~get_pointee_name ~format_time)
-    ~build_devices:create_device_item
+    ~build_devices:(create_device_item ~format_time)
     ~name:(AudioTrackVS.build_section_name ~type_label:track_type_name c)
     ~domain_type:DTTrack c
 
@@ -931,8 +914,9 @@ let create_main_track_item
   : item =
   ignore (note_name_style : note_display_style);
   MainTrackVS.build_item
+    ~format_time
     ~build_automations:(create_automation_item ~get_pointee_name ~format_time)
-    ~build_devices:create_device_item
+    ~build_devices:(create_device_item ~format_time)
     ~name:(MainTrackVS.build_section_name c)
     ~domain_type:DTTrack c
 
@@ -1150,8 +1134,8 @@ let create_liveset_item
       ~name:"Version"
       ~of_value:(fun (ls : Liveset.t) -> ls.version)
       ~of_patch:(fun (p : Liveset.Patch.t) -> p.version)
-      ~build_value_children:(VersionVS.build_value_fields ~domain_type:DTVersion)
-      ~build_patch_children:(VersionVS.build_patch_fields ~domain_type:DTVersion)
+      ~build_value_children:(VersionVS.build_value_fields ~format_time ~domain_type:DTVersion)
+      ~build_patch_children:(VersionVS.build_patch_fields ~format_time ~domain_type:DTVersion)
       ~domain_type:DTVersion
   in
 
