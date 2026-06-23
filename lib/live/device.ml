@@ -1199,7 +1199,8 @@ module RegularDevice = struct
         in Printf.sprintf "%s (#%d): %s" p.device_name p.id display
       | `Unchanged -> ""
 
-    let build_param_item ~(format_time : B.dual_time_formatter) (c : (DeviceParam.t, DeviceParam.Patch.t) structured_change) =
+    let build_param_item ~(format_time : B.dual_time_formatter)
+        (c : (DeviceParam.t, DeviceParam.Patch.t) structured_change) =
       let name = match c with
         | `Added dp -> dp.base.name
         | `Removed dp -> dp.base.name
@@ -1292,7 +1293,8 @@ module PluginDevice = struct
         in Printf.sprintf "%s (#%d): %s" p.device_name p.id display
       | `Unchanged -> ""
 
-    let build_param_item ~(format_time : B.dual_time_formatter) (c : (PluginParam.t, PluginParam.Patch.t) structured_change) =
+    let build_param_item ~(format_time : B.dual_time_formatter)
+        (c : (PluginParam.t, PluginParam.Patch.t) structured_change) =
       let name = match c with
         | `Added pp -> pp.base.name
         | `Removed pp -> pp.base.name
@@ -1447,10 +1449,12 @@ module GroupDevice = struct
         in Printf.sprintf "%s (#%d): %s" p.device_name p.id display
       | `Unchanged -> ""
 
-    let build_macro_item ~(format_time : B.dual_time_formatter) (c : (Macro.t, Macro.Patch.t) structured_change) =
+    let build_macro_item ~(format_time : B.dual_time_formatter)
+        (c : (Macro.t, Macro.Patch.t) structured_change) =
       MVS.build_item ~format_time ~name:"Macro" c
 
-    let build_snapshot_item ~(format_time : B.dual_time_formatter) (c : (Snapshot.t, Snapshot.Patch.t) structured_change) =
+    let build_snapshot_item ~(format_time : B.dual_time_formatter)
+        (c : (Snapshot.t, Snapshot.Patch.t) structured_change) =
       let name = match c with
         | `Added s -> s.name | `Removed s -> s.name
         | `Modified _ | `Unchanged -> "Snapshot"
@@ -1550,7 +1554,8 @@ module Max4LiveDevice = struct
         in Printf.sprintf "%s (#%d): %s" p.device_name p.id display
       | `Unchanged -> ""
 
-    let build_param_item ~(format_time : B.dual_time_formatter) (c : (Max4LiveParam.t, Max4LiveParam.Patch.t) structured_change) =
+    let build_param_item ~(format_time : B.dual_time_formatter)
+        (c : (Max4LiveParam.t, Max4LiveParam.Patch.t) structured_change) =
       let name = match c with
         | `Added mp -> mp.base.name
         | `Removed mp -> mp.base.name

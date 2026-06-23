@@ -6,16 +6,21 @@ open Alsdiff_output.View_model
    and the PPX-generated yojson pair). Adding a variant silently produced a
    DTOther fallback / missing-stat with no compile error. They now derive
    from a single source in Output_types; these tests guard the round-trip so
-   a future variant added without updating the name tables fails here. *)
+   a future variant added without updating the name tables fails here.
 
-(* The full set of domain_type variants. If a variant is added to the type
-   but not to this list, the "exhaustive variants" test fails; if it is added
-   here but not to the name table, the round-trip test fails. *)
-let all_domain_types : domain_type list = [
-  DTLiveset; DTTrack; DTDevice; DTClip; DTAutomation; DTMixer; DTRouting;
-  DTLocator; DTParam; DTNote; DTEvent; DTSend; DTPreset; DTMacro;
-  DTSnapshot; DTLoop; DTSignature; DTSampleRef; DTVersion; DTOther;
-]
+   The variant set itself comes from [Output_types.all_domain_types] (the
+   single source also consumed by [Stats_renderer]), so this test no longer
+   keeps its own hand-maintained copy. *)
+
+let test_all_domain_types_unique () =
+  (* No duplicate variants in the canonical list — catches a copy-paste
+     registration mistake. (Catching a *missing* variant requires runtime
+     constructor enumeration, which OCaml does not provide; that residual gap
+     is documented at [Output_types.all_domain_types].) *)
+  let n = List.length all_domain_types in
+  let unique =
+    List.length (List.sort_uniq compare all_domain_types) in
+  Alcotest.(check int) "all_domain_types has no duplicates" n unique
 
 let test_name_roundtrip () =
   List.iteri (fun i dt ->
@@ -55,6 +60,7 @@ let test_of_name_rejects_unknown () =
   Alcotest.(check bool) "unknown name raises Invalid_argument" raised true
 
 let tests = [
+  "all_domain_types unique", `Quick, test_all_domain_types_unique;
   "name roundtrip", `Quick, test_name_roundtrip;
   "display name nonempty", `Quick, test_display_name_nonempty;
   "to_string aliases display", `Quick, test_to_string_aliases_display;

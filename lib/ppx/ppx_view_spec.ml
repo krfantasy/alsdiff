@@ -559,18 +559,19 @@ let generate_specs_from_fields ~loc fields =
       match classify_field ld with
       | Inline_child mp -> Some (ld.pld_name.txt, mp)
       | _ -> None) in
-  (* format_time is always threaded (bound on every generated field_specs,
-     section_specs, build_value_fields, build_patch_fields, build_item), even
-     for leaf types that don't use it. This is required so a parent's
-     child-spec generator can unconditionally call
+  (* format_time is always threaded: every generated binding (field_specs,
+     section_specs, build_value_fields, build_patch_fields, build_item) binds
+     ~format_time so a parent's child-spec generator can unconditionally call
      Vs.build_value_fields ~format_time ... regardless of whether the child
-     type itself has time fields. Leaf types simply don't reference the arg;
-     the generated functor body suppresses warning 27 (unused-variable) for
-     that case. Inline children are spliced as flat field lists and excluded
-     from threading because they reference hand-written ViewSpec modules
-     (e.g. GenericParam) that don't accept ~format_time. *)
-  let _ = has_time_field in
-  (true, field_specs, child_section_specs, inline_child_fields, builder_fields)
+     type itself has time fields. Only [field_specs] can bind ~format_time
+     without referencing it (when this type has no Inline_time field), so the
+     warning-27 (unused-variable) suppression is scoped to that single binding
+     in [generate_view_spec_impl] rather than blanket-disabled across the
+     functor — a dropped ~format_time reference in any other binding (or in a
+     time-bearing field_specs) then still trips warning 27 at compile time.
+     Inline children are spliced via flat field lists (Vs.field_specs, a value)
+     rather than a build_* call, so they are excluded from threading. *)
+  (has_time_field, field_specs, child_section_specs, inline_child_fields, builder_fields)
 
 let generate_view_spec_impl ~ctxt:_ (_rec_flag, type_decls) =
   match type_decls with
@@ -582,7 +583,7 @@ let generate_view_spec_impl ~ctxt:_ (_rec_flag, type_decls) =
       | Ptype_record fields -> fields
       | _ -> []
     in
-    let (needs_format_time, field_specs_exprs, child_section_specs, inline_child_fields, builder_fields) =
+    let (has_time_field, field_specs_exprs, child_section_specs, inline_child_fields, builder_fields) =
       generate_specs_from_fields ~loc fields
     in
     let ni = extract_naming_info type_decl fields in
@@ -604,12 +605,10 @@ let generate_view_spec_impl ~ctxt:_ (_rec_flag, type_decls) =
     in
     let field_specs_binding =
       let expr =
-        if needs_format_time then
-          pexp_fun ~loc (Labelled "format_time")
-            None
-            (ppat_var ~loc { txt = "format_time"; loc })
-            field_specs_list
-        else field_specs_list
+        pexp_fun ~loc (Labelled "format_time")
+          None
+          (ppat_var ~loc { txt = "format_time"; loc })
+          field_specs_list
       in
       pstr_value ~loc Nonrecursive [{
           pvb_pat = ppat_var ~loc { txt = "field_specs"; loc };
@@ -621,11 +620,8 @@ let generate_view_spec_impl ~ctxt:_ (_rec_flag, type_decls) =
 
     (* --- section_specs binding --- *)
     let specs_arg =
-      if needs_format_time then
-        pexp_apply ~loc (pexp_ident ~loc { txt = Lident "field_specs"; loc })
-          [Labelled "format_time", pexp_ident ~loc { txt = Lident "format_time"; loc }]
-      else
-        pexp_ident ~loc { txt = Lident "field_specs"; loc }
+      pexp_apply ~loc (pexp_ident ~loc { txt = Lident "field_specs"; loc })
+        [Labelled "format_time", pexp_ident ~loc { txt = Lident "format_time"; loc }]
     in
     let inline_section =
       pexp_apply ~loc (mk_lid_expr loc (Ldot (Ldot (Lident "B", "Spec"), "inline_fields")))
@@ -637,12 +633,10 @@ let generate_view_spec_impl ~ctxt:_ (_rec_flag, type_decls) =
     let section_specs_binding =
       let expr =
         let base =
-          if needs_format_time then
-            pexp_fun ~loc (Labelled "format_time")
-              None
-              (ppat_var ~loc { txt = "format_time"; loc })
-              section_specs_list
-          else section_specs_list
+          pexp_fun ~loc (Labelled "format_time")
+            None
+            (ppat_var ~loc { txt = "format_time"; loc })
+            section_specs_list
         in
         List.fold_left builder_fields ~init:base
           ~f:(fun acc (_, bname) ->
@@ -662,11 +656,8 @@ let generate_view_spec_impl ~ctxt:_ (_rec_flag, type_decls) =
     (* --- build_value_fields binding --- *)
     let build_value_fields_binding =
       let fs_call =
-        if needs_format_time then
-          pexp_apply ~loc (pexp_ident ~loc { txt = Lident "field_specs"; loc })
-            [Labelled "format_time", pexp_ident ~loc { txt = Lident "format_time"; loc }]
-        else
-          pexp_ident ~loc { txt = Lident "field_specs"; loc }
+        pexp_apply ~loc (pexp_ident ~loc { txt = Lident "field_specs"; loc })
+          [Labelled "format_time", pexp_ident ~loc { txt = Lident "format_time"; loc }]
       in
       let body =
         pexp_apply ~loc (mk_lid_expr loc (Ldot (Lident "B", "build_value_field_views")))
@@ -689,12 +680,10 @@ let generate_view_spec_impl ~ctxt:_ (_rec_flag, type_decls) =
           inner
       in
       let expr =
-        if needs_format_time then
-          pexp_fun ~loc (Labelled "format_time")
-            None
-            (ppat_var ~loc { txt = "format_time"; loc })
-            inner2
-        else inner2
+        pexp_fun ~loc (Labelled "format_time")
+          None
+          (ppat_var ~loc { txt = "format_time"; loc })
+          inner2
       in
       pstr_value ~loc Nonrecursive [{
           pvb_pat = ppat_var ~loc { txt = "build_value_fields"; loc };
@@ -707,11 +696,8 @@ let generate_view_spec_impl ~ctxt:_ (_rec_flag, type_decls) =
     (* --- build_patch_fields binding --- *)
     let build_patch_fields_binding =
       let fs_call =
-        if needs_format_time then
-          pexp_apply ~loc (pexp_ident ~loc { txt = Lident "field_specs"; loc })
-            [Labelled "format_time", pexp_ident ~loc { txt = Lident "format_time"; loc }]
-        else
-          pexp_ident ~loc { txt = Lident "field_specs"; loc }
+        pexp_apply ~loc (pexp_ident ~loc { txt = Lident "field_specs"; loc })
+          [Labelled "format_time", pexp_ident ~loc { txt = Lident "format_time"; loc }]
       in
       let body =
         pexp_apply ~loc (mk_lid_expr loc (Ldot (Lident "B", "build_patch_field_views")))
@@ -731,12 +717,10 @@ let generate_view_spec_impl ~ctxt:_ (_rec_flag, type_decls) =
           inner
       in
       let expr =
-        if needs_format_time then
-          pexp_fun ~loc (Labelled "format_time")
-            None
-            (ppat_var ~loc { txt = "format_time"; loc })
-            inner2
-        else inner2
+        pexp_fun ~loc (Labelled "format_time")
+          None
+          (ppat_var ~loc { txt = "format_time"; loc })
+          inner2
       in
       pstr_value ~loc Nonrecursive [{
           pvb_pat = ppat_var ~loc { txt = "build_patch_fields"; loc };
@@ -749,9 +733,8 @@ let generate_view_spec_impl ~ctxt:_ (_rec_flag, type_decls) =
     (* --- build_item binding --- *)
     let build_item_binding =
       let specs_call_args =
-        let time_args = if needs_format_time then
-            [Labelled "format_time", pexp_ident ~loc { txt = Lident "format_time"; loc }]
-          else [] in
+        let time_args =
+          [Labelled "format_time", pexp_ident ~loc { txt = Lident "format_time"; loc }] in
         let builder_args = List.map builder_fields ~f:(fun (_, bname) ->
             Labelled bname, pexp_ident ~loc { txt = Lident bname; loc }) in
         time_args @ builder_args
@@ -789,12 +772,10 @@ let generate_view_spec_impl ~ctxt:_ (_rec_flag, type_decls) =
       in
       let expr =
         let base =
-          if needs_format_time then
-            pexp_fun ~loc (Labelled "format_time")
-              None
-              (ppat_var ~loc { txt = "format_time"; loc })
-              inner3
-          else inner3
+          pexp_fun ~loc (Labelled "format_time")
+            None
+            (ppat_var ~loc { txt = "format_time"; loc })
+            inner3
         in
         List.fold_left (List.rev builder_fields) ~init:base
           ~f:(fun acc (_, bname) ->
@@ -819,20 +800,25 @@ let generate_view_spec_impl ~ctxt:_ (_rec_flag, type_decls) =
     (* --- functor module --- *)
     let b_sig = pmty_ident ~loc { loc; txt = Longident.parse "Alsdiff_view_spec_types.View_spec_types.S" } in
     let functor_param = Named ({ txt = Some "B"; loc }, b_sig) in
-    (* Suppress warning 27 (unused-variable) inside the functor body: every
-       generated binding carries ~format_time so that child-spec generators
-       can thread it parent->child uniformly, but leaf types (no time fields
-       and no nested children) never reference it. *)
-    let warning_item =
+    (* [field_specs] binds ~format_time but only references it when this type
+       has an Inline_time field. For time-less types the binding would trip
+       warning 27 (unused-variable), so scope the suppression to that one
+       binding — disable it, emit [field_specs], then re-enable — rather than
+       blanket-disabling warning 27 across the whole functor body. Any other
+       binding that drops its ~format_time reference then still warns. *)
+    let warning_item txt =
       pstr_attribute ~loc
         { attr_name = { txt = "warning"; loc }
-        ; attr_payload = PStr [pstr_eval ~loc (mk_str loc "-27") []]
+        ; attr_payload = PStr [pstr_eval ~loc (mk_str loc txt) []]
         ; attr_loc = loc }
     in
+    let field_specs_items =
+      (if has_time_field then [] else [warning_item "-27"])
+      @ [field_specs_binding]
+      @ (if has_time_field then [] else [warning_item "+27"])
+    in
     let body_mod = pmod_structure ~loc (
-        warning_item
-        :: inline_bindings @ build_section_name_binding @ [
-          field_specs_binding;
+        inline_bindings @ build_section_name_binding @ field_specs_items @ [
           section_specs_binding;
           build_value_fields_binding;
           build_patch_fields_binding;

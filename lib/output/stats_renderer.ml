@@ -7,14 +7,9 @@ let display_name (dt : domain_type) : string =
 
 (* Build the initial stats list from config - include types not set to Ignore *)
 let stats_from_config (cfg : detail_config) : (domain_type * change_breakdown) list =
-  (* All domain types we might track - check if they're not Ignored *)
-  let all_types = [
-    DTLiveset; DTTrack; DTDevice; DTClip; DTNote;
-    DTAutomation; DTMixer; DTRouting; DTLocator;
-    DTParam; DTEvent; DTSend; DTPreset; DTMacro;
-    DTSnapshot; DTLoop; DTSignature; DTSampleRef;
-    DTVersion; DTOther;
-  ] in
+  (* All domain types we might track, in display-priority order (see
+     [Output_types.all_domain_types]). *)
+  let all_types = all_domain_types in
   (* Filter to types that should be tracked (not Ignore for their change type) *)
   List.filter_map (fun dt ->
       (* Check if any change type for this domain type is not Ignore *)

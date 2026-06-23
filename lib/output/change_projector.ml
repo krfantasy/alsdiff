@@ -635,7 +635,6 @@ module DeviceViewSpecB : Alsdiff_view_spec_types.View_spec_types.S
   let string_value = string_value
   let default_domain_type = DTOther
   let domain_type_of_name = Output_types.domain_type_of_name
-  let default_dual_time_formatter = Display_context.default_dual_time_formatter
   let format_unix_timestamp = Display_context.format_unix_timestamp
 
   let make_spec = make_spec
@@ -821,10 +820,12 @@ let create_device_item
     Max4LiveDeviceVS.build_item ~format_time ~name:(Max4LiveDeviceVS.build_section_name (`Added d))
       ~domain_type:DTDevice (`Added d)
   | `Removed (Device.Max4Live d) ->
-    Max4LiveDeviceVS.build_item ~format_time ~name:(Max4LiveDeviceVS.build_section_name (`Removed d))
+    Max4LiveDeviceVS.build_item ~format_time
+      ~name:(Max4LiveDeviceVS.build_section_name (`Removed d))
       ~domain_type:DTDevice (`Removed d)
   | `Modified (Device.Patch.Max4LivePatch p) ->
-    Max4LiveDeviceVS.build_item ~format_time ~name:(Max4LiveDeviceVS.build_section_name (`Modified p))
+    Max4LiveDeviceVS.build_item ~format_time
+      ~name:(Max4LiveDeviceVS.build_section_name (`Modified p))
       ~domain_type:DTDevice (`Modified p)
   | `Added (Device.Group d) ->
     GroupDeviceVS.build_item ~format_time ~name:(GroupDeviceVS.build_section_name (`Added d))
