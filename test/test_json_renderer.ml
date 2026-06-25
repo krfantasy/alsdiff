@@ -151,10 +151,20 @@ let test_collection_summary () =
   Alcotest.(check bool) "collection Summary has counts" (has_key "counts" col) true;
   Alcotest.(check bool) "collection Summary no items" (not (has_key "items" col)) true
 
-(* collection Compact with no renderable items: omitted entirely (None) *)
+(* collection Compact: header+counts, no items (Compact == Summary for collections) *)
+let test_collection_compact () =
+  let col = one (render_one (cfg_of Compact) one_item_collection) in
+  Alcotest.(check bool) "collection Compact has counts" (has_key "counts" col) true;
+  Alcotest.(check bool) "collection Compact no items" (not (has_key "items" col)) true
+
+(* collection Compact with no renderable items: still renders a counts node (mirrors
+   empty Summary), not omitted — the header+counts form always surfaces. *)
 let test_collection_compact_empty () =
   let items = render_one (cfg_of Compact) empty_collection in
-  Alcotest.(check int) "empty collection Compact omitted" 0 (List.length items)
+  let col = one items in
+  Alcotest.(check int) "empty collection Compact renders one node" 1 (List.length items);
+  Alcotest.(check bool) "empty collection Compact has counts" (has_key "counts" col) true;
+  Alcotest.(check bool) "empty collection Compact no items" (not (has_key "items" col)) true
 
 (* Ignore level: nothing renders *)
 let test_ignore () =
@@ -220,6 +230,7 @@ let tests =
     "section Summary", `Quick, test_section_summary;
     "liveset Summary", `Quick, test_liveset_summary;
     "collection Summary", `Quick, test_collection_summary;
+    "collection Compact", `Quick, test_collection_compact;
     "collection Compact empty", `Quick, test_collection_compact_empty;
     "ignore", `Quick, test_ignore;
     "NaN float serializes to null", `Quick, test_nan_float_is_null;

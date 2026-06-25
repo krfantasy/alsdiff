@@ -384,16 +384,15 @@ let test_compact_collection_summary () =
   let output = render_view cfg view |> normalize_output in
   Alcotest.(check bool) "summary shows count" true (contains_string "(10 Added)" output)
 
-(* Test Compact on a Collection lists its elements (same as Inline/Full), so that
-   collection-wrapped views like Tracks/Returns can be capped by max_collection_items.
-   Previously Compact rendered header-only, which bypassed truncation entirely. *)
-let test_compact_collection_lists_items () =
+(* Compact on a Collection renders header + count (Compact == Summary for
+   collections, per detail_level doc). Inline/Full still list the (capped)
+   elements, so Tracks/Returns capping still applies at those levels. *)
+let test_compact_collection_header_count () =
   let cfg = { full with added = Compact } in
   let items = List.init 5 (fun _ -> simple_item "Item" Added) in
   let view = Collection { name = "Items"; change = Added; domain_type = DTOther; items } in
   let output = render_view cfg view |> normalize_output in
-  Alcotest.(check string) "compact collection lists items"
-    "+ Items\n  + Item\n  + Item\n  + Item\n  + Item\n  + Item" output
+  Alcotest.(check string) "compact collection header+count" "+ Items (5 Added)" output
 
 (* Test negative indent_width does not crash *)
 let test_indent_width_negative () =
@@ -515,7 +514,7 @@ let tests = [
   "compact collection summary", `Quick, test_compact_collection_summary;
 
   (* New Coverage Tests *)
-  "compact collection lists items", `Quick, test_compact_collection_lists_items;
+  "compact collection header+count", `Quick, test_compact_collection_header_count;
   "indent width negative", `Quick, test_indent_width_negative;
   "max_items zero summary", `Quick, test_max_collection_items_zero_summary;
   "summary excludes ignored child", `Quick, test_summary_excludes_ignored_child;

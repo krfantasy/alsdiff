@@ -114,14 +114,13 @@ let rec pp_item cfg fmt (elem : item) =
 and pp_collection cfg fmt (col : collection) =
   let level = get_effective_detail cfg col.change col.domain_type in
   if not (should_render_level level) then ()
-  else if level = Summary then
-    (* Summary mode: always show counts, even if elements are filtered out *)
+  else if level = Summary || level = Compact then
+    (* Summary/Compact: header + count, no element list
+       (Compact == Summary for collections, per [detail_level] doc). *)
     render_summary_breakdown cfg fmt (count_elements_breakdown cfg col) col.name col.change
   else
-    (* Compact/Inline/Full: show collection name, then elements (filtered and
-       truncated by [max_collection_items]). Compact used to render name-only,
-       but no existing collection renders at Compact, so this only enables the
-       Tracks/Returns collections to be capped without changing other output. *)
+    (* Inline/Full: show collection name, then elements (filtered and
+       truncated by [max_collection_items]). *)
     let elements, truncation = filter_collection_elements_with_info cfg col in
     if elements = [] then ()
     else begin
