@@ -20,7 +20,7 @@
  (synopsis "diff tool for Ableton Live Set(.als)")
  (description "diff tool for Ableton Live Set(.als)")
  (depends
-   (ocaml (>= 5.3.0))
+   (ocaml (>= 5.5.0))
     re
     camlzip
     xmlm
