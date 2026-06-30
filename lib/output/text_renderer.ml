@@ -114,17 +114,16 @@ let rec pp_item cfg fmt (elem : item) =
 and pp_collection cfg fmt (col : collection) =
   let level = get_effective_detail cfg col.change col.domain_type in
   if not (should_render_level level) then ()
-  else if level = Summary then
-    (* Summary mode: always show counts, even if elements are filtered out *)
+  else if level = Summary || level = Compact then
+    (* Summary/Compact: header + count, no element list
+       (Compact == Summary for collections, per [detail_level] doc). *)
     render_summary_breakdown cfg fmt (count_elements_breakdown cfg col) col.name col.change
   else
+    (* Inline/Full: show collection name, then elements (filtered and
+       truncated by [max_collection_items]). *)
     let elements, truncation = filter_collection_elements_with_info cfg col in
     if elements = [] then ()
-    else if level = Compact then
-      (* Compact mode: name + symbol only *)
-      Fmt.(box (fun fmt () -> pf fmt "%a %s" (pp_change_type cfg) col.change col.name)) fmt ()
     else begin
-      (* Inline and Full: show collection name, elements on new lines *)
       Fmt.(vbox ~indent:cfg.indent_width (fun fmt () ->
           pf fmt "%a %s" (pp_change_type cfg) col.change col.name;
           List.iter (fun e ->
@@ -143,21 +142,8 @@ and pp_section cfg fmt (section : item) =
   let level = get_effective_detail cfg section.change section.domain_type in
   if not (should_render_level level) then ()
   else
-    (* Filter sub_views based on detail levels *)
-    let sub_views = List.filter (fun v ->
-        match v with
-        | Field f -> should_render_level (get_effective_detail cfg f.change f.domain_type)
-        | Item e -> should_render_level (get_effective_detail cfg e.change e.domain_type)
-        | Collection c ->
-          let col_level = get_effective_detail cfg c.change c.domain_type in
-          if not (should_render_level col_level) then false
-          else if col_level = Summary then
-            (* Summary mode: always include collections, they show counts even without elements *)
-            true
-          else
-            (* Other modes: check if any elements would render *)
-            (filter_collection_elements cfg c) <> []
-      ) section.children in
+    (* Sub-views that render under the current config (level-filtered). *)
+    let sub_views = renderable_sub_views cfg section in
     (* Render section header *)
     if level = Summary then begin
       (* Don't show count for LiveSet - it shows sub-views in Summary mode *)
@@ -218,7 +204,7 @@ and pp_view cfg fmt = function
   | Field field -> pp_field cfg fmt field
   | Item elem ->
     (* Dispatch to pp_item for element-like items, pp_section for section-like items *)
-    if is_element_like_item elem then
+    if is_element_like_item cfg elem then
       pp_item cfg fmt elem
     else
       pp_section cfg fmt elem

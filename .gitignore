@@ -19,4 +19,7 @@ web/public
 .gemini/
 gha-creds-*.json
 
+*.org
+/docs/superpowers/
+
 *.trace

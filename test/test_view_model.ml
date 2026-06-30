@@ -248,6 +248,27 @@ let test_create_midi_clip_item () =
    | _ -> fail "Expected Note Time to be Modified")
 
 
+(* Inline fields must carry their parent Item's domain_type, not the PPX's
+   DTOther placeholder — otherwise type_overrides match the item header but
+   filter out its own inline fields. *)
+let test_inline_field_inherits_parent_domain () =
+  let clip_patch = {
+    MidiClip.Patch.
+    id = 1;
+    name = `Modified { oldval = "A"; newval = "B" };
+    start_time = `Unchanged;
+    end_time = `Unchanged;
+    loop = `Unchanged;
+    signature = `Unchanged;
+    notes = [];
+  } in
+  let item = create_midi_clip_item (`Modified clip_patch) in
+  check bool "parent item keeps DTClip domain" true (item.domain_type = DTClip);
+  let name_field = get_field (find_view_by_name "Name" item.children) in
+  check bool "inline Name field inherits parent DTClip domain" true
+    (name_field.domain_type = DTClip)
+
+
 let test_create_audio_clip_item_added () =
   let sample_ref = { SampleRef.file_path = "/path/to/sample.wav"; crc = "abc123"; last_modified_date = 12345 } in
   let loop = { Loop.start_time = 0.0; end_time = 4.0; on = true } in
@@ -305,7 +326,8 @@ let get_single_event_item item =
 
 let test_create_automation_item_curve_added_summary () =
   let event_patch = {
-    Automation.EnvelopeEvent.Patch.time = `Modified { oldval = 1.0; newval = 2.0 };
+    Automation.EnvelopeEvent.Patch.id = 42;
+    time = `Modified { oldval = 1.0; newval = 2.0 };
     value = `Modified { oldval = Automation.FloatEvent 10.0; newval = Automation.FloatEvent 11.0 };
     curve = `Added {
         Automation.CurveControls.curve1_x = 0.1;
@@ -316,7 +338,7 @@ let test_create_automation_item_curve_added_summary () =
   } in
   let item = build_automation_item_from_event_patch event_patch in
   let event_item = get_single_event_item item in
-  check string "event name" "Event[0]" event_item.name;
+  check string "event name" "Event[42]" event_item.name;
   check bool "event change" true (event_item.change = Modified);
   (* Check Time field *)
   let time_field = get_field (find_view_by_name "Time" event_item.children) in
@@ -340,7 +362,8 @@ let test_create_automation_item_curve_added_summary () =
 
 let test_create_automation_item_curve_removed_summary () =
   let event_patch = {
-    Automation.EnvelopeEvent.Patch.time = `Modified { oldval = 1.0; newval = 2.0 };
+    Automation.EnvelopeEvent.Patch.id = 42;
+    time = `Modified { oldval = 1.0; newval = 2.0 };
     value = `Unchanged;
     curve = `Removed {
         Automation.CurveControls.curve1_x = 0.5;
@@ -351,7 +374,7 @@ let test_create_automation_item_curve_removed_summary () =
   } in
   let item = build_automation_item_from_event_patch event_patch in
   let event_item = get_single_event_item item in
-  check string "event name" "Event[0]" event_item.name;
+  check string "event name" "Event[42]" event_item.name;
   check bool "event change" true (event_item.change = Modified);
   (* Check Time field *)
   let time_field = get_field (find_view_by_name "Time" event_item.children) in
@@ -366,7 +389,8 @@ let test_create_automation_item_curve_removed_summary () =
 
 let test_create_automation_item_curve_modified_summary () =
   let event_patch = {
-    Automation.EnvelopeEvent.Patch.time = `Modified { oldval = 1.0; newval = 2.0 };
+    Automation.EnvelopeEvent.Patch.id = 42;
+    time = `Modified { oldval = 1.0; newval = 2.0 };
     value = `Modified { oldval = Automation.FloatEvent 10.0; newval = Automation.FloatEvent 11.0 };
     curve = `Modified {
         Automation.CurveControls.Patch.curve1_x = `Modified { oldval = 0.1; newval = 0.2 };
@@ -377,7 +401,7 @@ let test_create_automation_item_curve_modified_summary () =
   } in
   let item = build_automation_item_from_event_patch event_patch in
   let event_item = get_single_event_item item in
-  check string "event name" "Event[0]" event_item.name;
+  check string "event name" "Event[42]" event_item.name;
   check bool "event change" true (event_item.change = Modified);
   (* Check Time field *)
   let time_field = get_field (find_view_by_name "Time" event_item.children) in
@@ -402,6 +426,67 @@ let test_create_automation_item_curve_modified_summary () =
      check (float 0.001) "c1x old" 0.1 o;
      check (float 0.001) "c1x new" 0.2 n
    | _ -> fail "Expected Ffloat for Curve1 X")
+
+(* Added/Removed automations must render their events, wrapped in an Events
+   Collection (review_0614.org [#B], change_projector.ml:837). *)
+let build_automation_item_added () =
+  let automation = {
+    Automation.id = 1;
+    target = 2;
+    events = [{
+        Automation.EnvelopeEvent.id = 42;
+        time = 1.0;
+        value = Automation.FloatEvent 10.0;
+        curve = None;
+      }];
+  } in
+  create_automation_item ~get_pointee_name:(fun _ -> "Target") (`Added automation)
+
+let build_automation_item_removed () =
+  let automation = {
+    Automation.id = 1;
+    target = 2;
+    events = [{
+        Automation.EnvelopeEvent.id = 42;
+        time = 1.0;
+        value = Automation.FloatEvent 10.0;
+        curve = None;
+      }];
+  } in
+  create_automation_item ~get_pointee_name:(fun _ -> "Target") (`Removed automation)
+
+let test_create_automation_item_added_event_summary () =
+  let item = build_automation_item_added () in
+  check string "automation name" "Automation (id=1, target=Target)" item.name;
+  check bool "automation change is Added" true (item.change = Added);
+  let event_item = get_single_event_item item in
+  check string "event uses real id" "Event[42]" event_item.name;
+  check bool "event change is Added" true (event_item.change = Added);
+  let time_field = get_field (find_view_by_name "Time" event_item.children) in
+  check bool "time field change is Added" true (time_field.change = Added);
+  check bool "time field oldval is None" true (time_field.oldval = None);
+  (match time_field.newval with
+   | Some (Ffloat n) -> check (float 0.001) "time new" 1.0 n
+   | _ -> fail "Expected Ffloat for Time");
+  let value_field = get_field (find_view_by_name "Value" event_item.children) in
+  check bool "value field change is Added" true (value_field.change = Added);
+  (match value_field.newval with
+   | Some (Ffloat n) -> check (float 0.001) "value new" 10.0 n
+   | _ -> fail "Expected Ffloat for Value")
+
+let test_create_automation_item_removed_event_summary () =
+  let item = build_automation_item_removed () in
+  check string "automation name" "Automation (id=1, target=Target)" item.name;
+  check bool "automation change is Removed" true (item.change = Removed);
+  let event_item = get_single_event_item item in
+  check string "event uses real id" "Event[42]" event_item.name;
+  check bool "event change is Removed" true (event_item.change = Removed);
+  let time_field = get_field (find_view_by_name "Time" event_item.children) in
+  check bool "time field change is Removed" true (time_field.change = Removed);
+  check bool "time field newval is None" true (time_field.newval = None);
+  (match time_field.oldval with
+   | Some (Ffloat o) -> check (float 0.001) "time old" 1.0 o
+   | _ -> fail "Expected Ffloat for Time")
 
 let test_create_liveset_item_with_main_only_change () =
   let path = Utils.resolve_test_data_path "t4.xml" in
@@ -428,6 +513,40 @@ let test_create_liveset_item_with_main_only_change () =
   check bool "main track section exists" true (main_track_section.name = "Main Track");
   check bool "main track child rendered" true (String.starts_with ~prefix:"MainTrack" main_track_item.name)
 
+(* When only part of the liveset changes, the unchanged
+   nested sections (here Version) must NOT leak as a {change=Unchanged; children=[]}
+   placeholder item. Before the fix, build_item_from_children returned Some for the
+   `Modified`+`Unchanged` case and create_liveset_item concatenated it, surfacing a
+   stray "= Version" line under verbose. Now it returns None and is omitted. *)
+let test_unchanged_section_does_not_leak () =
+  let path = Utils.resolve_test_data_path "t4.xml" in
+  let xml = read_file path in
+  let liveset1 = Liveset.create xml path in
+  let liveset2 = Liveset.create xml path in
+  let updated_main =
+    match liveset2.Liveset.main with
+    | Track.Main main_track ->
+      let updated_tempo =
+        { main_track.Track.MainTrack.mixer.tempo with value = Device.Float 128.0 }
+      in
+      Track.Main {
+        main_track with
+        mixer = { main_track.Track.MainTrack.mixer with tempo = updated_tempo };
+      }
+    | _ -> fail "Expected Track.Main type for main track"
+  in
+  (* Only the main track's tempo changes, so version is `Unchanged in the patch. *)
+  let patch = Liveset.diff liveset1 { liveset2 with main = updated_main } in
+  let item = create_liveset_item (`Modified patch) in
+  let has_unchanged_version =
+    List.exists (fun v ->
+        match v with
+        | Item i -> i.name = "Version" && i.change = Unchanged
+        | _ -> false) item.children
+  in
+  check bool "unchanged Version section does not leak as placeholder" false
+    has_unchanged_version
+
 let () =
   run "ViewModel" [
     "ViewBuilder.change_type_of", [
@@ -446,6 +565,8 @@ let () =
     ];
     "create_midi_clip_item", [
       test_case "Create item from patch" `Quick test_create_midi_clip_item;
+      test_case "Inline field inherits parent domain" `Quick
+        test_inline_field_inherits_parent_domain;
     ];
     "create_audio_clip_item", [
       test_case "Create item for Added clip" `Quick test_create_audio_clip_item_added;
@@ -454,8 +575,11 @@ let () =
       test_case "Combined summary includes added curve details" `Quick test_create_automation_item_curve_added_summary;
       test_case "Combined summary includes removed curve details" `Quick test_create_automation_item_curve_removed_summary;
       test_case "Combined summary includes modified curve details" `Quick test_create_automation_item_curve_modified_summary;
+      test_case "Added automation renders its events" `Quick test_create_automation_item_added_event_summary;
+      test_case "Removed automation renders its events" `Quick test_create_automation_item_removed_event_summary;
     ];
     "create_liveset_item", [
       test_case "Renders main track when it is the only change" `Quick test_create_liveset_item_with_main_only_change;
+      test_case "Unchanged section does not leak as placeholder" `Quick test_unchanged_section_does_not_leak;
     ];
   ]

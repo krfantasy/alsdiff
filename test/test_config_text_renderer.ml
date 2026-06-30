@@ -384,13 +384,15 @@ let test_compact_collection_summary () =
   let output = render_view cfg view |> normalize_output in
   Alcotest.(check bool) "summary shows count" true (contains_string "(10 Added)" output)
 
-(* Test Compact on a Collection renders header only, no items *)
-let test_compact_collection_header_only () =
+(* Compact on a Collection renders header + count (Compact == Summary for
+   collections, per detail_level doc). Inline/Full still list the (capped)
+   elements, so Tracks/Returns capping still applies at those levels. *)
+let test_compact_collection_header_count () =
   let cfg = { full with added = Compact } in
   let items = List.init 5 (fun _ -> simple_item "Item" Added) in
   let view = Collection { name = "Items"; change = Added; domain_type = DTOther; items } in
   let output = render_view cfg view |> normalize_output in
-  Alcotest.(check string) "compact collection header only" "+ Items" output
+  Alcotest.(check string) "compact collection header+count" "+ Items (5 Added)" output
 
 (* Test negative indent_width does not crash *)
 let test_indent_width_negative () =
@@ -409,6 +411,58 @@ let test_max_collection_items_zero_summary () =
   let output = render_view cfg view |> normalize_output in
   (* Summary mode shows counts regardless of max_collection_items *)
   Alcotest.(check string) "summary ignores max" "+ Items (10 Added)" output
+
+(* review_0614.org#L125: section Summary count must exclude children configured
+   to Ignore. The "Hidden" child is Added -> Ignore, so only "Shown" counts. *)
+let test_summary_excludes_ignored_child () =
+  let cfg = { full with added = Ignore; modified = Summary;
+                        removed = Summary; unchanged = Ignore } in
+  let view = Item {
+      name = "Track"; change = Modified; domain_type = DTTrack;
+      children = [
+        Item { name = "Hidden"; change = Added;    domain_type = DTOther; children = [] };
+        Item { name = "Shown";  change = Modified; domain_type = DTOther; children = [] };
+      ] } in
+  let output = render_view cfg view |> normalize_output in
+  Alcotest.(check bool) "section ignores ignored child" false (contains_string "Added" output);
+  Alcotest.(check bool) "section counts shown child"     true  (contains_string "(1 Modified)" output)
+
+(* count_elements_breakdown must exclude elements configured to Ignore. *)
+let test_collection_summary_excludes_ignored_element () =
+  let cfg = { full with added = Ignore; modified = Summary;
+                        removed = Summary; unchanged = Ignore; max_collection_items = None } in
+  let view = Collection {
+      name = "Devices"; change = Modified; domain_type = DTDevice;
+      items = [
+        Item { name = "Hidden"; change = Added;    domain_type = DTOther; children = [] };
+        Item { name = "Shown";  change = Modified; domain_type = DTOther; children = [] };
+      ] } in
+  let output = render_view cfg view |> normalize_output in
+  Alcotest.(check bool) "collection ignores ignored element" false (contains_string "Added" output);
+  Alcotest.(check bool) "collection counts shown element"     true  (contains_string "(1 Modified)" output)
+
+(* is_element_like_item must route on RENDERABLE children,
+   not raw children, so routing agrees with rendering. The predicate's return
+   changes even though renderer output is neutral. *)
+let test_is_element_like_item_uses_renderable_children () =
+  let cfg = { full with unchanged = Ignore; modified = Full } in
+  (* Empty-children leaf: element-like (was section-like under raw inspection. *)
+  let empty_leaf = { name = "T"; change = Modified; domain_type = DTOther; children = [] } in
+  Alcotest.(check bool) "empty leaf is element-like" true (is_element_like_item cfg empty_leaf);
+  (* Leaf whose only nested child is Unchanged (filtered out): element-like. *)
+  let leaf_with_ignored_child = {
+    name = "T"; change = Modified; domain_type = DTOther;
+    children = [Item { name = "Sub"; change = Unchanged; domain_type = DTOther; children = [] }];
+  } in
+  Alcotest.(check bool) "leaf with ignored nested child is element-like" true
+    (is_element_like_item cfg leaf_with_ignored_child);
+  (* Genuinely nested renderable child: section-like. *)
+  let section = {
+    name = "T"; change = Modified; domain_type = DTOther;
+    children = [Item { name = "Sub"; change = Modified; domain_type = DTOther; children = [] }];
+  } in
+  Alcotest.(check bool) "item with renderable nested child is section-like" false
+    (is_element_like_item cfg section)
 
 (* ==================== Test Suite ==================== *)
 
@@ -460,9 +514,14 @@ let tests = [
   "compact collection summary", `Quick, test_compact_collection_summary;
 
   (* New Coverage Tests *)
-  "compact collection header only", `Quick, test_compact_collection_header_only;
+  "compact collection header+count", `Quick, test_compact_collection_header_count;
   "indent width negative", `Quick, test_indent_width_negative;
   "max_items zero summary", `Quick, test_max_collection_items_zero_summary;
+  "summary excludes ignored child", `Quick, test_summary_excludes_ignored_child;
+  "collection summary excludes ignored element", `Quick,
+  test_collection_summary_excludes_ignored_element;
+  "is_element_like_item uses renderable children", `Quick,
+  test_is_element_like_item_uses_renderable_children;
 ]
 
 let () =

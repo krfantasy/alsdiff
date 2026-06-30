@@ -213,6 +213,11 @@
  (libraries alsdiff_output alcotest))
 
 (test
+ (name test_json_renderer)
+ (modules test_json_renderer)
+ (libraries alsdiff_output alcotest))
+
+(test
  (name test_detail_config_json)
  (modules test_detail_config_json utils)
  (libraries alsdiff_output alcotest))
@@ -253,6 +258,11 @@
 (test
  (name test_config_text_renderer)
  (modules test_config_text_renderer)
+ (libraries alsdiff_output alcotest))
+
+(test
+ (name test_domain_type_mapping)
+ (modules test_domain_type_mapping)
  (libraries alsdiff_output alcotest))
 
 ;; Auto indent files with `dune build @fmt`

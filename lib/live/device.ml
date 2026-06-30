@@ -178,6 +178,7 @@ module GenericParam = struct
     create xml ~parse_value:(fun x -> Bool (Upath.get_bool_attr "/Manual" "Value" x))
 
   module ViewSpec(B : Alsdiff_view_spec_types.View_spec_types.S) = struct
+    [@@@warning "-27"]
     let pv_to_fv = function
       | Float f -> B.float_value f
       | Int i -> B.int_value i
@@ -195,13 +196,15 @@ module GenericParam = struct
 
     let section_specs = [
       B.Spec.inline_fields ~specs:field_specs
-        ~domain_type:(B.domain_type_of_name "DTDefault")
+        ~domain_type:(B.domain_type_of_name "DTParam")
     ]
 
-    let build_value_fields ?(domain_type = B.domain_type_of_name "DTDefault") ct v =
+    (* ~format_time accepted for uniform parent->child threading; unused on
+       this leaf type (no time fields). *)
+    let build_value_fields ~format_time ?(domain_type = B.domain_type_of_name "DTParam") ct v =
       B.build_value_field_views field_specs ct v ~domain_type
 
-    let build_patch_fields ?(domain_type = B.domain_type_of_name "DTDefault") p =
+    let build_patch_fields ~format_time ?(domain_type = B.domain_type_of_name "DTParam") p =
       B.build_patch_field_views field_specs p ~domain_type
   end
 end
@@ -326,7 +329,7 @@ module PatchRef = struct
 
   let create (xml : Xml.t) : t =
     match xml with
-    | Xml.Element { name="MxPatchRef"; childs; _ } ->
+    | Xml.Element { name; childs; _ } when name = "MxPatchRef" || name = "MxDPatchRef" ->
       let id = Xml.get_int_attr "Id" xml in
       let preset_type = PresetRef.UserPreset in (* M4L patches are always user presets *)
 
@@ -419,18 +422,23 @@ module PluginParam = struct
       { id = new_param.id; base = base_change }
 
   module ViewSpec(B : Alsdiff_view_spec_types.View_spec_types.S) = struct
+    [@@@warning "-27"]
     let __inline_base =
       let module Vs = (GenericParam.ViewSpec)(B) in
       B.map_specs (fun (v : t) -> v.base) (fun (p : Patch.t) -> p.base) Vs.field_specs
     let field_specs = List.append [] __inline_base
+    (* PluginParam is a device parameter → DTParam (see DTParam usages and
+       [@view.child "DTParam"] annotations on param fields). ~format_time is
+       accepted for uniform parent->child threading but unused here (leaf
+       type with no time fields). *)
     let section_specs = [
-      B.Spec.inline_fields ~specs:field_specs ~domain_type:(B.domain_type_of_name "DTDefault")
+      B.Spec.inline_fields ~specs:field_specs ~domain_type:(B.domain_type_of_name "DTParam")
     ]
-    let build_value_fields ?(domain_type = B.domain_type_of_name "DTDefault") ct v =
+    let build_value_fields ~format_time ?(domain_type = B.domain_type_of_name "DTParam") ct v =
       B.build_value_field_views field_specs ct v ~domain_type
-    let build_patch_fields ?(domain_type = B.domain_type_of_name "DTDefault") p =
+    let build_patch_fields ~format_time ?(domain_type = B.domain_type_of_name "DTParam") p =
       B.build_patch_field_views field_specs p ~domain_type
-    let build_item ?(name = "") ?(domain_type = B.domain_type_of_name "DTDefault") c =
+    let build_item ~format_time ?(name = "") ?(domain_type = B.domain_type_of_name "DTParam") c =
       B.build_item_from_specs ~name ~domain_type ~specs:section_specs c
   end
 end
@@ -619,6 +627,7 @@ module PluginDesc = struct
   let id_hash t = Hashtbl.hash t.uid
 
   module ViewSpec(B : Alsdiff_view_spec_types.View_spec_types.S) = struct
+    [@@@warning "-27"]
     let field_specs = [
       B.make_string "Name" (fun (d : t) -> d.name) (fun (p : Patch.t) -> p.name);
       B.make_string "UID" (fun (d : t) -> d.uid) (fun (p : Patch.t) -> p.uid);
@@ -630,11 +639,11 @@ module PluginDesc = struct
     let section_specs = [
       B.Spec.inline_fields ~specs:field_specs ~domain_type:(B.domain_type_of_name "DTDevice")
     ]
-    let build_value_fields ?(domain_type = B.domain_type_of_name "DTDevice") ct v =
+    let build_value_fields ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") ct v =
       B.build_value_field_views field_specs ct v ~domain_type
-    let build_patch_fields ?(domain_type = B.domain_type_of_name "DTDevice") p =
+    let build_patch_fields ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") p =
       B.build_patch_field_views field_specs p ~domain_type
-    let build_item ?(name = "") ?(domain_type = B.domain_type_of_name "DTDevice") c =
+    let build_item ~format_time ?(name = "") ?(domain_type = B.domain_type_of_name "DTDevice") c =
       B.build_item_from_specs ~name ~domain_type ~specs:section_specs c
   end
 end
@@ -704,8 +713,8 @@ module MixerDevice = struct
   type t = {
     on : DeviceParam.t;         [@view.child "DTParam"] [@view.label "On"]
     speaker : DeviceParam.t;    [@view.child "DTParam"] [@view.label "Speaker"]
-    volume : DeviceParam.t;     [@view.child "DTParam"] [@view.label "Volume"]
-    pan : DeviceParam.t;        [@view.child "DTParam"] [@view.label "Pan"]
+    volume : DeviceParam.t option;     [@view.optional_child "DTParam"] [@view.label "Volume"]
+    pan : DeviceParam.t option;        [@view.optional_child "DTParam"] [@view.label "Pan"]
   } [@@deriving eq, patch, view_spec] [@@patch.generate_diff]
 
   let create (xml : Xml.t) : t =
@@ -714,8 +723,8 @@ module MixerDevice = struct
       (* Extract On parameter *)
       let on = Upath.find "/On" xml |> DeviceParam.create_from_upath_find in
       let speaker = Upath.find "/Speaker" xml |> DeviceParam.create_from_upath_find in
-      let volume = Upath.find "/Volume" xml |> DeviceParam.create_from_upath_find in
-      let pan = Upath.find "/Panorama" xml |> DeviceParam.create_from_upath_find in
+      let volume = Upath.find_opt "/Volume" xml |> Option.map DeviceParam.create_from_upath_find in
+      let pan = Upath.find_opt "/Panorama" xml |> Option.map DeviceParam.create_from_upath_find in
       { on; speaker; volume; pan }
     | _ -> raise (Xml.Xml_error (xml, "Invalid XML element for creating MixerDevice"))
 
@@ -1176,6 +1185,7 @@ module RegularDevice = struct
     regular_device_diff old_device new_device
 
   module ViewSpec(B : Alsdiff_view_spec_types.View_spec_types.S) = struct
+    [@@@warning "-27"]
     module DP = DeviceParam.ViewSpec(B)
 
     let build_section_name (c : (t, Patch.t) structured_change) : string =
@@ -1189,31 +1199,32 @@ module RegularDevice = struct
         in Printf.sprintf "%s (#%d): %s" p.device_name p.id display
       | `Unchanged -> ""
 
-    let build_param_item (c : (DeviceParam.t, DeviceParam.Patch.t) structured_change) =
+    let build_param_item ~(format_time : B.dual_time_formatter)
+        (c : (DeviceParam.t, DeviceParam.Patch.t) structured_change) =
       let name = match c with
         | `Added dp -> dp.base.name
         | `Removed dp -> dp.base.name
         | `Modified p -> (match p.base with `Modified gp -> gp.name | `Unchanged -> "Parameter")
         | `Unchanged -> "Parameter"
-      in DP.build_item ~name c
+      in DP.build_item ~format_time ~name c
 
     let field_specs = [
       B.make_string "Display Name" (fun (d : t) -> d.display_name) (fun (p : Patch.t) -> p.display_name);
     ]
-    let section_specs = [
+    let section_specs ~(format_time : B.dual_time_formatter) = [
       B.Spec.inline_fields ~specs:field_specs ~domain_type:(B.domain_type_of_name "DTDevice");
       B.Spec.collection ~name:"Parameters"
         ~of_value:(fun (d : t) -> d.params)
         ~of_patch:(fun (p : Patch.t) -> p.params)
-        ~build_item:build_param_item
+        ~build_item:(build_param_item ~format_time)
         ~domain_type:(B.domain_type_of_name "DTParam");
     ]
-    let build_value_fields ?(domain_type = B.domain_type_of_name "DTDevice") ct v =
+    let build_value_fields ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") ct v =
       B.build_value_field_views field_specs ct v ~domain_type
-    let build_patch_fields ?(domain_type = B.domain_type_of_name "DTDevice") p =
+    let build_patch_fields ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") p =
       B.build_patch_field_views field_specs p ~domain_type
-    let build_item ?(name = "") ?(domain_type = B.domain_type_of_name "DTDevice") c =
-      B.build_item_from_specs ~name ~domain_type ~specs:section_specs c
+    let build_item ~format_time ?(name = "") ?(domain_type = B.domain_type_of_name "DTDevice") c =
+      B.build_item_from_specs ~name ~domain_type ~specs:(section_specs ~format_time) c
   end
 end
 
@@ -1265,6 +1276,7 @@ module PluginDevice = struct
   let diff = plugin_device_diff
 
   module ViewSpec(B : Alsdiff_view_spec_types.View_spec_types.S) = struct
+    [@@@warning "-27"]
     module DP = DeviceParam.ViewSpec(B)
     module PP = PluginParam.ViewSpec(B)
     module PD = PluginDesc.ViewSpec(B)
@@ -1281,49 +1293,50 @@ module PluginDevice = struct
         in Printf.sprintf "%s (#%d): %s" p.device_name p.id display
       | `Unchanged -> ""
 
-    let build_param_item (c : (PluginParam.t, PluginParam.Patch.t) structured_change) =
+    let build_param_item ~(format_time : B.dual_time_formatter)
+        (c : (PluginParam.t, PluginParam.Patch.t) structured_change) =
       let name = match c with
         | `Added pp -> pp.base.name
         | `Removed pp -> pp.base.name
         | `Modified p -> (match p.base with `Modified gp -> gp.name | `Unchanged -> "PluginParam")
         | `Unchanged -> "PluginParam"
-      in PP.build_item ~name c
+      in PP.build_item ~format_time ~name c
 
     let field_specs = [
       B.make_string "Display Name" (fun (d : t) -> d.display_name) (fun (p : Patch.t) -> p.display_name);
     ]
-    let section_specs = [
+    let section_specs ~(format_time : B.dual_time_formatter) = [
       B.Spec.inline_fields ~specs:field_specs ~domain_type:(B.domain_type_of_name "DTDevice");
       B.Spec.child_optional ~name:"Preset"
         ~of_value:(fun (d : t) -> d.preset)
         ~of_patch:(fun (p : Patch.t) -> p.preset)
-        ~build_value_children:(fun ct pr -> PR.build_value_fields ct pr)
-        ~build_patch_children:(fun p -> PR.build_patch_fields p)
+        ~build_value_children:(fun ct pr -> PR.build_value_fields ~format_time ct pr)
+        ~build_patch_children:(fun p -> PR.build_patch_fields ~format_time p)
         ~domain_type:(B.domain_type_of_name "DTPreset");
       B.Spec.child ~name:"Enabled"
         ~of_value:(fun (d : t) -> d.enabled)
         ~of_patch:(fun (p : Patch.t) -> p.enabled)
-        ~build_value_children:(fun ct dp -> DP.build_value_fields ct dp)
-        ~build_patch_children:(fun p -> DP.build_patch_fields p)
+        ~build_value_children:(fun ct dp -> DP.build_value_fields ~format_time ct dp)
+        ~build_patch_children:(fun p -> DP.build_patch_fields ~format_time p)
         ~domain_type:(B.domain_type_of_name "DTParam");
       B.Spec.collection ~name:"Parameters"
         ~of_value:(fun (d : t) -> d.params)
         ~of_patch:(fun (p : Patch.t) -> p.params)
-        ~build_item:build_param_item
+        ~build_item:(build_param_item ~format_time)
         ~domain_type:(B.domain_type_of_name "DTParam");
       B.Spec.child ~name:"PluginDesc"
         ~of_value:(fun (d : t) -> d.desc)
         ~of_patch:(fun (p : Patch.t) -> p.desc)
-        ~build_value_children:(fun ct desc -> PD.build_value_fields ct desc)
-        ~build_patch_children:(fun p -> PD.build_patch_fields p)
+        ~build_value_children:(fun ct desc -> PD.build_value_fields ~format_time ct desc)
+        ~build_patch_children:(fun p -> PD.build_patch_fields ~format_time p)
         ~domain_type:(B.domain_type_of_name "DTDevice");
     ]
-    let build_value_fields ?(domain_type = B.domain_type_of_name "DTDevice") ct v =
+    let build_value_fields ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") ct v =
       B.build_value_field_views field_specs ct v ~domain_type
-    let build_patch_fields ?(domain_type = B.domain_type_of_name "DTDevice") p =
+    let build_patch_fields ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") p =
       B.build_patch_field_views field_specs p ~domain_type
-    let build_item ?(name = "") ?(domain_type = B.domain_type_of_name "DTDevice") c =
-      B.build_item_from_specs ~name ~domain_type ~specs:section_specs c
+    let build_item ~format_time ?(name = "") ?(domain_type = B.domain_type_of_name "DTDevice") c =
+      B.build_item_from_specs ~name ~domain_type ~specs:(section_specs ~format_time) c
   end
 end
 
@@ -1420,6 +1433,7 @@ module GroupDevice = struct
   let diff = group_device_diff
 
   module ViewSpec(B : Alsdiff_view_spec_types.View_spec_types.S) = struct
+    [@@@warning "-27"]
     module MVS = Macro.ViewSpec(B)
     module SVS = Snapshot.ViewSpec(B)
     module PR = PresetRef.ViewSpec(B)
@@ -1435,43 +1449,45 @@ module GroupDevice = struct
         in Printf.sprintf "%s (#%d): %s" p.device_name p.id display
       | `Unchanged -> ""
 
-    let build_macro_item (c : (Macro.t, Macro.Patch.t) structured_change) =
-      MVS.build_item ~name:"Macro" c
+    let build_macro_item ~(format_time : B.dual_time_formatter)
+        (c : (Macro.t, Macro.Patch.t) structured_change) =
+      MVS.build_item ~format_time ~name:"Macro" c
 
-    let build_snapshot_item (c : (Snapshot.t, Snapshot.Patch.t) structured_change) =
+    let build_snapshot_item ~(format_time : B.dual_time_formatter)
+        (c : (Snapshot.t, Snapshot.Patch.t) structured_change) =
       let name = match c with
         | `Added s -> s.name | `Removed s -> s.name
         | `Modified _ | `Unchanged -> "Snapshot"
-      in SVS.build_item ~name c
+      in SVS.build_item ~format_time ~name c
 
     let field_specs = [
       B.make_string "Display Name" (fun (d : t) -> d.display_name) (fun (p : Patch.t) -> p.display_name);
     ]
-    let section_specs = [
+    let section_specs ~(format_time : B.dual_time_formatter) = [
       B.Spec.inline_fields ~specs:field_specs ~domain_type:(B.domain_type_of_name "DTDevice");
       B.Spec.child_optional ~name:"Preset"
         ~of_value:(fun (d : t) -> d.preset)
         ~of_patch:(fun (p : Patch.t) -> p.preset)
-        ~build_value_children:(fun ct pr -> PR.build_value_fields ct pr)
-        ~build_patch_children:(fun p -> PR.build_patch_fields p)
+        ~build_value_children:(fun ct pr -> PR.build_value_fields ~format_time ct pr)
+        ~build_patch_children:(fun p -> PR.build_patch_fields ~format_time p)
         ~domain_type:(B.domain_type_of_name "DTPreset");
       B.Spec.collection ~name:"Macros"
         ~of_value:(fun (d : t) -> d.macros)
         ~of_patch:(fun (p : Patch.t) -> p.macros)
-        ~build_item:build_macro_item
+        ~build_item:(build_macro_item ~format_time)
         ~domain_type:(B.domain_type_of_name "DTMacro");
       B.Spec.collection ~name:"Snapshots"
         ~of_value:(fun (d : t) -> d.snapshots)
         ~of_patch:(fun (p : Patch.t) -> p.snapshots)
-        ~build_item:build_snapshot_item
+        ~build_item:(build_snapshot_item ~format_time)
         ~domain_type:(B.domain_type_of_name "DTSnapshot");
     ]
-    let build_value_fields ?(domain_type = B.domain_type_of_name "DTDevice") ct v =
+    let build_value_fields ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") ct v =
       B.build_value_field_views field_specs ct v ~domain_type
-    let build_patch_fields ?(domain_type = B.domain_type_of_name "DTDevice") p =
+    let build_patch_fields ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") p =
       B.build_patch_field_views field_specs p ~domain_type
-    let build_item ?(name = "") ?(domain_type = B.domain_type_of_name "DTDevice") c =
-      B.build_item_from_specs ~name ~domain_type ~specs:section_specs c
+    let build_item ~format_time ?(name = "") ?(domain_type = B.domain_type_of_name "DTDevice") c =
+      B.build_item_from_specs ~name ~domain_type ~specs:(section_specs ~format_time) c
   end
 end
 
@@ -1493,7 +1509,7 @@ module Max4LiveDevice = struct
     let enabled = Upath.find "/On" xml |> DeviceParam.create_from_upath_find in
 
     (* Parse PatchSlot/MxPatchRef for patch_ref - must be before device_name *)
-    let patch_ref = Upath.find "/PatchSlot/Value/MxPatchRef" xml |> snd |> PatchRef.create in
+    let patch_ref = Upath.find "/PatchSlot/Value/'MxD?PatchRef'" xml |> snd |> PatchRef.create in
 
     (* Use patch name instead of XML element name *)
     let device_name = patch_ref.PatchRef.name in
@@ -1522,6 +1538,7 @@ module Max4LiveDevice = struct
   let diff = max4live_device_diff
 
   module ViewSpec(B : Alsdiff_view_spec_types.View_spec_types.S) = struct
+    [@@@warning "-27"]
     module M4LP = Max4LiveParam.ViewSpec(B)
     module PR = PresetRef.ViewSpec(B)
     module PatchR = PatchRef.ViewSpec(B)
@@ -1537,44 +1554,45 @@ module Max4LiveDevice = struct
         in Printf.sprintf "%s (#%d): %s" p.device_name p.id display
       | `Unchanged -> ""
 
-    let build_param_item (c : (Max4LiveParam.t, Max4LiveParam.Patch.t) structured_change) =
+    let build_param_item ~(format_time : B.dual_time_formatter)
+        (c : (Max4LiveParam.t, Max4LiveParam.Patch.t) structured_change) =
       let name = match c with
         | `Added mp -> mp.base.name
         | `Removed mp -> mp.base.name
         | `Modified p -> (match p.base with `Modified gp -> gp.name | `Unchanged -> "M4LParam")
         | `Unchanged -> "M4LParam"
-      in M4LP.build_item ~name c
+      in M4LP.build_item ~format_time ~name c
 
     let field_specs = [
       B.make_string "Display Name" (fun (d : t) -> d.display_name) (fun (p : Patch.t) -> p.display_name);
     ]
-    let section_specs = [
+    let section_specs ~(format_time : B.dual_time_formatter) = [
       B.Spec.inline_fields ~specs:field_specs ~domain_type:(B.domain_type_of_name "DTDevice");
       B.Spec.child_optional ~name:"Preset"
         ~of_value:(fun (d : t) -> d.preset)
         ~of_patch:(fun (p : Patch.t) -> p.preset)
-        ~build_value_children:(fun ct pr -> PR.build_value_fields ct pr)
-        ~build_patch_children:(fun p -> PR.build_patch_fields p)
+        ~build_value_children:(fun ct pr -> PR.build_value_fields ~format_time ct pr)
+        ~build_patch_children:(fun p -> PR.build_patch_fields ~format_time p)
         ~domain_type:(B.domain_type_of_name "DTPreset");
       B.Spec.child ~name:"PatchRef"
         ~of_value:(fun (d : t) -> d.patch_ref)
         ~of_patch:(fun (p : Patch.t) ->
             match p.patch_ref with `Modified pr -> `Modified pr | _ -> `Unchanged)
-        ~build_value_children:(fun ct pr -> PatchR.build_value_fields ct pr)
-        ~build_patch_children:(fun p -> PatchR.build_patch_fields p)
+        ~build_value_children:(fun ct pr -> PatchR.build_value_fields ~format_time ct pr)
+        ~build_patch_children:(fun p -> PatchR.build_patch_fields ~format_time p)
         ~domain_type:(B.domain_type_of_name "DTPreset");
       B.Spec.collection ~name:"Parameters"
         ~of_value:(fun (d : t) -> d.params)
         ~of_patch:(fun (p : Patch.t) -> p.params)
-        ~build_item:build_param_item
+        ~build_item:(build_param_item ~format_time)
         ~domain_type:(B.domain_type_of_name "DTParam");
     ]
-    let build_value_fields ?(domain_type = B.domain_type_of_name "DTDevice") ct v =
+    let build_value_fields ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") ct v =
       B.build_value_field_views field_specs ct v ~domain_type
-    let build_patch_fields ?(domain_type = B.domain_type_of_name "DTDevice") p =
+    let build_patch_fields ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") p =
       B.build_patch_field_views field_specs p ~domain_type
-    let build_item ?(name = "") ?(domain_type = B.domain_type_of_name "DTDevice") c =
-      B.build_item_from_specs ~name ~domain_type ~specs:section_specs c
+    let build_item ~format_time ?(name = "") ?(domain_type = B.domain_type_of_name "DTDevice") c =
+      B.build_item_from_specs ~name ~domain_type ~specs:(section_specs ~format_time) c
   end
 end
 

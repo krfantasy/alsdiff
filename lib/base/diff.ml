@@ -123,27 +123,25 @@ let diff_value_opt ~diff_some old_value new_value =
   | (Some oldval, Some newval) -> diff_some oldval newval
   | (None, None) -> `Unchanged
 
-let diff_atomic_value (type a) (module EQ : EQUALABLE with type t = a)
-    old_value new_value : a atomic_update =
+let diff_atomic_value (module EQ : EQUALABLE)
+    (old_value : EQ.t) (new_value : EQ.t) : EQ.t atomic_update =
   diff_value ~equal:EQ.equal ~diff:(fun oldval newval -> { oldval; newval }) old_value new_value
 
-let diff_atomic_value_opt (type a) (module EQ : EQUALABLE with type t = a)
-    (old_value : a option) (new_value : a option) : a atomic_change =
+let diff_atomic_value_opt (module EQ : EQUALABLE)
+    (old_value : EQ.t option) (new_value : EQ.t option) : EQ.t atomic_change =
   diff_value_opt
-    ~diff_some:(fun o n -> (diff_atomic_value (module EQ) o n :> a atomic_change))
+    ~diff_some:(fun o n -> (diff_atomic_value (module EQ) o n :> EQ.t atomic_change))
     old_value new_value
 
 
-let diff_complex_value (type a p)
-    (module EQ : DIFFABLE_EQ with type t = a and type Patch.t = p)
-    (old_value : a)
-    (new_value : a) : p structured_update =
+let diff_complex_value (module EQ : DIFFABLE_EQ)
+    (old_value : EQ.t)
+    (new_value : EQ.t) : EQ.Patch.t structured_update =
   diff_value ~equal:EQ.equal ~diff:EQ.diff old_value new_value
 
-let diff_complex_value_id (type a p)
-    (module ID : DIFFABLE_ID with type t = a and type Patch.t = p)
-    (old_value : a)
-    (new_value : a) : p structured_update =
+let diff_complex_value_id (module ID : DIFFABLE_ID)
+    (old_value : ID.t)
+    (new_value : ID.t) : ID.Patch.t structured_update =
   if ID.has_same_id old_value new_value then
     let patch = ID.diff old_value new_value in
     if ID.Patch.is_empty patch then `Unchanged
@@ -151,21 +149,19 @@ let diff_complex_value_id (type a p)
   else
     failwith "diff_complex_value_id: IDs do not match"
 
-let diff_complex_value_opt (type a p)
-    (module EQ : DIFFABLE_EQ with type t = a and type Patch.t = p)
-    (old_value : a option)
-    (new_value : a option) : (a, p) structured_change =
+let diff_complex_value_opt (module EQ : DIFFABLE_EQ)
+    (old_value : EQ.t option)
+    (new_value : EQ.t option) : (EQ.t, EQ.Patch.t) structured_change =
   diff_value_opt
-    ~diff_some:(fun o n -> (diff_complex_value (module EQ) o n :> (a, p) structured_change))
+    ~diff_some:(fun o n -> (diff_complex_value (module EQ) o n :> (EQ.t, EQ.Patch.t) structured_change))
     old_value new_value
 
 
-let diff_complex_value_id_opt (type a p)
-    (module ID : DIFFABLE_ID with type t = a and type Patch.t = p)
-    (old_value : a option)
-    (new_value : a option) : (a, p) structured_change =
+let diff_complex_value_id_opt (module ID : DIFFABLE_ID)
+    (old_value : ID.t option)
+    (new_value : ID.t option) : (ID.t, ID.Patch.t) structured_change =
   diff_value_opt
-    ~diff_some:(fun o n -> (diff_complex_value_id (module ID) o n :> (a, p) structured_change))
+    ~diff_some:(fun o n -> (diff_complex_value_id (module ID) o n :> (ID.t, ID.Patch.t) structured_change))
     old_value new_value
 
 
@@ -187,9 +183,8 @@ let diff_complex_value_id_opt (type a p)
     @param P A PATCH module for the patch type
     @return true if the operation represents no modification
 *)
-let is_unchanged_change (type a p)
-    (module P : PATCH with type t = p)
-    (operation : (a, p, structured) change) : bool =
+let is_unchanged_change (module P : PATCH)
+    (operation : (_, P.t, structured) change) : bool =
   match operation with
   | `Added _ | `Removed _ -> false
   | `Unchanged -> true
@@ -203,9 +198,8 @@ let is_unchanged_change (type a p)
     @param operation The update to check
     @return true if the update represents no modification
 *)
-let is_unchanged_update (type p)
-    (module P : PATCH with type t = p)
-    (operation : (p, structured) update) : bool =
+let is_unchanged_update (module P : PATCH)
+    (operation : (P.t, structured) update) : bool =
   match operation with
   | `Unchanged -> true
   | `Modified p -> P.is_empty p
@@ -410,7 +404,8 @@ let diff_list_generic (type a p k)
     Time complexity: O((N+M)D) where D is the size of the edit script.
     Space complexity: O((N+M)D) for trace storage.
 *)
-let diff_list (type a p k) (module EQ : DIFFABLE_EQ with type t = a and type Patch.t = p) (old_list : a list) (new_list : a list) : (a, p, k) change list =
+let diff_list (type k) (module EQ : DIFFABLE_EQ) (old_list : EQ.t list) (new_list : EQ.t list)
+  : (EQ.t, EQ.Patch.t, k) change list =
   diff_list_generic
     ~compare:EQ.equal
     ~on_match:(fun old_item new_item ->
@@ -421,7 +416,8 @@ let diff_list (type a p k) (module EQ : DIFFABLE_EQ with type t = a and type Pat
       )
     old_list new_list
 
-let diff_list_id (type a p k) (module ID : DIFFABLE_ID with type t = a and type Patch.t = p) (old_list : a list) (new_list : a list) : (a, p, k) change list =
+let diff_list_id (type k) (module ID : DIFFABLE_ID) (old_list : ID.t list) (new_list : ID.t list)
+  : (ID.t, ID.Patch.t, k) change list =
   diff_list_generic
     ~compare:ID.has_same_id
     ~on_match:(fun old_item new_item ->
@@ -434,23 +430,21 @@ let diff_list_id (type a p k) (module ID : DIFFABLE_ID with type t = a and type 
     old_list new_list
 
 (* Utility functions *)
-let update_of_patch (type a) (module P : PATCH with type t = a)
-    (x : a) : a structured_update =
+let update_of_patch (module P : PATCH)
+    (x : P.t) : P.t structured_update =
   if P.is_empty x then
     `Unchanged
   else
     `Modified x
 
-let update_of_atomic (type a p)
-    (module D : DIFFABLE_EQ with type t = a and type Patch.t = p)
-    (x : a atomic_update) : p structured_update =
+let update_of_atomic (module D : DIFFABLE_EQ)
+    (x : D.t atomic_update) : D.Patch.t structured_update =
   match x with
   | `Modified { oldval; newval } -> `Modified (D.diff oldval newval)
   | `Unchanged -> `Unchanged
 
-let structured_of_atomic (type a p)
-    (module D : DIFFABLE_EQ with type t = a and type Patch.t = p)
-    (x : a atomic_change) : (a, p) structured_change =
+let structured_of_atomic (module D : DIFFABLE_EQ)
+    (x : D.t atomic_change) : (D.t, D.Patch.t) structured_change =
   match x with
   | `Added a -> `Added a
   | `Removed a -> `Removed a
@@ -491,9 +485,9 @@ let merge_adjacent_changes (type a p k)
     Note: This may produce different results than diff_list for the same input,
     as adjacent insert+delete pairs are collapsed into modifications.
 *)
-let diff_list_merged (type a p k)
-    (module EQ : DIFFABLE_EQ with type t = a and type Patch.t = p)
-    (old_list : a list) (new_list : a list) : (a, p, k) change list =
+let diff_list_merged (type k)
+    (module EQ : DIFFABLE_EQ)
+    (old_list : EQ.t list) (new_list : EQ.t list) : (EQ.t, EQ.Patch.t, k) change list =
   diff_list (module EQ) old_list new_list
   |> merge_adjacent_changes ~diff:EQ.diff
 
@@ -507,7 +501,6 @@ let diff_list_merged (type a p k)
     @param changes The change list to filter
     @return Change list with Unchanged entries removed
 *)
-let filter_changes (type a p)
-    (module P : PATCH with type t = p)
-    (changes : (a, p) structured_change list) : (a, p) structured_change list =
+let filter_changes (module P : PATCH)
+    (changes : (_, P.t) structured_change list) : (_, P.t) structured_change list =
   List.filter (fun c -> not (is_unchanged_change (module P) c)) changes

@@ -77,10 +77,11 @@ module ViewBuilder = struct
     | `Modified patch ->
       (match of_patch patch with
        | `Unchanged ->
-         (* Nested content is unchanged but parent is Modified.
-            Create a placeholder item with empty children - the rendering layer
-            will decide whether to show it based on the preset. *)
-         Some { name; change = Unchanged; domain_type; children = [] }
+         (* Nested content is unchanged: there is nothing to render. A
+            placeholder {change=Unchanged; children=[]} would only leak a bare
+            "= <name>" header under verbose, so emit
+            nothing — matching build_item_from_children_with_change below. *)
+         None
        | `Modified np ->
          let children = build_patch_children np in
          if children = [] then None
@@ -193,21 +194,6 @@ module ViewBuilder = struct
     else Some { name; change = change_type; domain_type; items }
 
 end
-
-
-(** [structured_update_to_field_views] flattens a [structured_update] into multiple [field_view] items.
-    @param build_fields function that takes the patch and returns a list of field options
-    @param update the structured update
-*)
-let structured_update_to_field_views
-    ~(build_fields : 'p -> field option list)
-    (update : 'p structured_update)
-  : field list =
-  match update with
-  | `Unchanged -> []
-  | `Modified patch ->
-    patch |> build_fields |> List.filter_map Fun.id
-
 
 
 (* ==================== Unified Field Spec System ==================== *)
@@ -414,12 +400,26 @@ module Spec = struct
 end
 
 
+(** [set_domain_type dt v] returns [v] with its top-level [domain_type] set to [dt].
+    Shallow by design: the only producer of the inline (name = "") splice marker is
+    [Spec.inline_fields], whose children are flat [Field] views, so there are no nested
+    children whose own domain would be clobbered. *)
+let set_domain_type (dt : domain_type) (v : view) : view =
+  match v with
+  | Field f -> Field { f with domain_type = dt }
+  | Item i -> Item { i with domain_type = dt }
+  | Collection c -> Collection { c with domain_type = dt }
+
+
 (** [build_item_from_specs ~name ~domain_type ~specs c] builds an item from a list of section specs.
     This is the main entry point for declaratively building complex items.
     Each spec in the list is applied to the change, and the resulting views are concatenated.
 
-    For inline_fields specs (name = ""), the children are extracted and added directly.
-    For other specs, the resulting view is added as-is.
+    For inline_fields specs (name = ""), the children are extracted and restamped with the
+    parent's [domain_type] before being spliced in. The PPX emits [B.default_domain_type]
+    ([DTOther]) as a placeholder for inline_fields — a type's own domain is not known at PPX
+    time — so the real domain is the parent's, which is only known here. For other specs, the
+    resulting view is added as-is.
 *)
 let build_item_from_specs
     (type parent patch)
@@ -433,44 +433,15 @@ let build_item_from_specs
       match spec.build c with
       | None -> None
       | Some view ->
-        (* For inline_fields (name = ""), extract children directly *)
         if spec.name = "" then
+          (* inline_fields: splice children in, restamped with the parent's domain *)
           match view with
-          | Item { children; _ } -> Some children
-          | _ -> Some [view]
+          | Item { children; _ } -> Some (List.map (set_domain_type domain_type) children)
+          | _ -> Some [set_domain_type domain_type view]
         else
           Some [view]
     ) |> List.flatten in
   { name; change = change_type; domain_type; children }
-
-
-(** [child_from_specs ~name ~of_value ~of_patch ~specs ~child_domain_type ~domain_type]
-    builds a section_spec for a nested item using its own section_spec list.
-    This eliminates the need for manual paired build_value/build_patch functions.
-*)
-let child_from_specs
-    (type parent patch nested np)
-    ~(name : string)
-    ~(of_value : parent -> nested)
-    ~(of_patch : patch -> np structured_update)
-    ~(specs : (nested, np) section_spec list)
-    ~(child_domain_type : domain_type)
-    ~(domain_type : domain_type)
-  : (parent, patch) section_spec =
-  let build_value ct v =
-    let c : (nested, np) structured_change =
-      match ct with Added -> `Added v | Removed -> `Removed v | _ -> `Unchanged
-    in
-    let item = build_item_from_specs ~name ~domain_type:child_domain_type ~specs c in
-    item.children
-  and build_patch p =
-    let item = build_item_from_specs ~name ~domain_type:child_domain_type ~specs (`Modified p) in
-    item.children
-  in
-  Spec.child ~name ~of_value ~of_patch
-    ~build_value_children:build_value
-    ~build_patch_children:build_patch
-    ~domain_type
 
 
 (** Helper functions for creating field descriptors with common wrappers *)
@@ -663,27 +634,7 @@ module DeviceViewSpecB : Alsdiff_view_spec_types.View_spec_types.S
   let bool_value = bool_value
   let string_value = string_value
   let default_domain_type = DTOther
-  let domain_type_of_name = function
-    | "DTLiveset" -> DTLiveset
-    | "DTTrack" -> DTTrack
-    | "DTDevice" -> DTDevice
-    | "DTClip" -> DTClip
-    | "DTAutomation" -> DTAutomation
-    | "DTMixer" -> DTMixer
-    | "DTRouting" -> DTRouting
-    | "DTLocator" -> DTLocator
-    | "DTParam" -> DTParam
-    | "DTNote" -> DTNote
-    | "DTEvent" -> DTEvent
-    | "DTSend" -> DTSend
-    | "DTPreset" -> DTPreset
-    | "DTMacro" -> DTMacro
-    | "DTSnapshot" -> DTSnapshot
-    | "DTLoop" -> DTLoop
-    | "DTSignature" -> DTSignature
-    | "DTSampleRef" -> DTSampleRef
-    | "DTVersion" -> DTVersion
-    | _ -> DTOther
+  let domain_type_of_name = Output_types.domain_type_of_name
   let format_unix_timestamp = Display_context.format_unix_timestamp
 
   let make_spec = make_spec
@@ -714,7 +665,6 @@ module MainMixerVS = Track.MainMixer.ViewSpec(DeviceViewSpecB)
 module RoutingSetVS = Track.RoutingSet.ViewSpec(DeviceViewSpecB)
 module MidiClipVS = Clip.MidiClip.ViewSpec(DeviceViewSpecB)
 module AudioClipVS = Clip.AudioClip.ViewSpec(DeviceViewSpecB)
-module LoopVS = Clip.Loop.ViewSpec(DeviceViewSpecB)
 module CurveControlsVS = Automation.CurveControls.ViewSpec(DeviceViewSpecB)
 module VersionVS = Liveset.Version.ViewSpec(DeviceViewSpecB)
 
@@ -735,8 +685,8 @@ let create_events_item
       ~name:"Curve"
       ~of_value:(fun (e : EnvelopeEvent.t) -> e.curve)
       ~of_patch:(fun (p : EnvelopeEvent.Patch.t) -> p.curve)
-      ~build_value_children:(CurveControlsVS.build_value_fields ~domain_type:DTEvent)
-      ~build_patch_children:(CurveControlsVS.build_patch_fields ~domain_type:DTEvent)
+      ~build_value_children:(CurveControlsVS.build_value_fields ~format_time ~domain_type:DTEvent)
+      ~build_patch_children:(CurveControlsVS.build_patch_fields ~format_time ~domain_type:DTEvent)
       ~domain_type:DTEvent
   in
   let base_section_spec = Spec.inline_fields ~specs:base_specs ~domain_type:DTEvent in
@@ -746,49 +696,29 @@ let create_events_item
 (* ==================== Clip Item Builders (after VS instantiations) ==================== *)
 
 (** [create_midi_clip_item] creates a [item] from a MidiClip structured change.
-    PPX generates inline fields (name, start/end time), TimeSignature child, and Notes collection.
-    Loop is manually composed because the PPX's child spec generator doesn't thread format_time to children.
-*)
+    The PPX generates inline fields (name, start/end time), the Loop child,
+    the TimeSignature child, and the Notes collection, threading format_time
+    parent->child so Loop's time fields render correctly. *)
 let create_midi_clip_item
     ?(note_name_style : note_display_style = default_note_name_style)
     ?(format_time : dual_time_formatter = default_dual_time_formatter)
     (c : (Clip.MidiClip.t, Clip.MidiClip.Patch.t) structured_change)
   : item =
   let name = build_midi_clip_section_name c in
-  let loop_child = Spec.child ~name:"Loop"
-      ~of_value:(fun (c : Clip.MidiClip.t) -> c.loop)
-      ~of_patch:(fun (p : Clip.MidiClip.Patch.t) -> p.loop)
-      ~build_value_children:(LoopVS.build_value_fields ~format_time ~domain_type:DTLoop)
-      ~build_patch_children:(LoopVS.build_patch_fields ~format_time ~domain_type:DTLoop)
-      ~domain_type:DTLoop in
-  let ppx_specs = MidiClipVS.section_specs ~format_time
+  let specs = MidiClipVS.section_specs ~format_time
       ~build_notes:(create_note_item ~note_name_style ~format_time) in
-  let specs = match ppx_specs with
-    | first :: rest -> first :: loop_child :: rest
-    | _ -> assert false
-  in
   build_item_from_specs ~name ~domain_type:DTClip ~specs c
 
 (** [create_audio_clip_item] creates a [item] from an AudioClip structured change.
-    PPX generates inline fields (name, start/end time), TimeSignature child, SampleRef child, and Fade child.
-    Loop is manually composed because the PPX's child spec generator doesn't thread format_time to children.
-*)
+    The PPX generates inline fields (name, start/end time), the Loop child,
+    the TimeSignature child, the SampleRef child, and the Fade child, threading
+    format_time parent->child so Loop's time fields render correctly. *)
 let create_audio_clip_item
     ?(format_time : dual_time_formatter = default_dual_time_formatter)
     (c : (Clip.AudioClip.t, Clip.AudioClip.Patch.t) structured_change)
   : item =
   let name = build_audio_clip_section_name c in
-  let loop_child = Spec.child ~name:"Loop"
-      ~of_value:(fun (c : Clip.AudioClip.t) -> c.loop)
-      ~of_patch:(fun (p : Clip.AudioClip.Patch.t) -> p.loop)
-      ~build_value_children:(LoopVS.build_value_fields ~format_time ~domain_type:DTLoop)
-      ~build_patch_children:(LoopVS.build_patch_fields ~format_time ~domain_type:DTLoop)
-      ~domain_type:DTLoop in
-  let ppx_specs = AudioClipVS.section_specs ~format_time in
-  let specs = match ppx_specs with
-    | first :: rest -> first :: loop_child :: rest
-    | _ -> assert false
-  in
+  let specs = AudioClipVS.section_specs ~format_time in
   build_item_from_specs ~name ~domain_type:DTClip ~specs c
 
 
@@ -813,13 +743,22 @@ let create_automation_item
     | `Unchanged -> "Automation"
   in
 
-  let event_children : view list = match c with
+  (* Wrap a list of event items in an [Events] Collection, so that
+     [max_collection_items] truncation applies uniformly to Modified, Added
+     and Removed automations. Empty event lists yield no children. *)
+  let wrap_events (event_items : view list) : view list =
+    match event_items with
+    | [] -> []
+    | _ -> [ Collection { name = "Events"; change = change_type; domain_type = DTEvent; items = event_items } ]
+  in
+  let event_children : view list =
+    match c with
     | `Modified patch ->
-      let events = patch.events |> List.mapi (fun i event_change ->
+      let events = patch.events |> List.map (fun event_change ->
           let event_id = match event_change with
             | `Added e -> e.Automation.EnvelopeEvent.id
             | `Removed e -> e.Automation.EnvelopeEvent.id
-            | `Modified _ -> i
+            | `Modified p -> p.Automation.EnvelopeEvent.Patch.id
             | `Unchanged -> -1
           in
           match event_change with
@@ -828,13 +767,24 @@ let create_automation_item
             let event_item = create_events_item ~format_time event_change in
             Some (Item { event_item with name = Printf.sprintf "Event[%d]" event_id })
         ) |> List.filter_map Fun.id in
-      (match events with
-       | [] -> []
-       | _ ->
-         [ Collection
-             { name = "Events"; change = change_type; domain_type = DTEvent; items = events }
-         ])
-    | `Added _ | `Removed _ | `Unchanged -> []
+      wrap_events events
+    | `Added a ->
+      let events =
+        a.events
+        |> List.map (fun e ->
+            let event_item = create_events_item ~format_time (`Added e) in
+            Item { event_item with name = Printf.sprintf "Event[%d]" e.Automation.EnvelopeEvent.id })
+      in
+      wrap_events events
+    | `Removed r ->
+      let events =
+        r.events
+        |> List.map (fun e ->
+            let event_item = create_events_item ~format_time (`Removed e) in
+            Item { event_item with name = Printf.sprintf "Event[%d]" e.Automation.EnvelopeEvent.id })
+      in
+      wrap_events events
+    | `Unchanged -> []
   in
 
   { name = automation_name; change = change_type; domain_type = DTAutomation; children = event_children }
@@ -844,44 +794,47 @@ let create_automation_item
     @param c the device structured change
 *)
 let create_device_item
+    ?(format_time : dual_time_formatter = default_dual_time_formatter)
     (c : (Device.t, Device.Patch.t) structured_change)
   : item =
   match c with
   | `Added (Device.Regular d) ->
-    RegularDeviceVS.build_item ~name:(RegularDeviceVS.build_section_name (`Added d))
+    RegularDeviceVS.build_item ~format_time ~name:(RegularDeviceVS.build_section_name (`Added d))
       ~domain_type:DTDevice (`Added d)
   | `Removed (Device.Regular d) ->
-    RegularDeviceVS.build_item ~name:(RegularDeviceVS.build_section_name (`Removed d))
+    RegularDeviceVS.build_item ~format_time ~name:(RegularDeviceVS.build_section_name (`Removed d))
       ~domain_type:DTDevice (`Removed d)
   | `Modified (Device.Patch.RegularPatch p) ->
-    RegularDeviceVS.build_item ~name:(RegularDeviceVS.build_section_name (`Modified p))
+    RegularDeviceVS.build_item ~format_time ~name:(RegularDeviceVS.build_section_name (`Modified p))
       ~domain_type:DTDevice (`Modified p)
   | `Added (Device.Plugin d) ->
-    PluginDeviceVS.build_item ~name:(PluginDeviceVS.build_section_name (`Added d))
+    PluginDeviceVS.build_item ~format_time ~name:(PluginDeviceVS.build_section_name (`Added d))
       ~domain_type:DTDevice (`Added d)
   | `Removed (Device.Plugin d) ->
-    PluginDeviceVS.build_item ~name:(PluginDeviceVS.build_section_name (`Removed d))
+    PluginDeviceVS.build_item ~format_time ~name:(PluginDeviceVS.build_section_name (`Removed d))
       ~domain_type:DTDevice (`Removed d)
   | `Modified (Device.Patch.PluginPatch p) ->
-    PluginDeviceVS.build_item ~name:(PluginDeviceVS.build_section_name (`Modified p))
+    PluginDeviceVS.build_item ~format_time ~name:(PluginDeviceVS.build_section_name (`Modified p))
       ~domain_type:DTDevice (`Modified p)
   | `Added (Device.Max4Live d) ->
-    Max4LiveDeviceVS.build_item ~name:(Max4LiveDeviceVS.build_section_name (`Added d))
+    Max4LiveDeviceVS.build_item ~format_time ~name:(Max4LiveDeviceVS.build_section_name (`Added d))
       ~domain_type:DTDevice (`Added d)
   | `Removed (Device.Max4Live d) ->
-    Max4LiveDeviceVS.build_item ~name:(Max4LiveDeviceVS.build_section_name (`Removed d))
+    Max4LiveDeviceVS.build_item ~format_time
+      ~name:(Max4LiveDeviceVS.build_section_name (`Removed d))
       ~domain_type:DTDevice (`Removed d)
   | `Modified (Device.Patch.Max4LivePatch p) ->
-    Max4LiveDeviceVS.build_item ~name:(Max4LiveDeviceVS.build_section_name (`Modified p))
+    Max4LiveDeviceVS.build_item ~format_time
+      ~name:(Max4LiveDeviceVS.build_section_name (`Modified p))
       ~domain_type:DTDevice (`Modified p)
   | `Added (Device.Group d) ->
-    GroupDeviceVS.build_item ~name:(GroupDeviceVS.build_section_name (`Added d))
+    GroupDeviceVS.build_item ~format_time ~name:(GroupDeviceVS.build_section_name (`Added d))
       ~domain_type:DTDevice (`Added d)
   | `Removed (Device.Group d) ->
-    GroupDeviceVS.build_item ~name:(GroupDeviceVS.build_section_name (`Removed d))
+    GroupDeviceVS.build_item ~format_time ~name:(GroupDeviceVS.build_section_name (`Removed d))
       ~domain_type:DTDevice (`Removed d)
   | `Modified (Device.Patch.GroupPatch p) ->
-    GroupDeviceVS.build_item ~name:(GroupDeviceVS.build_section_name (`Modified p))
+    GroupDeviceVS.build_item ~format_time ~name:(GroupDeviceVS.build_section_name (`Modified p))
       ~domain_type:DTDevice (`Modified p)
   | `Unchanged ->
     { name = "Device"; change = Unchanged; domain_type = DTDevice; children = [] }
@@ -902,9 +855,10 @@ let create_midi_track_item
     (c : (Track.MidiTrack.t, Track.MidiTrack.Patch.t) structured_change)
   : item =
   MidiTrackVS.build_item
+    ~format_time
     ~build_clips:(create_midi_clip_item ~note_name_style ~format_time)
     ~build_automations:(create_automation_item ~get_pointee_name ~format_time)
-    ~build_devices:create_device_item
+    ~build_devices:(create_device_item ~format_time)
     ~name:(MidiTrackVS.build_section_name c)
     ~domain_type:DTTrack c
 
@@ -921,9 +875,10 @@ let create_audio_like_track_item
     (c : (Track.AudioTrack.t, Track.AudioTrack.Patch.t) structured_change)
   : item =
   AudioTrackVS.build_item
+    ~format_time
     ~build_clips:(create_audio_clip_item ~format_time)
     ~build_automations:(create_automation_item ~get_pointee_name ~format_time)
-    ~build_devices:create_device_item
+    ~build_devices:(create_device_item ~format_time)
     ~name:(AudioTrackVS.build_section_name ~type_label:track_type_name c)
     ~domain_type:DTTrack c
 
@@ -960,8 +915,9 @@ let create_main_track_item
   : item =
   ignore (note_name_style : note_display_style);
   MainTrackVS.build_item
+    ~format_time
     ~build_automations:(create_automation_item ~get_pointee_name ~format_time)
-    ~build_devices:create_device_item
+    ~build_devices:(create_device_item ~format_time)
     ~name:(MainTrackVS.build_section_name c)
     ~domain_type:DTTrack c
 
@@ -985,7 +941,7 @@ let create_locator_item
   let locator_name = match c with
     | `Added l -> Printf.sprintf "Locator (id=%d)" l.Liveset.Locator.id
     | `Removed l -> Printf.sprintf "Locator (id=%d)" l.Liveset.Locator.id
-    | `Modified _ -> "Locator"
+    | `Modified p -> Printf.sprintf "Locator (id=%d)" p.Liveset.Locator.Patch.id
     | `Unchanged -> "Locator"
   in
   build_item_from_specs ~name:locator_name ~domain_type:DTLocator ~specs:(locator_section_specs ~format_time ()) c
@@ -1064,6 +1020,7 @@ let dispatch_track_change
   (* Group tracks *)
   | `Added (Track.Group t) -> Some (Item (create_group_track_item ~get_pointee_name ~note_name_style ~format_time (`Added t)))
   | `Removed (Track.Group t) -> Some (Item (create_group_track_item ~get_pointee_name ~note_name_style ~format_time (`Removed t)))
+  | `Modified (Track.Patch.GroupPatch pt) -> Some (Item (create_group_track_item ~get_pointee_name ~note_name_style ~format_time (`Modified pt)))
   (* Return tracks - use audio track builder since ReturnTrack = AudioTrack *)
   | `Added (Track.Return t) -> Some (Item (create_audio_track_item ~get_pointee_name ~note_name_style ~format_time (`Added t)))
   | `Removed (Track.Return t) -> Some (Item (create_audio_track_item ~get_pointee_name ~note_name_style ~format_time (`Removed t)))
@@ -1178,8 +1135,8 @@ let create_liveset_item
       ~name:"Version"
       ~of_value:(fun (ls : Liveset.t) -> ls.version)
       ~of_patch:(fun (p : Liveset.Patch.t) -> p.version)
-      ~build_value_children:(VersionVS.build_value_fields ~domain_type:DTVersion)
-      ~build_patch_children:(VersionVS.build_patch_fields ~domain_type:DTVersion)
+      ~build_value_children:(VersionVS.build_value_fields ~format_time ~domain_type:DTVersion)
+      ~build_patch_children:(VersionVS.build_patch_fields ~format_time ~domain_type:DTVersion)
       ~domain_type:DTVersion
   in
 
@@ -1211,13 +1168,29 @@ let create_liveset_item
       ~domain_type:DTLocator
   in
 
+  (* Tracks/Returns are wrapped as collections (like Locators) so they respect
+     [max_collection_items] truncation. A flat view list bypasses the cap, which
+     floods output for large livesets (see review_0614.org). *)
+  let mk_collection name items =
+    if items = [] then None
+    else Some ({ name; change = change_type; domain_type = DTTrack; items } : collection)
+  in
+  let tracks_collection =
+    mk_collection "Tracks"
+      (build_liveset_tracks_items ~get_pointee_name ~note_name_style ~format_time c)
+  in
+  let returns_collection =
+    mk_collection "Returns"
+      (build_liveset_returns_items ~get_pointee_name ~note_name_style ~format_time c)
+  in
+
   (* Combine all children *)
   let children =
     atomic_children
     @ (version_item |> Option.map (fun i -> Item i) |> option_to_list)
     @ (main_track_item |> Option.map (fun i -> Item i) |> option_to_list)
-    @ build_liveset_tracks_items ~get_pointee_name ~note_name_style ~format_time c
-    @ build_liveset_returns_items ~get_pointee_name ~note_name_style ~format_time c
+    @ (tracks_collection |> Option.map (fun c -> Collection c) |> option_to_list)
+    @ (returns_collection |> Option.map (fun c -> Collection c) |> option_to_list)
     @ (locators_collection |> Option.map (fun c -> Collection c) |> option_to_list)
   in
 

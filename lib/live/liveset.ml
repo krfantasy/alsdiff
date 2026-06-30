@@ -4,7 +4,7 @@ open Alsdiff_base.Diff
 
 module Locator = struct
   type t = {
-    id : int; [@id.id] [@patch.skip] [@view.const]
+    id : int; [@id.id] [@patch.identity] [@view.const]
     name : string;
     time : float; [@view.scalar time]
   } [@@deriving eq, id, patch, view_spec] [@@patch.generate_diff]
@@ -107,7 +107,10 @@ and process_group_branches (pointees : pointee IntHashtbl.t) (branches : Device.
       (* B. Process Branch Mixer Parameters *)
       (* Branch mixer has: volume, pan, speaker, on *)
       let mixer = branch.mixer in
-      let mixer_params = [mixer.volume; mixer.pan; mixer.speaker; mixer.on] in
+      let mixer_params =
+        let opts = [mixer.volume; mixer.pan] |> List.filter_map Fun.id in
+        mixer.speaker :: mixer.on :: opts
+      in
       List.iter (fun (param : Device.DeviceParam.t) ->
           IntHashtbl.add pointees param.base.automation (DeviceParamPointee param);
           IntHashtbl.add pointees param.base.modulation (DeviceParamPointee param)
@@ -249,7 +252,7 @@ let create (xml : Xml.t) (file_path : string) : t =
   in
 
   let main =
-    Upath.find "/MainTrack" liveset_xml |> snd |> Track.create
+    Upath.find "/'(Main|Master)Track'" liveset_xml |> snd |> Track.create
   in
 
   (* 7. Parse locators *)

@@ -285,29 +285,38 @@ module MainTrack = struct
     (real, initial)
 
   let time_to_position_precomputed (real_events, initial_ts) time =
-    let qn_per_bar (ts : Clip.TimeSignature.t) =
-      float_of_int ts.numer *. 4.0 /. float_of_int ts.denom
-    in
-    let qn_per_beat (ts : Clip.TimeSignature.t) =
-      4.0 /. float_of_int ts.denom
-    in
-    let position_in_segment ts cum_bars seg_start =
-      let remaining = time -. seg_start in
-      let bar_off = int_of_float (remaining /. qn_per_bar ts) in
-      let rem_bar = remaining -. float_of_int bar_off *. qn_per_bar ts in
-      let beat_off = int_of_float (rem_bar /. qn_per_beat ts) in
-      let rem_beat = rem_bar -. float_of_int beat_off *. qn_per_beat ts in
-      let sixteenth_off = int_of_float (rem_beat *. 4.0) in
-      (cum_bars + bar_off + 1, beat_off + 1, sixteenth_off + 1)
-    in
-    let rec walk evts cum_bars seg_start ts = match evts with
-      | [] -> position_in_segment ts cum_bars seg_start
-      | (evt_time, evt_ts) :: rest when evt_time <= time ->
-        let bars = int_of_float (Float.round ((evt_time -. seg_start) /. qn_per_bar ts)) in
-        walk rest (cum_bars + bars) evt_time evt_ts
-      | _ -> position_in_segment ts cum_bars seg_start
-    in
-    walk real_events 0 0.0 initial_ts
+    (* Guard time <= 0.0 to match time_to_position below and the RealTime path
+       in time_to_realtime_precomputed. Without it, negative/zero locator times
+       (from malformed .als) run the walk math on negative input and emit bar
+       0/negative (e.g. "0:1:1"), asymmetric with RealTime which clamps to
+       0:00.000. change_projector.make_format_time's BeatTime branch calls this
+       directly. See review_0614.org "BeatTime path skips the time<=0 clamp". *)
+    if time <= 0.0 then (1, 1, 1)
+    else begin
+      let qn_per_bar (ts : Clip.TimeSignature.t) =
+        float_of_int ts.numer *. 4.0 /. float_of_int ts.denom
+      in
+      let qn_per_beat (ts : Clip.TimeSignature.t) =
+        4.0 /. float_of_int ts.denom
+      in
+      let position_in_segment ts cum_bars seg_start =
+        let remaining = time -. seg_start in
+        let bar_off = int_of_float (remaining /. qn_per_bar ts) in
+        let rem_bar = remaining -. float_of_int bar_off *. qn_per_bar ts in
+        let beat_off = int_of_float (rem_bar /. qn_per_beat ts) in
+        let rem_beat = rem_bar -. float_of_int beat_off *. qn_per_beat ts in
+        let sixteenth_off = int_of_float (rem_beat *. 4.0) in
+        (cum_bars + bar_off + 1, beat_off + 1, sixteenth_off + 1)
+      in
+      let rec walk evts cum_bars seg_start ts = match evts with
+        | [] -> position_in_segment ts cum_bars seg_start
+        | (evt_time, evt_ts) :: rest when evt_time <= time ->
+          let bars = int_of_float (Float.round ((evt_time -. seg_start) /. qn_per_bar ts)) in
+          walk rest (cum_bars + bars) evt_time evt_ts
+        | _ -> position_in_segment ts cum_bars seg_start
+      in
+      walk real_events 0 0.0 initial_ts
+    end
 
   let time_to_position (events : (float * Clip.TimeSignature.t) list) (time : float) :
     int * int * int =
@@ -491,7 +500,7 @@ let create (xml : Xml.t) : t =
   | Xml.Element { name = "AudioTrack"; _ } -> Audio (AudioTrack.create xml)
   | Xml.Element { name = "GroupTrack"; _ } -> Group (AudioTrack.create xml)
   | Xml.Element { name = "ReturnTrack"; _ } -> Return (AudioTrack.create xml)
-  | Xml.Element { name = "MainTrack"; _ } -> Main (MainTrack.create xml)
+  | Xml.Element { name = "MainTrack"; _ } | Xml.Element { name = "MasterTrack"; _ }-> Main (MainTrack.create xml)
   | _ ->
     let name = match xml with
       | Xml.Element { name; _ } -> name
@@ -503,11 +512,13 @@ module Patch = struct
   type t =
     | MidiPatch of MidiTrack.Patch.t
     | AudioPatch of AudioTrack.Patch.t
+    | GroupPatch of AudioTrack.Patch.t
     | MainPatch of MainTrack.Patch.t
 
   let is_empty = function
     | MidiPatch patch -> MidiTrack.Patch.is_empty patch
     | AudioPatch patch -> AudioTrack.Patch.is_empty patch
+    | GroupPatch patch -> AudioTrack.Patch.is_empty patch
     | MainPatch patch -> MainTrack.Patch.is_empty patch
 end
 
@@ -531,10 +542,11 @@ let diff (old_track : t) (new_track : t) : Patch.t =
     let midi_patch = MidiTrack.diff old_midi new_midi in
     Patch.MidiPatch midi_patch
   | Audio old_audio, Audio new_audio
-  | Group old_audio, Group new_audio
   | Return old_audio, Return new_audio ->
     let audio_patch = AudioTrack.diff old_audio new_audio in
     Patch.AudioPatch audio_patch
+  | Group old_audio, Group new_audio ->
+    Patch.GroupPatch (AudioTrack.diff old_audio new_audio)
   | Main old_main, Main new_main ->
     let main_patch = MainTrack.diff old_main new_main in
     Patch.MainPatch main_patch

@@ -103,14 +103,42 @@ let get_detail_level_by_change (cfg : detail_config) (ct : change_type) : detail
   | Removed -> cfg.removed
   | Modified -> cfg.modified
 
+(* Precomputed override index: domain_type -> per_change_override, for O(1) lookup.
+   Built lazily and cached in a single mutable slot keyed by config identity. Because
+   detail_config is immutable, identity is a valid key, and the slot auto-replaces
+   whenever a different config is seen (e.g. TUI switching detail modes), keeping
+   memory bounded without an explicit clear. *)
+type detail_index = {
+  overrides : (domain_type, per_change_override) Hashtbl.t;
+}
+
+let build_index (cfg : detail_config) : detail_index =
+  let h = Hashtbl.create 16 in
+  List.iter
+    (fun (e : type_override_entry) -> Hashtbl.replace h e.domain_type e.override)
+    cfg.type_overrides;
+  { overrides = h }
+
+(* Single-slot cache. The identity check (==) is O(1); correctness holds because
+   detail_config is immutable — the same object always yields the same index. *)
+let index_cache : (detail_config * detail_index) option ref = ref None
+
+let index_for (cfg : detail_config) : detail_index =
+  match !index_cache with
+  | Some (c, idx) when c == cfg -> idx
+  | _ ->
+    let idx = build_index cfg in
+    index_cache := Some (cfg, idx);
+    idx
+
 (* Helper to get effective detail level considering type-based overrides *)
 (* Type-based control takes precedence over change-type control *)
 let get_effective_detail (cfg : detail_config) (ct : change_type) (dt : domain_type) : detail_level =
-  (* Step 1: Check type-specific override *)
-  match List.find_opt (fun entry -> entry.domain_type = dt) cfg.type_overrides with
-  | Some entry ->
+  let idx = index_for cfg in
+  (* Step 1: Check type-specific override (O(1) Hashtbl lookup) *)
+  match Hashtbl.find_opt idx.overrides dt with
+  | Some overrides ->
     (* Step 2: Check for change-specific override within this type *)
-    let overrides = entry.override in
     (match ct with
      | Added -> begin match overrides.added with
          | Some level -> level
@@ -133,10 +161,6 @@ let get_effective_detail (cfg : detail_config) (ct : change_type) (dt : domain_t
     (* Step 3: Fall back to change-type base default *)
     get_detail_level_by_change cfg ct
 
-(* Backward-compatible helper - defaults to DTOther for views without domain_type consideration *)
-let get_detail_level (cfg : detail_config) (ct : change_type) : detail_level =
-  get_detail_level_by_change cfg ct
-
 (* Helper to check if we should render based on detail level *)
 let should_render_level (level : detail_level) : bool =
   match level with
@@ -147,16 +171,6 @@ let should_render_level (level : detail_level) : bool =
 let should_show_fields (cfg : detail_config) (elem : item) : bool =
   let level = get_effective_detail cfg elem.change elem.domain_type in
   (level = Full || level = Inline) && elem.children <> []
-
-(* Helper to check if an item is element-like (all children are Field views) *)
-let is_element_like_item (elem : item) : bool =
-  elem.children <> [] &&
-  List.for_all (fun (v : view) ->
-      match v with
-      | Field _ -> true
-      | Item _ -> false
-      | Collection _ -> false
-    ) elem.children
 
 (* Truncation info for collections when max_collection_items is applied *)
 type truncation_info = {
@@ -221,20 +235,34 @@ let count_changed_elements (cfg : detail_config) (col : collection) : int =
   let filtered = filter_collection_elements cfg col in
   List.length filtered
 
-(* Count filtered sub-views in a section *)
-let count_changed_sub_views (cfg : detail_config) (section : item) : int =
-  (* Filter views that will render based on detail levels *)
-  let sub_views = List.filter (fun v ->
+(* Sub-views of a section that actually render under [cfg]. Single source of
+   truth shared by the renderers and the Summary breakdown, so the reported
+   count always matches the rendered content. *)
+let renderable_sub_views (cfg : detail_config) (section : item) : view list =
+  List.filter (fun v ->
       match v with
       | Field f -> should_render_level (get_effective_detail cfg f.change f.domain_type)
       | Item e -> should_render_level (get_effective_detail cfg e.change e.domain_type)
       | Collection c ->
         let col_level = get_effective_detail cfg c.change c.domain_type in
-        should_render_level col_level &&
-        (filter_collection_elements cfg c) <> []
-    ) section.children
-  in
-  List.length sub_views
+        if not (should_render_level col_level) then false
+        else if col_level = Summary then true
+        else (filter_collection_elements cfg c) <> [])
+    section.children
+
+(* Helper to check if an item is element-like (a leaf). Routing must agree with
+   rendering: pp_section renders only renderable_sub_views, so we decide from
+   those rather than raw children. Otherwise structurally-identical items diverge
+   — a leaf with all fields filtered out, or one polluted by a leaked
+   {Unchanged, []} placeholder, would route to pp_section (empty) instead of
+   pp_item. Element-like = no renderable nested
+   Item/Collection child. *)
+let is_element_like_item (cfg : detail_config) (elem : item) : bool =
+  not (List.exists (fun (v : view) ->
+      match v with
+      | Item _ | Collection _ -> true
+      | Field _ -> false)
+      (renderable_sub_views cfg elem))
 
 (* ==================== Change Breakdown for Summary Mode ==================== *)
 
@@ -269,25 +297,30 @@ let count_fields_breakdown (elem : item) : change_breakdown =
       | _ -> acc
     ) ({ added = 0; removed = 0; modified = 0 } : change_breakdown) elem.children
 
-(* Count ALL elements by change type for summary display, not just filtered ones *)
-let count_elements_breakdown (_cfg : detail_config) (col : collection) : change_breakdown =
-  (* Extract all Item views from the collection, without filtering by detail level *)
+(* Count elements by change type for Summary display. Elements configured to
+   Ignore are excluded so the count matches what renders; the total is NOT
+   capped by max_collection_items (that is a display limit only — see
+   test_max_collection_items_zero_summary). *)
+let count_elements_breakdown (cfg : detail_config) (col : collection) : change_breakdown =
   List.fold_left (fun (acc : change_breakdown) (v : view) ->
       match v with
-      | Item e -> increment_breakdown acc e.change
-      | _ -> acc
-    ) ({ added = 0; removed = 0; modified = 0 } : change_breakdown) col.items
+      | Item e ->
+        if should_render_level (get_effective_detail cfg e.change e.domain_type)
+        then increment_breakdown acc e.change else acc
+      | _ -> acc)
+    ({ added = 0; removed = 0; modified = 0 } : change_breakdown) col.items
 
-(* Count ALL sub-views by change type for Summary mode display *)
-let count_sub_views_breakdown (_cfg : detail_config) (section : item) : change_breakdown =
-  (* Count all sub-views regardless of whether they would render.
-     Summary mode shows counts of sub-items, so we count everything. *)
+(* Count renderable sub-views by change type for Summary mode display. Folds
+   over [renderable_sub_views] so the count matches the rendered list —
+   children configured to Ignore are not tallied. *)
+let count_sub_views_breakdown (cfg : detail_config) (section : item) : change_breakdown =
   List.fold_left (fun (acc : change_breakdown) v ->
       match v with
       | Field f -> increment_breakdown acc f.change
       | Item e -> increment_breakdown acc e.change
       | Collection c -> increment_breakdown acc c.change
-    ) ({ added = 0; removed = 0; modified = 0 } : change_breakdown) section.children
+    ) ({ added = 0; removed = 0; modified = 0 } : change_breakdown)
+    (renderable_sub_views cfg section)
 
 (* Preset configurations for common use cases *)
 
@@ -779,29 +812,11 @@ let with_type_override cfg dt
   let filtered = List.filter (fun e -> e.domain_type <> dt) cfg.type_overrides in
   { cfg with type_overrides = { domain_type = dt; override = new_override } :: filtered }
 
-(* Helper: Convert domain_type to string for debugging/validation *)
+(* Helper: Convert domain_type to string for debugging/validation.
+   Delegates to the single canonical map in Output_types so this cannot
+   drift when a variant is added. *)
 let domain_type_to_string (dt : domain_type) : string =
-  match dt with
-  | DTLiveset -> "Liveset"
-  | DTTrack -> "Track"
-  | DTDevice -> "Device"
-  | DTClip -> "Clip"
-  | DTAutomation -> "Automation"
-  | DTMixer -> "Mixer"
-  | DTRouting -> "Routing"
-  | DTLocator -> "Locator"
-  | DTParam -> "Param"
-  | DTNote -> "Note"
-  | DTEvent -> "Event"
-  | DTSend -> "Send"
-  | DTPreset -> "Preset"
-  | DTMacro -> "Macro"
-  | DTSnapshot -> "Snapshot"
-  | DTLoop -> "Loop"
-  | DTSignature -> "Signature"
-  | DTSampleRef -> "SampleRef"
-  | DTVersion -> "Version"
-  | DTOther -> "Other"
+  Output_types.domain_type_to_display dt
 
 (* Validate config - check for suspicious patterns *)
 (* Returns list of warning messages *)

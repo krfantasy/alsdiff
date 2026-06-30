@@ -2,7 +2,7 @@
 
 (name alsdiff)
 
-(version 0.5.1)
+(version 0.5.3)
 
 (source
  (github krfantasy/alsdiff))
@@ -20,7 +20,7 @@
  (synopsis "diff tool for Ableton Live Set(.als)")
  (description "diff tool for Ableton Live Set(.als)")
  (depends
-   (ocaml (>= 5.3.0))
+   (ocaml (>= 5.5.0))
     re
     xmlm
     angstrom
@@ -50,7 +50,7 @@
    ; TUI dependency
    mosaic)
  (tags
-  ("ableton live" "git" "version control")))
+  ("ableton live" "diff" "git" "version control")))
 
 (generate_opam_files true)
 

@@ -72,6 +72,32 @@ let test_collection () =
   let expected = "* Notes\n  + Note\n    + Pitch: 60" in
   Alcotest.(check string) "collection output" expected (String.trim output)
 
+(* Collection at Compact level: header + count, NOT the full element list
+   (Compact == Summary for collections, per detail_level doc). *)
+let test_collection_compact () =
+  let view =
+    Collection {
+      name = "Devices";
+      change = Modified;
+      domain_type = DTDevice;
+      items = [
+        Item { name = "Operator"; change = Added; domain_type = DTDevice; children = [] };
+      ];
+    }
+  in
+  let cfg = { full with modified = Compact } in
+  let buffer = Buffer.create 1024 in
+  let ppf = Format.formatter_of_buffer buffer in
+  Fmt.set_style_renderer ppf `None;
+  pp cfg ppf view;
+  Format.pp_print_flush ppf ();
+  let output = Buffer.contents buffer in
+  (* Header + count, single line; the element is counted but not listed. *)
+  Alcotest.(check string) "compact collection = header+count"
+    "* Devices (1 Added)" (String.trim output);
+  Alcotest.(check bool) "compact collection hides elements"
+    false (Re.execp (Re.compile (Re.str "Operator")) output)
+
 (* New test: Removed items show summary only *)
 let test_removed_summary () =
   let view =
@@ -443,10 +469,44 @@ let test_collection_no_truncation () =
   Alcotest.(check bool) "no truncation message"
     false (Re.execp (Re.compile (Re.str "... and")) output)
 
+(* E2E: a base modified=Ignore + DTClip override=Full must render an item's own
+   inline fields, not just its header. Before the domain restamp fix, inline
+   fields carried DTOther and were dropped by the base Ignore. *)
+let test_inline_field_survives_type_override () =
+  let clip_patch = {
+    Alsdiff_live.Clip.MidiClip.Patch.
+    id = 1;
+    name = `Modified { oldval = "aaa"; newval = "bbb" };
+    start_time = `Unchanged;
+    end_time = `Unchanged;
+    loop = `Unchanged;
+    signature = `Unchanged;
+    notes = [];
+  } in
+  let view = Item (create_midi_clip_item (`Modified clip_patch)) in
+  let cfg = {
+    full with
+    modified = Ignore;
+    type_overrides = [
+      { domain_type = DTClip; override = uniform_override Full };
+    ];
+  } in
+  let buffer = Buffer.create 1024 in
+  let ppf = Format.formatter_of_buffer buffer in
+  Fmt.set_style_renderer ppf `None;
+  pp cfg ppf view;
+  Format.pp_print_flush ppf ();
+  let output = Buffer.contents buffer in
+  (* The "Name" field label only appears when the inline field renders; the
+     clip header never contains it. *)
+  Alcotest.(check bool) "inline Name field survives DTClip override" true
+    (Re.execp (Re.compile (Re.str "Name")) output)
+
 let tests = [
   "compact", `Quick, test_compact;
   "full", `Quick, test_full;
   "collection", `Quick, test_collection;
+  "collection compact", `Quick, test_collection_compact;
   "removed summary", `Quick, test_removed_summary;
   "collection limit", `Quick, test_collection_limit;
   "collection limit mixed changes", `Quick, test_collection_limit_mixed_changes;
@@ -459,6 +519,7 @@ let tests = [
   "validation", `Quick, test_validation;
   "edge cases", `Quick, test_edge_cases;
   "rendering with nested overrides", `Quick, test_rendering_with_nested_overrides;
+  "inline field survives type override", `Quick, test_inline_field_survives_type_override;
   "inline", `Quick, test_inline;
   "inline no fields", `Quick, test_inline_no_fields;
   "inline with nested", `Quick, test_inline_with_nested;
