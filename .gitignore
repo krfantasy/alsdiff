@@ -14,4 +14,7 @@ install
 .gemini/
 gha-creds-*.json
 
+*.org
+/docs/superpowers/
+
 *.trace
