@@ -5,6 +5,7 @@ import "./styles/arrangement.css";
 import "./styles/detail.css";
 import "./styles/piano-roll.css";
 import "./styles/automation.css";
+import "./styles/loading-overlay.css";
 import App from "./App";
 
 const root = document.getElementById("app");

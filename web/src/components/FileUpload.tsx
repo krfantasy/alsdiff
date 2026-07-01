@@ -1,5 +1,5 @@
 import { Show, For } from "solid-js";
-import { setIsLoading, setError, setDiffResult, setTracks, setRawJson, setTempo, setTimeSignature, isLoading, error } from "../stores/diff-store";
+import { setIsLoading, setError, setDiffResult, setTracks, setRawJson, setTempo, setTimeSignature, isLoading, error, setLoadFileNameA, setLoadFileNameB } from "../stores/diff-store";
 import { diffFilesJson } from "../lib/alsdiff-api";
 import { extractTracks, extractTempo, extractTimeSignature } from "../lib/diff-parser";
 import {
@@ -52,6 +52,8 @@ export default function FileUpload() {
     }
 
     setIsLoading(true);
+    setLoadFileNameA(file1.name);
+    setLoadFileNameB(file2.name);
     setError(null);
 
     try {

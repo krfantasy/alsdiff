@@ -14,6 +14,8 @@ export const [timeSignature, setTimeSignature] = createSignal<TimeSignature>({
   denom: 4,
 });
 export const [isLoading, setIsLoading] = createSignal(false);
+export const [loadFileNameA, setLoadFileNameA] = createSignal("");
+export const [loadFileNameB, setLoadFileNameB] = createSignal("");
 export const [error, setError] = createSignal<string | null>(null);
 export const [selectedTrackIdx, setSelectedTrackIdx] = createSignal<
   number | null

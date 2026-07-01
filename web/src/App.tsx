@@ -4,6 +4,7 @@ import FileUpload from "./components/FileUpload";
 import ArrangementView from "./components/ArrangementView";
 import ResizeHandle from "./components/ResizeHandle";
 import DetailView from "./components/DetailView";
+import LoadingOverlay from "./components/LoadingOverlay";
 
 export default function App() {
   const [showRawJson, setShowRawJson] = createSignal(false);
@@ -17,16 +18,20 @@ export default function App() {
       }}
     >
       <FileUpload />
-      <Show when={isLoading()}>
-        <div class="loading-container" data-testid="loading-spinner">
-          <div class="loading-spinner" />
-          Comparing files...
-        </div>
-      </Show>
-      <Show
-        when={diffResult()}
-        fallback={
-          <Show when={!isLoading()}>
+      <div
+        class="app-content"
+        style={{
+          position: "relative",
+          flex: "1",
+          display: "flex",
+          "flex-direction": "column",
+          "min-height": "0",
+          overflow: "hidden",
+        }}
+      >
+        <Show
+          when={diffResult()}
+          fallback={
             <div
               style={{
                 flex: 1,
@@ -38,12 +43,11 @@ export default function App() {
             >
               Upload two .als files to compare
             </div>
-          </Show>
-        }
-      >
-        <ArrangementView />
-        <ResizeHandle />
-        <DetailView />
+          }
+        >
+          <ArrangementView />
+          <ResizeHandle />
+          <DetailView />
         <Show when={rawJson()}>
           <div
             style={{
@@ -85,6 +89,10 @@ export default function App() {
           </div>
         </Show>
       </Show>
+        <Show when={isLoading()}>
+          <LoadingOverlay />
+        </Show>
+      </div>
     </div>
   );
 }
