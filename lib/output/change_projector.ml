@@ -77,11 +77,12 @@ module ViewBuilder = struct
     | `Modified patch ->
       (match of_patch patch with
        | `Unchanged ->
-         (* Nested content is unchanged: there is nothing to render. A
-            placeholder {change=Unchanged; children=[]} would only leak a bare
-            "= <name>" header under verbose, so emit
-            nothing — matching build_item_from_children_with_change below. *)
-         None
+         (* Nested child is unchanged but the parent changed. Emit a placeholder
+            so renderers that want to show unchanged context (JSON/web, verbose)
+            can do so. The TEXT renderer suppresses bare Unchanged headers with
+            no renderable children (see text_renderer.ml pp_view), so this does
+            not regress the e9d4b96 text cleanup. *)
+         Some { name; change = Unchanged; domain_type; children = [] }
        | `Modified np ->
          let children = build_patch_children np in
          if children = [] then None
@@ -133,7 +134,10 @@ module ViewBuilder = struct
          else Some { name; change = Removed; domain_type; children })
     | `Modified patch ->
       (match of_patch patch with
-       | `Unchanged -> None
+       | `Unchanged ->
+         (* See build_item_from_children: emit a placeholder so JSON/verbose
+            consumers see the node; text_renderer suppresses the bare header. *)
+         Some { name; change = Unchanged; domain_type; children = [] }
        | `Added nested_val ->
          let children = build_value_children Added nested_val in
          if children = [] then None
@@ -599,7 +603,11 @@ module DeviceViewSpecB : Alsdiff_view_spec_types.View_spec_types.S
    and type ('v, 'p) unified_field_spec = ('v, 'p) unified_field_spec
 = struct
   type domain_type = Output_types.domain_type
-  type change_type = Output_types.change_type
+  type change_type = Output_types.change_type =
+    | Unchanged
+    | Added
+    | Removed
+    | Modified
   type field_value = Output_types.field_value =
     | Fint of int
     | Ffloat of float
@@ -649,6 +657,14 @@ module DeviceViewSpecB : Alsdiff_view_spec_types.View_spec_types.S
   let build_patch_field_views = build_patch_field_views
   let map_specs = map_specs
   let build_item_from_specs = build_item_from_specs
+  let item_children (i : item) : view list = i.children
+  (* B is the primitives module (never a [@view.child] target itself); these
+     satisfy the S signature but are never invoked. Real child-section
+     rendering happens in each type's generated ViewSpec. *)
+  let build_value_children ~format_time:_ ?(domain_type = DTOther) (_ct : change_type) (_v : 'a) : view list =
+    let _ = domain_type in []
+  let build_patch_children ~format_time:_ ?(domain_type = DTOther) (_p : 'a) : view list =
+    let _ = domain_type in []
 
   module Spec = Spec
 end
