@@ -206,6 +206,14 @@ module GenericParam = struct
 
     let build_patch_fields ~format_time ?(domain_type = B.domain_type_of_name "DTParam") p =
       B.build_patch_field_views field_specs p ~domain_type
+
+    let build_value_children ~format_time ?(domain_type = B.domain_type_of_name "DTParam") ct v =
+      build_value_fields ~format_time ~domain_type ct v
+
+    let build_patch_children ~format_time ?(domain_type = B.domain_type_of_name "DTParam") p =
+      build_patch_fields ~format_time ~domain_type p
+
+    let item_children i = B.item_children i
   end
 end
 
@@ -440,6 +448,16 @@ module PluginParam = struct
       B.build_patch_field_views field_specs p ~domain_type
     let build_item ~format_time ?(name = "") ?(domain_type = B.domain_type_of_name "DTParam") c =
       B.build_item_from_specs ~name ~domain_type ~specs:section_specs c
+
+    let build_value_children ~format_time ?(domain_type = B.domain_type_of_name "DTParam") ct v =
+      let c = match ct with
+        | B.Added -> `Added v | B.Removed -> `Removed v | _ -> `Added v in
+      B.item_children (build_item ~format_time ~domain_type c)
+
+    let build_patch_children ~format_time ?(domain_type = B.domain_type_of_name "DTParam") p =
+      B.item_children (build_item ~format_time ~domain_type (`Modified p))
+
+    let item_children i = B.item_children i
   end
 end
 
@@ -645,6 +663,16 @@ module PluginDesc = struct
       B.build_patch_field_views field_specs p ~domain_type
     let build_item ~format_time ?(name = "") ?(domain_type = B.domain_type_of_name "DTDevice") c =
       B.build_item_from_specs ~name ~domain_type ~specs:section_specs c
+
+    let build_value_children ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") ct v =
+      let c = match ct with
+        | B.Added -> `Added v | B.Removed -> `Removed v | _ -> `Added v in
+      B.item_children (build_item ~format_time ~domain_type c)
+
+    let build_patch_children ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") p =
+      B.item_children (build_item ~format_time ~domain_type (`Modified p))
+
+    let item_children i = B.item_children i
   end
 end
 
@@ -1225,6 +1253,16 @@ module RegularDevice = struct
       B.build_patch_field_views field_specs p ~domain_type
     let build_item ~format_time ?(name = "") ?(domain_type = B.domain_type_of_name "DTDevice") c =
       B.build_item_from_specs ~name ~domain_type ~specs:(section_specs ~format_time) c
+
+    let build_value_children ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") ct v =
+      let c = match ct with
+        | B.Added -> `Added v | B.Removed -> `Removed v | _ -> `Added v in
+      B.item_children (build_item ~format_time ~domain_type c)
+
+    let build_patch_children ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") p =
+      B.item_children (build_item ~format_time ~domain_type (`Modified p))
+
+    let item_children i = B.item_children i
   end
 end
 
@@ -1337,6 +1375,16 @@ module PluginDevice = struct
       B.build_patch_field_views field_specs p ~domain_type
     let build_item ~format_time ?(name = "") ?(domain_type = B.domain_type_of_name "DTDevice") c =
       B.build_item_from_specs ~name ~domain_type ~specs:(section_specs ~format_time) c
+
+    let build_value_children ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") ct v =
+      let c = match ct with
+        | B.Added -> `Added v | B.Removed -> `Removed v | _ -> `Added v in
+      B.item_children (build_item ~format_time ~domain_type c)
+
+    let build_patch_children ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") p =
+      B.item_children (build_item ~format_time ~domain_type (`Modified p))
+
+    let item_children i = B.item_children i
   end
 end
 
@@ -1488,6 +1536,16 @@ module GroupDevice = struct
       B.build_patch_field_views field_specs p ~domain_type
     let build_item ~format_time ?(name = "") ?(domain_type = B.domain_type_of_name "DTDevice") c =
       B.build_item_from_specs ~name ~domain_type ~specs:(section_specs ~format_time) c
+
+    let build_value_children ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") ct v =
+      let c = match ct with
+        | B.Added -> `Added v | B.Removed -> `Removed v | _ -> `Added v in
+      B.item_children (build_item ~format_time ~domain_type c)
+
+    let build_patch_children ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") p =
+      B.item_children (build_item ~format_time ~domain_type (`Modified p))
+
+    let item_children i = B.item_children i
   end
 end
 
@@ -1593,6 +1651,16 @@ module Max4LiveDevice = struct
       B.build_patch_field_views field_specs p ~domain_type
     let build_item ~format_time ?(name = "") ?(domain_type = B.domain_type_of_name "DTDevice") c =
       B.build_item_from_specs ~name ~domain_type ~specs:(section_specs ~format_time) c
+
+    let build_value_children ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") ct v =
+      let c = match ct with
+        | B.Added -> `Added v | B.Removed -> `Removed v | _ -> `Added v in
+      B.item_children (build_item ~format_time ~domain_type c)
+
+    let build_patch_children ~format_time ?(domain_type = B.domain_type_of_name "DTDevice") p =
+      B.item_children (build_item ~format_time ~domain_type (`Modified p))
+
+    let item_children i = B.item_children i
   end
 end
 

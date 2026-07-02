@@ -3,7 +3,11 @@ open Alsdiff_base.Diff
 
 module type S = sig
   type domain_type
-  type change_type
+  type change_type =
+    | Unchanged
+    | Added
+    | Removed
+    | Modified
   type field_value =
     | Fint of int
     | Ffloat of float
@@ -48,6 +52,23 @@ module type S = sig
     ('v, 'p) unified_field_spec list -> change_type -> 'v -> domain_type:domain_type -> view list
   val build_patch_field_views :
     ('v, 'p) unified_field_spec list -> 'p -> domain_type:domain_type -> view list
+
+  (** [item_children item] returns the children views of an item. Exposed so
+      generated [@view.child] specs can extract children from a child type's
+      full [build_item] (which renders nested children, not just inline). *)
+  val item_children : item -> view list
+
+  (** [build_value_children] / [build_patch_children] render the FULL child
+      section (all sub-views via [section_specs]), not just inline atomic
+      fields. Used by generated [@view.child] specs so a child whose own
+      fields are nested [@view.child] (e.g. Mixer -> GenericParam) renders its
+      whole subtree. Leaf types delegate to [build_value_field_views]/
+      [build_patch_field_views] (their inline fields ARE their full content). *)
+  val build_value_children :
+    format_time:dual_time_formatter -> ?domain_type:domain_type -> change_type -> 'v -> view list
+  val build_patch_children :
+    format_time:dual_time_formatter -> ?domain_type:domain_type -> 'p -> view list
+
 
   val map_specs :
     ('v2 -> 'v1) ->

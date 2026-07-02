@@ -251,12 +251,52 @@ let mk_vs_field_access loc view_spec_lid field_name arg_var =
           [ Labelled "format_time", pexp_ident ~loc { txt = Lident "format_time"; loc }
           ; Nolabel, pexp_ident ~loc { txt = Lident arg_var; loc } ]))
 
+(** [mk_vs_children_access] generates the [build_value_children] /
+    [build_patch_children] callbacks for a [Spec.child] by delegating to the
+    child type's [ViewSpec.build_value_children] / [build_patch_children],
+    which render the FULL child section (all sub-views via [section_specs]),
+    not just inline atomic fields. This is the correct behavior for a nested
+    child whose own fields are themselves [@view.child] (e.g. Mixer, whose
+    volume/pan/mute/solo are GenericParam children — it has NO inline atomic
+    fields, so the old [build_value_fields]/[build_patch_fields] yielded []). *)
+let mk_vs_children_access loc view_spec_lid =
+  let open Ast_builder.Default in
+  let vs_mod =
+    pmod_apply ~loc
+      (pmod_ident ~loc { loc; txt = view_spec_lid })
+      (pmod_ident ~loc { loc; txt = Lident "B" })
+  in
+  let call_vs field arg_exprs =
+    pexp_letmodule ~loc { txt = Some "Vs"; loc } vs_mod
+      (pexp_apply ~loc
+         (pexp_ident ~loc { loc; txt = Ldot (Lident "Vs", field) })
+         ((Labelled "format_time", pexp_ident ~loc { txt = Lident "format_time"; loc })
+          :: arg_exprs))
+  in
+  (* build_value_children : change_type -> nested -> view list *)
+  let build_value_fn =
+    pexp_fun ~loc Nolabel None
+      (ppat_var ~loc { txt = "ct"; loc })
+      (pexp_fun ~loc Nolabel None
+         (ppat_var ~loc { txt = "v"; loc })
+         (call_vs "build_value_children"
+            [ Nolabel, pexp_ident ~loc { txt = Lident "ct"; loc }
+            ; Nolabel, pexp_ident ~loc { txt = Lident "v"; loc } ]))
+  in
+  (* build_patch_children : np -> view list *)
+  let build_patch_fn =
+    pexp_fun ~loc Nolabel None
+      (ppat_var ~loc { txt = "np"; loc })
+      (call_vs "build_patch_children"
+         [ Nolabel, pexp_ident ~loc { txt = Lident "np"; loc } ])
+  in
+  (build_value_fn, build_patch_fn)
+
 let generate_child_spec ~loc field_name label domain_type_name child_mod_lid =
   let open Ast_builder.Default in
   let mod_path = lid_to_list child_mod_lid in
   let view_spec_lid = lid_of_strings (mod_path @ ["ViewSpec"]) in
-  let build_value_fn = mk_vs_field_access loc view_spec_lid "build_value_fields" "ct" in
-  let build_patch_fn = mk_vs_field_access loc view_spec_lid "build_patch_fields" "np" in
+  let (build_value_fn, build_patch_fn) = mk_vs_children_access loc view_spec_lid in
   pexp_apply ~loc (mk_lid_expr loc (Ldot (Ldot (Lident "B", "Spec"), "child")))
     [ Labelled "name", mk_str loc label
     ; Labelled "of_value", generate_value_accessor ~loc field_name
@@ -270,8 +310,7 @@ let generate_optional_child_spec ~loc field_name label domain_type_name child_mo
   let open Ast_builder.Default in
   let mod_path = lid_to_list child_mod_lid in
   let view_spec_lid = lid_of_strings (mod_path @ ["ViewSpec"]) in
-  let build_value_fn = mk_vs_field_access loc view_spec_lid "build_value_fields" "ct" in
-  let build_patch_fn = mk_vs_field_access loc view_spec_lid "build_patch_fields" "np" in
+  let (build_value_fn, build_patch_fn) = mk_vs_children_access loc view_spec_lid in
   pexp_apply ~loc (mk_lid_expr loc (Ldot (Ldot (Lident "B", "Spec"), "child_optional")))
     [ Labelled "name", mk_str loc label
     ; Labelled "of_value", generate_value_accessor ~loc field_name
@@ -792,6 +831,135 @@ let generate_view_spec_impl ~ctxt:_ (_rec_flag, type_decls) =
           pvb_constraint = None }]
     in
 
+    (* --- build_value_children / build_patch_children bindings ---
+       These render the FULL child section (all sub-views via section_specs),
+       returning the item's children. They back the generated [@view.child]
+       specs so a child with nested [@view.child] fields (e.g. Mixer) renders
+       its whole subtree, not just inline atomic fields.
+
+       The full-section path needs no builders, so it is only emitted when this
+       type has none. Types WITH [@view.builder] collections (e.g. MidiClip)
+       are never [@view.child] targets (they're collection elements), so their
+       children-binding falls back to the inline-field views — sufficient to
+       satisfy the functor signature. *)
+    let (build_value_children_binding, build_patch_children_binding) =
+      if builder_fields = [] then begin
+        (* Full-section path: reuse build_item (captures section_specs), then
+           extract .children via B.item_children. *)
+        let item_of_change c_expr =
+          pexp_apply ~loc (pexp_ident ~loc { txt = Lident "build_item"; loc })
+            [ Labelled "format_time", pexp_ident ~loc { txt = Lident "format_time"; loc }
+            ; Labelled "domain_type", pexp_ident ~loc { txt = Lident "domain_type"; loc }
+            ; Nolabel, c_expr ]
+        in
+        let mk_case pat c_expr =
+          { pc_lhs = pat; pc_guard = None; pc_rhs = c_expr }
+        in
+        let vc_body =
+          pexp_apply ~loc (mk_lid_expr loc (Ldot (Lident "B", "item_children")))
+            [ Nolabel,
+              pexp_match ~loc (pexp_ident ~loc { txt = Lident "ct"; loc })
+                [ mk_case
+                    (ppat_construct ~loc { txt = Ldot (Lident "B", "Added"); loc } None)
+                    (item_of_change (pexp_variant ~loc "Added"
+                       (Some (pexp_ident ~loc { txt = Lident "v"; loc }))))
+                ; mk_case
+                    (ppat_construct ~loc { txt = Ldot (Lident "B", "Removed"); loc } None)
+                    (item_of_change (pexp_variant ~loc "Removed"
+                       (Some (pexp_ident ~loc { txt = Lident "v"; loc }))))
+                ; mk_case
+                    (ppat_construct ~loc { txt = Ldot (Lident "B", "Modified"); loc } None)
+                    (item_of_change (pexp_variant ~loc "Added"
+                       (Some (pexp_ident ~loc { txt = Lident "v"; loc }))))
+                ; mk_case
+                    (ppat_construct ~loc { txt = Ldot (Lident "B", "Unchanged"); loc } None)
+                    (item_of_change (pexp_variant ~loc "Added"
+                       (Some (pexp_ident ~loc { txt = Lident "v"; loc }))))
+                ] ]
+        in
+        let vc_expr =
+          pexp_fun ~loc (Labelled "format_time") None
+            (ppat_var ~loc { txt = "format_time"; loc })
+            (pexp_fun ~loc (Optional "domain_type")
+               (Some (mk_lid_expr loc (Ldot (Lident "B", "default_domain_type"))))
+               (ppat_var ~loc { txt = "domain_type"; loc })
+               (pexp_fun ~loc Nolabel None
+                  (ppat_var ~loc { txt = "ct"; loc })
+                  (pexp_fun ~loc Nolabel None
+                     (ppat_var ~loc { txt = "v"; loc })
+                     vc_body)))
+        in
+        let pc_body =
+          pexp_apply ~loc (mk_lid_expr loc (Ldot (Lident "B", "item_children")))
+            [ Nolabel,
+              item_of_change (pexp_variant ~loc "Modified"
+                (Some (pexp_ident ~loc { txt = Lident "p"; loc }))) ]
+        in
+        let pc_expr =
+          pexp_fun ~loc (Labelled "format_time") None
+            (ppat_var ~loc { txt = "format_time"; loc })
+            (pexp_fun ~loc (Optional "domain_type")
+               (Some (mk_lid_expr loc (Ldot (Lident "B", "default_domain_type"))))
+               (ppat_var ~loc { txt = "domain_type"; loc })
+               (pexp_fun ~loc Nolabel None
+                  (ppat_var ~loc { txt = "p"; loc })
+                  pc_body))
+        in
+        (pstr_value ~loc Nonrecursive [{
+            pvb_pat = ppat_var ~loc { txt = "build_value_children"; loc };
+            pvb_expr = vc_expr;
+            pvb_attributes = []; pvb_loc = loc; pvb_constraint = None }],
+         pstr_value ~loc Nonrecursive [{
+            pvb_pat = ppat_var ~loc { txt = "build_patch_children"; loc };
+            pvb_expr = pc_expr;
+            pvb_attributes = []; pvb_loc = loc; pvb_constraint = None }])
+      end else begin
+        (* Builder-bearing type (never a [@view.child] target): fall back to the
+           inline-field views to satisfy the functor signature. *)
+        let fs_call =
+          pexp_apply ~loc (pexp_ident ~loc { txt = Lident "field_specs"; loc })
+            [Labelled "format_time", pexp_ident ~loc { txt = Lident "format_time"; loc }]
+        in
+        let vc_expr =
+          pexp_fun ~loc (Labelled "format_time") None
+            (ppat_var ~loc { txt = "format_time"; loc })
+            (pexp_fun ~loc (Optional "domain_type")
+               (Some (mk_lid_expr loc (Ldot (Lident "B", "default_domain_type"))))
+               (ppat_var ~loc { txt = "domain_type"; loc })
+               (pexp_fun ~loc Nolabel None
+                  (ppat_var ~loc { txt = "ct"; loc })
+                  (pexp_fun ~loc Nolabel None
+                     (ppat_var ~loc { txt = "v"; loc })
+                     (pexp_apply ~loc (mk_lid_expr loc (Ldot (Lident "B", "build_value_field_views")))
+                        [ Nolabel, fs_call
+                        ; Nolabel, pexp_ident ~loc { txt = Lident "ct"; loc }
+                        ; Nolabel, pexp_ident ~loc { txt = Lident "v"; loc }
+                        ; Labelled "domain_type", pexp_ident ~loc { txt = Lident "domain_type"; loc } ]))))
+        in
+        let pc_expr =
+          pexp_fun ~loc (Labelled "format_time") None
+            (ppat_var ~loc { txt = "format_time"; loc })
+            (pexp_fun ~loc (Optional "domain_type")
+               (Some (mk_lid_expr loc (Ldot (Lident "B", "default_domain_type"))))
+               (ppat_var ~loc { txt = "domain_type"; loc })
+               (pexp_fun ~loc Nolabel None
+                  (ppat_var ~loc { txt = "p"; loc })
+                  (pexp_apply ~loc (mk_lid_expr loc (Ldot (Lident "B", "build_patch_field_views")))
+                     [ Nolabel, fs_call
+                     ; Nolabel, pexp_ident ~loc { txt = Lident "p"; loc }
+                     ; Labelled "domain_type", pexp_ident ~loc { txt = Lident "domain_type"; loc } ])))
+        in
+        (pstr_value ~loc Nonrecursive [{
+            pvb_pat = ppat_var ~loc { txt = "build_value_children"; loc };
+            pvb_expr = vc_expr;
+            pvb_attributes = []; pvb_loc = loc; pvb_constraint = None }],
+         pstr_value ~loc Nonrecursive [{
+            pvb_pat = ppat_var ~loc { txt = "build_patch_children"; loc };
+            pvb_expr = pc_expr;
+            pvb_attributes = []; pvb_loc = loc; pvb_constraint = None }])
+      end
+    in
+
     (* --- build_section_name binding --- *)
     let build_section_name_binding =
       if has_naming then [generate_build_section_name ~loc ni] else []
@@ -823,6 +991,8 @@ let generate_view_spec_impl ~ctxt:_ (_rec_flag, type_decls) =
           build_value_fields_binding;
           build_patch_fields_binding;
           build_item_binding;
+          build_value_children_binding;
+          build_patch_children_binding;
         ]) in
     let functor_mod = pmod_functor ~loc functor_param body_mod in
     [pstr_module ~loc {

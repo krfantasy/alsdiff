@@ -513,12 +513,13 @@ let test_create_liveset_item_with_main_only_change () =
   check bool "main track section exists" true (main_track_section.name = "Main Track");
   check bool "main track child rendered" true (String.starts_with ~prefix:"MainTrack" main_track_item.name)
 
-(* When only part of the liveset changes, the unchanged
-   nested sections (here Version) must NOT leak as a {change=Unchanged; children=[]}
-   placeholder item. Before the fix, build_item_from_children returned Some for the
-   `Modified`+`Unchanged` case and create_liveset_item concatenated it, surfacing a
-   stray "= Version" line under verbose. Now it returns None and is omitted. *)
-let test_unchanged_section_does_not_leak () =
+(* When only part of the liveset changes, an unchanged nested section (here
+   Version) emits a placeholder {change=Unchanged} item from the projector so
+   JSON/web consumers see the node (restoring Mixer/Routing/Send data lost by
+   the e9d4b96 "drop leaked placeholder" change). Under verbose, the TEXT
+   renderer shows the unchanged header ("= Version") — consistent with the
+   verbose contract of showing everything. *)
+let test_unchanged_section_placeholder_handling () =
   let path = Utils.resolve_test_data_path "t4.xml" in
   let xml = read_file path in
   let liveset1 = Liveset.create xml path in
@@ -538,14 +539,36 @@ let test_unchanged_section_does_not_leak () =
   (* Only the main track's tempo changes, so version is `Unchanged in the patch. *)
   let patch = Liveset.diff liveset1 { liveset2 with main = updated_main } in
   let item = create_liveset_item (`Modified patch) in
+  (* 1. Projector DOES emit the placeholder (so JSON/web can show the node). *)
   let has_unchanged_version =
     List.exists (fun v ->
         match v with
         | Item i -> i.name = "Version" && i.change = Unchanged
         | _ -> false) item.children
   in
-  check bool "unchanged Version section does not leak as placeholder" false
-    has_unchanged_version
+  check bool "projector emits unchanged Version placeholder" true
+    has_unchanged_version;
+  (* 2. TEXT renderer emits the unchanged Version header under verbose —
+     "verbose" means show everything including unchanged (matches
+     test_unchanged_full_visible: a bare Unchanged item renders as "= Name"). *)
+  let text = Alsdiff_output.Text_renderer.render Alsdiff_output.Config.verbose [ Item item ] in
+  let lines = String.split_on_char '\n' text in
+  let shows_version =
+    List.exists (fun line -> String.trim line = "= Version") lines
+  in
+  check bool "text renderer shows unchanged Version header under verbose" true shows_version;
+  (* 3. JSON renderer emits the unchanged Version node. *)
+  let json = Alsdiff_output.Json_renderer.render Alsdiff_output.Config.verbose [ Item item ] in
+  let has_version_node =
+    let needle = "\"name\": \"Version\"" in
+    let rec search i =
+      if i + String.length needle > String.length json then false
+      else if String.sub json i (String.length needle) = needle then true
+      else search (i + 1)
+    in
+    search 0
+  in
+  check bool "json renderer includes unchanged Version node" true has_version_node
 
 let () =
   run "ViewModel" [
@@ -580,6 +603,6 @@ let () =
     ];
     "create_liveset_item", [
       test_case "Renders main track when it is the only change" `Quick test_create_liveset_item_with_main_only_change;
-      test_case "Unchanged section does not leak as placeholder" `Quick test_unchanged_section_does_not_leak;
+      test_case "Unchanged section placeholder handling" `Quick test_unchanged_section_placeholder_handling;
     ];
   ]

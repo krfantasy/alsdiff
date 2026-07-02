@@ -54,18 +54,34 @@ function extractTrackIdFromName(name: string): number {
 export function extractTracks(livesetChildren: ViewNode[]): TrackData[] {
   const tracks: TrackData[] = [];
 
+  const collectFromItem = (child: ItemView) => {
+    if (child.domain_type !== "Track") return;
+    const tc = child.children ?? [];
+    const fieldTrackId = getTrackIntField(tc, "TrackId", 0);
+    tracks.push({
+      name: child.name,
+      change: child.change,
+      domainType: child.domain_type,
+      trackId: fieldTrackId || extractTrackIdFromName(child.name),
+      groupId: getTrackIntField(tc, "GroupId", -1),
+      children: tc,
+    });
+  };
+
   for (const child of livesetChildren) {
-    if (isItem(child) && child.domain_type === "Track") {
-      const tc = child.children ?? [];
-      const fieldTrackId = getTrackIntField(tc, "TrackId", 0);
-      tracks.push({
-        name: child.name,
-        change: child.change,
-        domainType: child.domain_type,
-        trackId: fieldTrackId || extractTrackIdFromName(child.name),
-        groupId: getTrackIntField(tc, "GroupId", -1),
-        children: tc,
-      });
+    if (isItem(child)) {
+      // Flat layout (pre-ebccf1b) and the Main Track (always flat direct child).
+      collectFromItem(child);
+    } else if (
+      isCollection(child) &&
+      (child.name === "Tracks" || child.name === "Returns")
+    ) {
+      // Nested layout (post-ebccf1b): regular tracks / returns wrapped in
+      // Tracks/Returns collections to respect max_collection_items. Descend so
+      // the web app still sees every track, not just the flat Main Track.
+      for (const item of child.items) {
+        if (isItem(item)) collectFromItem(item);
+      }
     }
   }
 
