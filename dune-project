@@ -34,7 +34,7 @@
     ppxlib
     ppx_deriving
     ppx_deriving_yojson
-    ppx_deriving_jsonschema
+   (ppx_deriving_jsonschema (>= 0.0.8))
     jsonschema
     fmt
     ptime
