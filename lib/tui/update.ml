@@ -333,6 +333,7 @@ let browser_activate (model : Model.t) : Model.t * Msg.t Mosaic.Cmd.t =
              Alsdiff_output.View_model.Item
                (Alsdiff_output.View_model.create_liveset_item
                   ~note_name_style:model.note_name_style ~format_time
+                  ~reference_liveset:ls1
                   change)
            ] in
            let detail_config = Alsdiff_output.Config.full in

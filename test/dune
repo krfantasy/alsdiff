@@ -235,7 +235,7 @@
 ;; Test needing all three libraries
 (test
  (name test_view_model)
- (modules test_view_model utils)
+ (modules test_view_model utils track_helpers)
  (libraries alsdiff_base alsdiff_live alsdiff_output alcotest))
 
 (test

@@ -570,6 +570,50 @@ let test_unchanged_section_placeholder_handling () =
   in
   check bool "json renderer includes unchanged Version node" true has_version_node
 
+(* When a track is Modified but its mixer is Unchanged, the projector emits an
+   empty {change=Unchanged; children=[]} Mixer placeholder. With a reference
+   track threaded in (the old value), the placeholder is populated from the
+   reference track's mixer value (restamped Unchanged) so the web app can
+   render a full mixer strip. Restores the lost 044a9a7 feature. *)
+let test_reference_populates_unchanged_mixer () =
+  let mixer = Track_helpers.make_mixer 0.70 (-0.30) in
+  let mk_track name =
+    {
+      Track.MidiTrack.id = 1; name; current_name = name; group_id = -1;
+      clips = []; automations = []; devices = [];
+      mixer; routings = Track_helpers.make_empty_routing_set ();
+    }
+  in
+  (* Two tracks, same id, different name -> Modified track, Unchanged mixer. *)
+  let t1 = mk_track "Old" in
+  let t2 = mk_track "New" in
+  let patch = Track.MidiTrack.diff t1 t2 in
+  let find_mixer it =
+    List.find_opt (fun ch -> match ch with Item mi when mi.name = "Mixer" -> true | _ -> false) it.children
+  in
+  let get_pointee_name _ = "?" in
+  (* WITHOUT reference: Mixer is an empty placeholder. *)
+  let item_no_ref = create_midi_track_item ~get_pointee_name (`Modified patch) in
+  (match find_mixer item_no_ref with
+   | Some (Item mi) ->
+     check bool "without reference: mixer is empty placeholder" true (mi.children = [])
+   | _ -> check bool "without reference: mixer placeholder present" true false);
+  (* WITH reference: Mixer is populated with Volume/Pan/Mute/Solo. *)
+  let item_with_ref = create_midi_track_item ~get_pointee_name ~reference_track:t1 (`Modified patch) in
+  (match find_mixer item_with_ref with
+   | Some (Item mi) ->
+     let names = List.filter_map (fun v ->
+         match v with Item ci -> Some ci.name | _ -> None) mi.children in
+     check bool "with reference: mixer has 4 children" true (List.length mi.children = 4);
+     check bool "with reference: mixer has Volume child" true (List.mem "Volume" names);
+     let vol = List.find_opt (fun v -> match v with Item ci when ci.name = "Volume" -> true | _ -> false) mi.children in
+     (match vol with
+      | Some (Item vi) ->
+        check bool "with reference: Volume is Unchanged" true (vi.change = Unchanged)
+      | _ -> check bool "with reference: Volume child present" true false)
+   | _ -> check bool "with reference: mixer present" true false)
+
+
 let () =
   run "ViewModel" [
     "ViewBuilder.change_type_of", [
@@ -604,5 +648,6 @@ let () =
     "create_liveset_item", [
       test_case "Renders main track when it is the only change" `Quick test_create_liveset_item_with_main_only_change;
       test_case "Unchanged section placeholder handling" `Quick test_unchanged_section_placeholder_handling;
+      test_case "Reference liveset populates unchanged mixer" `Quick test_reference_populates_unchanged_mixer;
     ];
   ]

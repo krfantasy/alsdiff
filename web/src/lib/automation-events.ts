@@ -146,11 +146,25 @@ function parseNewFormat(child: ItemView): AutomationEvent | undefined {
 
 // --- Main parser ---
 
+// The OCaml worker wraps an Automation's events in a nested
+// `{ type: "collection", name: "Events" }` node (see change_projector.ml
+// `wrap_events`, driven by automation.ml `[@view.label "Events"]`). Resolve
+// the candidate event nodes by descending into that collection when present;
+// fall back to the legacy flat shape (events as direct children) so old data
+// keeps working.
+function resolveEventNodes(automationItem: ItemView): ViewNode[] {
+  const children = automationItem.children ?? [];
+  const eventsCollection = children.find(
+    (c) => c.type === "collection" && c.name === "Events",
+  );
+  return eventsCollection ? eventsCollection.items : children;
+}
+
 export function parseAutomationEvents(
   automationItem: ItemView,
 ): AutomationEvent[] {
   const events: AutomationEvent[] = [];
-  const children = automationItem.children ?? [];
+  const children = resolveEventNodes(automationItem);
   if (children.length === 0) return events;
 
   for (const child of children) {
