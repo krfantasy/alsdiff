@@ -85,9 +85,9 @@ let rec pp_item cfg fmt (elem : item) =
     (* Full mode: name + symbol + fields (multiline) *)
     Fmt.(vbox ~indent:cfg.indent_width (fun fmt () ->
         pf fmt "%a %s" (pp_change_type cfg) elem.change elem.name;
-        if should_show_fields cfg elem then (
+        let sub_views = renderable_sub_views cfg elem in
+        if sub_views <> [] then (
           Fmt.cut fmt ();
-          let sub_views = renderable_sub_views cfg elem in
           (* Render Field children *)
           let fields = List.filter_map (fun (v : view) ->
               match v with
