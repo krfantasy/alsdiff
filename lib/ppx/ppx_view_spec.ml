@@ -493,23 +493,71 @@ let generate_build_section_name ~loc (ni : naming_info) =
       ]
   in
 
-  (* `Modified p -> Printf.sprintf ... *)
+  (* `Modified p -> Printf.sprintf ...
+     The name field (atomic_update) carries {oldval; newval}. When renamed,
+     surface both as "old -> new" so the rename is visible; otherwise fall
+     back to the name_patch field (an identity in the patch, plain string). *)
   let modified_rhs =
-    let np_f = Option.get ni.name_patch_field in
-    match ni.id_field with
-    | Some id_f ->
-      sprintf_expr [
-        Nolabel, mk_str loc "%s (#%d): %s";
-        Nolabel, tl_var;
-        Nolabel, pexp_field ~loc p_var { loc; txt = Lident id_f };
-        Nolabel, pexp_field ~loc p_var { loc; txt = Lident np_f };
-      ]
-    | None ->
-      sprintf_expr [
-        Nolabel, mk_str loc "%s: %s";
-        Nolabel, tl_var;
-        Nolabel, pexp_field ~loc p_var { loc; txt = Lident np_f };
-      ]
+    let open Ast_builder.Default in
+    (* Prefer the atomic_update name field; fall back to name_patch field. *)
+    let atomic_f =
+      Option.value ~default:(Option.get ni.name_patch_field) ni.name_field
+    in
+    let atomic_access = pexp_field ~loc p_var { loc; txt = Lident atomic_f } in
+    let fallback_f = Option.get ni.name_patch_field in
+    let fallback_access = pexp_field ~loc p_var { loc; txt = Lident fallback_f } in
+    let old_var = pexp_ident ~loc { txt = Lident "oldval"; loc } in
+    let new_var = pexp_ident ~loc { txt = Lident "newval"; loc } in
+    let renamed_rhs =
+      (match ni.id_field with
+       | Some id_f ->
+         sprintf_expr [
+           Nolabel, mk_str loc "%s (#%d): %s -> %s";
+           Nolabel, tl_var;
+           Nolabel, pexp_field ~loc p_var { loc; txt = Lident id_f };
+           Nolabel, old_var;
+           Nolabel, new_var;
+         ]
+       | None ->
+         sprintf_expr [
+           Nolabel, mk_str loc "%s: %s -> %s";
+           Nolabel, tl_var;
+           Nolabel, old_var;
+           Nolabel, new_var;
+         ])
+    in
+    let unchanged_rhs =
+      (match ni.id_field with
+       | Some id_f ->
+         sprintf_expr [
+           Nolabel, mk_str loc "%s (#%d): %s";
+           Nolabel, tl_var;
+           Nolabel, pexp_field ~loc p_var { loc; txt = Lident id_f };
+           Nolabel, fallback_access;
+         ]
+       | None ->
+         sprintf_expr [
+           Nolabel, mk_str loc "%s: %s";
+           Nolabel, tl_var;
+           Nolabel, fallback_access;
+         ])
+    in
+    let renamed_case = {
+      Parsetree.pc_lhs =
+        ppat_variant ~loc "Modified"
+          (Some (ppat_record ~loc [
+            { txt = Lident "oldval"; loc }, ppat_var ~loc { txt = "oldval"; loc };
+            { txt = Lident "newval"; loc }, ppat_var ~loc { txt = "newval"; loc };
+          ] Closed));
+      pc_guard = None;
+      pc_rhs = renamed_rhs;
+    } in
+    let unchanged_case = {
+      Parsetree.pc_lhs = ppat_variant ~loc "Unchanged" None;
+      pc_guard = None;
+      pc_rhs = unchanged_rhs;
+    } in
+    pexp_match ~loc atomic_access [renamed_case; unchanged_case]
   in
 
   let cases = [

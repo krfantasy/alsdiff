@@ -1259,23 +1259,17 @@ let create_liveset_item
       ~domain_type:DTVersion
   in
 
-  (* Build Main Track section - special handling for singleton track *)
-  let main_track_item = ViewBuilder.build_item_from_children c
-      ~name:"Main Track"
-      ~of_value:(fun (ls : Liveset.t) ->
-          match ls.Liveset.main with
-          | Track.Main t -> t
-          | _ -> failwith "Liveset.main must always contain Track.Main")
-      ~of_patch:(fun (p : Liveset.Patch.t) -> p.main)
-      ~build_value_children:(fun ct (main_track : Track.MainTrack.t) ->
-          [Item (create_main_track_item ~get_pointee_name ~note_name_style ~format_time (match ct with
-               | Added -> `Added main_track
-               | Removed -> `Removed main_track
-               | Unchanged -> failwith "Invalid change type for value"
-               | Modified -> failwith "Invalid change type for value"))])
-      ~build_patch_children:(fun pt ->
-          [Item (create_main_track_item ~get_pointee_name ~note_name_style ~format_time (`Modified pt))])
-      ~domain_type:DTTrack
+  (* Build Main Track section - singleton, always present and Modified.
+     Emit the inner item directly so it appears flat under the LiveSet
+     instead of wrapped in a redundant "Main Track" envelope. *)
+  let main_track_item =
+    match c with
+    | `Modified p ->
+      (match p.Liveset.Patch.main with
+       | `Modified pt ->
+         Some (create_main_track_item ~get_pointee_name ~note_name_style ~format_time (`Modified pt))
+       | `Unchanged -> None)
+    | _ -> None
   in
 
   (* Build Locators collection *)

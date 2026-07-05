@@ -507,11 +507,12 @@ let test_create_liveset_item_with_main_only_change () =
   in
   let patch = Liveset.diff liveset1 { liveset2 with main = updated_main } in
   let item = create_liveset_item (`Modified patch) in
-  let main_track_section = get_item (find_view_by_name "Main Track" item.children) in
-  let main_track_item = get_item (List.hd main_track_section.children) in
+  (* After the Main Track outer wrapper was removed, the inner item appears
+     directly as a child — no need to descend a section. *)
+  let main_track_item = get_item (find_view_by_name "MainTrack: Main" item.children) in
 
-  check bool "main track section exists" true (main_track_section.name = "Main Track");
-  check bool "main track child rendered" true (String.starts_with ~prefix:"MainTrack" main_track_item.name)
+  check bool "main track rendered flat under liveset" true
+    (String.starts_with ~prefix:"MainTrack: Main" main_track_item.name)
 
 (* When only part of the liveset changes, an unchanged nested section (here
    Version) emits a placeholder {change=Unchanged} item from the projector so
