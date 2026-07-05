@@ -46,7 +46,15 @@ export function ViewNodeRow(props: { node: ViewNode; depth?: number }) {
       {props.node.type === "collection" && (
         <div>
           <div class="collection-header">{props.node.name}</div>
-          <For each={props.node.items}>
+          {/* TODO(future): under Summary/Compact detail levels the OCaml backend
+              omits `items` entirely and emits `counts` instead, so a counts-only
+              collection renders here as just a header. To show a "switch to
+              Verbose/Full" banner instead, lift CountsBanner out of
+              DetailView.tsx into a shared component and render it when
+              `props.node.counts && (!props.node.items || props.node.items.length === 0)`
+              (same pattern as DetailView.tsx's Devices/Automations tabs). Same
+              TODO applies to the `<For>` in the default CollectionList export. */}
+          <For each={props.node.items ?? []}>
             {(item) => <ViewNodeRow node={item} depth={depth() + 1} />}
           </For>
         </div>
@@ -67,7 +75,7 @@ export default function CollectionList(props: Props) {
           ({props.collection.displayed}/{props.collection.total})
         </Show>
       </div>
-      <For each={props.collection.items}>
+      <For each={props.collection.items ?? []}>
         {(item) => <ViewNodeRow node={item} />}
       </For>
     </div>

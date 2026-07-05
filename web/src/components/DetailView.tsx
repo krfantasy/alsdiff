@@ -11,6 +11,7 @@ import {
   extractDevices,
   extractClips,
   extractAutomations,
+  extractCollectionCounts,
 } from "../lib/diff-parser";
 import { extractMidiNotes } from "../lib/midi-notes";
 import DeviceChain from "./DeviceChain";
@@ -39,7 +40,15 @@ export default function DetailView() {
     return track ? extractDevices(track) : [];
   };
 
-  const hasDevices = () => devices().length > 0;
+  // A tab is shown when the collection has items OR is counts-only (Summary/
+  // Compact). In the counts-only case the body renders a "switch to
+  // Verbose/Full" banner instead of the list.
+  const deviceCounts = () => {
+    const track = selectedTrack();
+    return track ? extractCollectionCounts(track.children, "Devices") : null;
+  };
+  const hasDevices = () => devices().length > 0 || deviceCounts() !== null;
+
   const hasClip = () => selectedClip() !== null;
   const hasNotes = () => {
     const clip = selectedClip();
@@ -51,7 +60,11 @@ export default function DetailView() {
     const track = selectedTrack();
     return track ? extractAutomations(track) : [];
   };
-  const hasAutomations = () => automations().length > 0;
+  const automationCounts = () => {
+    const track = selectedTrack();
+    return track ? extractCollectionCounts(track.children, "Automations") : null;
+  };
+  const hasAutomations = () => automations().length > 0 || automationCounts() !== null;
 
   return (
     <div class="detail-pane" data-testid="detail-pane" style={{ height: `${detailHeight()}px` }}>
@@ -111,7 +124,9 @@ export default function DetailView() {
         </div>
         <div class="detail-content">
           <Show when={detailTab() === "devices" && hasDevices()}>
-            <DeviceChain devices={devices()} />
+            <Show when={devices().length > 0} fallback={<CountsBanner label="Devices" counts={deviceCounts()} />}>
+              <DeviceChain devices={devices()} />
+            </Show>
           </Show>
           <Show when={detailTab() === "clip" && hasClip()}>
             <ClipDetail clipChildren={selectedClip()?.children ?? []} />
@@ -120,10 +135,41 @@ export default function DetailView() {
             <PianoRollView clipChildren={selectedClip()?.children ?? []} />
           </Show>
           <Show when={detailTab() === "automation" && hasAutomations()}>
-            <AutomationView automationItems={automations()} />
+            <Show when={automations().length > 0} fallback={<CountsBanner label="Automations" counts={automationCounts()} />}>
+              <AutomationView automationItems={automations()} />
+            </Show>
           </Show>
         </div>
       </Show>
+    </div>
+  );
+}
+
+function CountsBanner(props: {
+  label: string;
+  counts: { added: number; removed: number; modified: number } | null;
+}) {
+  const parts: string[] = [];
+  if (props.counts) {
+    if (props.counts.added) parts.push(`${props.counts.added} added`);
+    if (props.counts.removed) parts.push(`${props.counts.removed} removed`);
+    if (props.counts.modified) parts.push(`${props.counts.modified} modified`);
+  }
+  const summary = parts.length > 0 ? parts.join(", ") : "no changes";
+  return (
+    <div
+      data-testid="counts-banner"
+      style={{
+        display: "flex",
+        "align-items": "center",
+        "justify-content": "center",
+        height: "100%",
+        color: "var(--text-dim)",
+        "font-size": "13px",
+        padding: "16px",
+      }}
+    >
+      {props.label}: {summary} — switch to Verbose/Full to view.
     </div>
   );
 }

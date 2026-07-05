@@ -62,7 +62,7 @@ export function extractMidiNotes(clipChildren: ViewNode[]): MidiNoteData[] {
 
   const notes: MidiNoteData[] = [];
 
-  for (const node of notesCollection.items) {
+  for (const node of notesCollection.items ?? []) {
     if (!isItem(node) || node.domain_type !== "Note") continue;
 
     const children = node.children ?? [];

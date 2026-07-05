@@ -2,6 +2,7 @@ import type {
   FieldView,
   ItemView,
   ViewNode,
+  CollectionView,
   AutomationEvent,
   AutomationRange,
   CurveControls,
@@ -155,9 +156,10 @@ function parseNewFormat(child: ItemView): AutomationEvent | undefined {
 function resolveEventNodes(automationItem: ItemView): ViewNode[] {
   const children = automationItem.children ?? [];
   const eventsCollection = children.find(
-    (c) => c.type === "collection" && c.name === "Events",
+    (c): c is CollectionView =>
+      c.type === "collection" && c.name === "Events",
   );
-  return eventsCollection ? eventsCollection.items : children;
+  return eventsCollection ? (eventsCollection.items ?? []) : children;
 }
 
 export function parseAutomationEvents(

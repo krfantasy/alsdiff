@@ -1287,31 +1287,20 @@ let create_liveset_item
       ~domain_type:DTLocator
   in
 
-  (* Tracks/Returns are wrapped as collections (like Locators) so they respect
-     [max_collection_items] truncation. A flat view list bypasses the cap, which
-     floods output for large livesets (see review_0614.org). *)
-  let mk_collection name items =
-    if items = [] then None
-    else Some ({ name; change = change_type; domain_type = DTTrack; items } : collection)
-  in
-  let tracks_collection =
-    mk_collection "Tracks"
-      (build_liveset_tracks_items ~get_pointee_name ~note_name_style ~format_time
-         ?reference_tracks:(Option.map (fun (ls : Liveset.t) -> ls.Liveset.tracks) reference_liveset) c)
-  in
-  let returns_collection =
-    mk_collection "Returns"
-      (build_liveset_returns_items ~get_pointee_name ~note_name_style ~format_time
-         ?reference_returns:(Option.map (fun (ls : Liveset.t) -> ls.Liveset.returns) reference_liveset) c)
-  in
-
-  (* Combine all children *)
+  (* Combine all children: tracks/returns are flat direct children (not wrapped
+     in collections) so they bypass [max_collection_items] — tracks are
+     structural and truncating them is meaningless for practical usage. The cap
+     still applies to Events/Notes/Clips/Devices/Locators via their Collection
+     wrappers. Order: atomic fields → Version → Main Track → regular tracks →
+     returns → locators. *)
   let children =
     atomic_children
     @ (version_item |> Option.map (fun i -> Item i) |> option_to_list)
     @ (main_track_item |> Option.map (fun i -> Item i) |> option_to_list)
-    @ (tracks_collection |> Option.map (fun c -> Collection c) |> option_to_list)
-    @ (returns_collection |> Option.map (fun c -> Collection c) |> option_to_list)
+    @ build_liveset_tracks_items ~get_pointee_name ~note_name_style ~format_time
+         ?reference_tracks:(Option.map (fun (ls : Liveset.t) -> ls.Liveset.tracks) reference_liveset) c
+    @ build_liveset_returns_items ~get_pointee_name ~note_name_style ~format_time
+         ?reference_returns:(Option.map (fun (ls : Liveset.t) -> ls.Liveset.returns) reference_liveset) c
     @ (locators_collection |> Option.map (fun c -> Collection c) |> option_to_list)
   in
 

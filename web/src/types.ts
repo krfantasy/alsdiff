@@ -46,7 +46,11 @@ export interface CollectionView {
   name: string;
   change: ChangeType;
   domain_type: DomainType;
-  items: ViewNode[];
+  // Optional: under Summary/Compact detail levels the OCaml renderer emits a
+  // counts-only collection (no `items`, just `counts`). Under Inline/Full the
+  // items list is present and may be truncated (total/displayed/truncated).
+  items?: ViewNode[];
+  counts?: { added: number; removed: number; modified: number };
   total?: number;
   displayed?: number;
   truncated?: { added: number; removed: number; modified: number };

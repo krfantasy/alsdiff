@@ -56,7 +56,19 @@ export function extractTracks(livesetChildren: ViewNode[]): TrackData[] {
 
   const collectFromItem = (child: ItemView) => {
     if (child.domain_type !== "Track") return;
-    const tc = child.children ?? [];
+    let tc = child.children ?? [];
+    // The Main Track is rendered as a section wrapper: its direct children is
+    // a single `MainTrack: <name>` item whose OWN children hold the real
+    // sections (Automations/Devices/Mixer/Routings). Unwrap it so the
+    // per-track extractors (extractDevices/extractMixer/...) find the real
+    // children instead of seeing only the wrapper.
+    if (
+      tc.length === 1 &&
+      tc[0].type === "item" &&
+      tc[0].name.startsWith("MainTrack:")
+    ) {
+      tc = tc[0].children ?? [];
+    }
     const fieldTrackId = getTrackIntField(tc, "TrackId", 0);
     tracks.push({
       name: child.name,
@@ -69,19 +81,11 @@ export function extractTracks(livesetChildren: ViewNode[]): TrackData[] {
   };
 
   for (const child of livesetChildren) {
+    // Tracks/Returns are flat direct children of the LiveSet (tracks are
+    // structural, never wrapped in a collection nor capped by
+    // max_collection_items — see change_projector.ml create_liveset_item).
     if (isItem(child)) {
-      // Flat layout (pre-ebccf1b) and the Main Track (always flat direct child).
       collectFromItem(child);
-    } else if (
-      isCollection(child) &&
-      (child.name === "Tracks" || child.name === "Returns")
-    ) {
-      // Nested layout (post-ebccf1b): regular tracks / returns wrapped in
-      // Tracks/Returns collections to respect max_collection_items. Descend so
-      // the web app still sees every track, not just the flat Main Track.
-      for (const item of child.items) {
-        if (isItem(item)) collectFromItem(item);
-      }
     }
   }
 
@@ -148,7 +152,7 @@ export function extractClips(track: TrackData): ClipData[] {
   const clipsCollection = findCollection(track.children, "Clips");
   if (!clipsCollection) return clips;
 
-  for (const node of clipsCollection.items) {
+  for (const node of clipsCollection.items ?? []) {
     if (!isItem(node) || node.domain_type !== "Clip") continue;
 
     const children = node.children ?? [];
@@ -173,7 +177,7 @@ export function extractClips(track: TrackData): ClipData[] {
 export function extractDevices(track: TrackData): ItemView[] {
   const devicesCollection = findCollection(track.children, "Devices");
   if (!devicesCollection) return [];
-  return devicesCollection.items.filter(isItem);
+  return (devicesCollection.items ?? []).filter(isItem);
 }
 
 export function extractMixer(track: TrackData): ItemView | undefined {
@@ -185,7 +189,24 @@ export function extractMixer(track: TrackData): ItemView | undefined {
 export function extractAutomations(track: TrackData): ItemView[] {
   const autoCollection = findCollection(track.children, "Automations");
   if (!autoCollection) return [];
-  return autoCollection.items.filter(isItem);
+  return (autoCollection.items ?? []).filter(isItem);
+}
+
+/**
+ * Return the `{added, removed, modified}` counts for a named counts-only
+ * collection, or `null` if the collection is absent or carries items (i.e. is
+ * not in the counts-only Summary/Compact shape). Used to surface a "switch to
+ * Verbose/Full to view" banner when extractors return empty due to detail level.
+ */
+export function extractCollectionCounts(
+  children: ViewNode[],
+  name: string,
+): { added: number; removed: number; modified: number } | null {
+  const col = findCollection(children, name);
+  if (!col) return null;
+  // If items are present, the collection is listable; no counts banner needed.
+  if (col.items && col.items.length > 0) return null;
+  return col.counts ?? null;
 }
 
 export function extractRoutings(track: TrackData): ItemView | undefined {

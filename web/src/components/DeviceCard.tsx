@@ -31,7 +31,7 @@ export default function DeviceCard(props: Props) {
       (c) => c.type === "collection" && c.name === "Branches"
     );
     if (!branches || branches.type !== "collection") return [];
-    return branches.items
+    return (branches.items ?? [])
       .filter(isItemView)
       .flatMap((branch) => (branch.children ?? []).filter(isItemView));
   };

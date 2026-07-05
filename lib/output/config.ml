@@ -1,5 +1,7 @@
 open Output_types
 open Presentation_model
+open Ppx_deriving_jsonschema_runtime.Primitives.Yojson
+
 
 (** How much detail to show for a particular diff item. *)
 type detail_level =
