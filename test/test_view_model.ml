@@ -615,6 +615,37 @@ let test_reference_populates_unchanged_mixer () =
    | _ -> check bool "with reference: mixer present" true false)
 
 
+let test_create_locator_item_added () =
+  let loc : Liveset.Locator.t = { id = 7; name = "Verse"; time = 4.0 } in
+  let item = create_locator_item (`Added loc) in
+  check string "Name includes id" "Locator (id=7)" item.name;
+  check bool "Item is Added" true (item.change = Added);
+  let id_field = get_field (find_view_by_name "Id" item.children) in
+  check bool "Id field is Added" true (id_field.change = Added)
+
+
+let test_create_locator_item_modified () =
+  let old_loc : Liveset.Locator.t = { id = 7; name = "Verse"; time = 4.0 } in
+  let new_loc : Liveset.Locator.t = { id = 7; name = "Chorus"; time = 8.0 } in
+  let patch = Liveset.Locator.diff old_loc new_loc in
+  let item = create_locator_item (`Modified patch) in
+  check string "Name includes id" "Locator (id=7)" item.name;
+  check bool "Item is Modified" true (item.change = Modified);
+  let name_field = get_field (find_view_by_name "Name" item.children) in
+  check bool "Name field is Modified" true (name_field.change = Modified)
+
+
+let test_build_liveset_track_sections_added () =
+  let path = Utils.resolve_test_data_path "t4.xml" in
+  let xml = read_file path in
+  let ls = Liveset.create xml path in
+  let tracks = build_liveset_tracks_items ~get_pointee_name:(fun _ -> "?") (`Added ls) in
+  let returns = build_liveset_returns_items ~get_pointee_name:(fun _ -> "?") (`Added ls) in
+  (* t4.xml has 1 MidiTrack + 1 AudioTrack; Main/Return excluded by the regular-track filter. *)
+  check int "renders 2 regular tracks (Midi+Audio)" 2 (List.length tracks);
+  check int "renders 0 returns" 0 (List.length returns)
+
+
 let () =
   run "ViewModel" [
     "ViewBuilder.change_type_of", [
@@ -645,6 +676,14 @@ let () =
       test_case "Combined summary includes modified curve details" `Quick test_create_automation_item_curve_modified_summary;
       test_case "Added automation renders its events" `Quick test_create_automation_item_added_event_summary;
       test_case "Removed automation renders its events" `Quick test_create_automation_item_removed_event_summary;
+    ];
+    "create_locator_item", [
+      test_case "Create locator item for Added" `Quick test_create_locator_item_added;
+      test_case "Create locator item for Modified" `Quick test_create_locator_item_modified;
+    ];
+    "build_liveset_sections", [
+      test_case "Added liveset renders regular tracks and returns" `Quick
+        test_build_liveset_track_sections_added;
     ];
     "create_liveset_item", [
       test_case "Renders main track when it is the only change" `Quick test_create_liveset_item_with_main_only_change;

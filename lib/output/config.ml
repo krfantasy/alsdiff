@@ -144,22 +144,10 @@ let get_effective_detail (cfg : detail_config) (ct : change_type) (dt : domain_t
   | Some overrides ->
     (* Step 2: Check for change-specific override within this type *)
     (match ct with
-     | Added -> begin match overrides.added with
-         | Some level -> level
-         | None -> cfg.added
-       end
-     | Removed -> begin match overrides.removed with
-         | Some level -> level
-         | None -> cfg.removed
-       end
-     | Modified -> begin match overrides.modified with
-         | Some level -> level
-         | None -> cfg.modified
-       end
-     | Unchanged -> begin match overrides.unchanged with
-         | Some level -> level
-         | None -> cfg.unchanged
-       end
+     | Added -> Option.value overrides.added ~default:cfg.added
+     | Removed -> Option.value overrides.removed ~default:cfg.removed
+     | Modified -> Option.value overrides.modified ~default:cfg.modified
+     | Unchanged -> Option.value overrides.unchanged ~default:cfg.unchanged
     )
   | None ->
     (* Step 3: Fall back to change-type base default *)
