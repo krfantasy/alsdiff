@@ -1,0 +1,25 @@
+{
+  "name": "alsdiff-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:full": "../scripts/sync_browser_dist.sh && vite build",
+    "build:full:release": "DUNE_BUILD_DIR=_build-pages-release dune build --profile release lib/browser/alsdiff.js && mkdir -p web/public && cp _build-pages-release/default/lib/browser/alsdiff.js web/public/alsdiff.js && vite build",
+    "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "test:update-snapshots": "playwright test --update-snapshots"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.59.1",
+    "solid-js": "^1.9.5"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.3.0",
+    "vite-plugin-solid": "^2.11.0"
+  }
+}

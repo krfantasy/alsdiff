@@ -14,14 +14,11 @@ depends: [
   "dune" {>= "3.19"}
   "ocaml" {>= "5.5.0"}
   "re"
-  "camlzip"
   "xmlm"
   "angstrom"
   "cmdliner" {>= "2.0.0"}
   "dune-build-info"
   "ocp-indent" {build}
-  "eio"
-  "eio_main"
   "alcotest"
   "ppxlib"
   "ppx_deriving"
@@ -30,6 +27,13 @@ depends: [
   "jsonschema"
   "fmt"
   "ptime"
+  "camlzip"
+  "eio"
+  "eio_main"
+  "lwt" {with_js}
+  "lwt_ppx" {with_js}
+  "js_of_ocaml" {with_js}
+  "js_of_ocaml-ppx" {with_js}
   "mosaic"
   "odoc" {with-doc}
 ]

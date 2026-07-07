@@ -507,11 +507,12 @@ let test_create_liveset_item_with_main_only_change () =
   in
   let patch = Liveset.diff liveset1 { liveset2 with main = updated_main } in
   let item = create_liveset_item (`Modified patch) in
-  let main_track_section = get_item (find_view_by_name "Main Track" item.children) in
-  let main_track_item = get_item (List.hd main_track_section.children) in
+  (* After the Main Track outer wrapper was removed, the inner item appears
+     directly as a child — no need to descend a section. *)
+  let main_track_item = get_item (find_view_by_name "MainTrack: Main" item.children) in
 
-  check bool "main track section exists" true (main_track_section.name = "Main Track");
-  check bool "main track child rendered" true (String.starts_with ~prefix:"MainTrack" main_track_item.name)
+  check bool "main track rendered flat under liveset" true
+    (String.starts_with ~prefix:"MainTrack: Main" main_track_item.name)
 
 (* When only part of the liveset changes, an unchanged nested section (here
    Version) emits a placeholder {change=Unchanged} item from the projector so
@@ -570,6 +571,81 @@ let test_unchanged_section_placeholder_handling () =
   in
   check bool "json renderer includes unchanged Version node" true has_version_node
 
+(* When a track is Modified but its mixer is Unchanged, the projector emits an
+   empty {change=Unchanged; children=[]} Mixer placeholder. With a reference
+   track threaded in (the old value), the placeholder is populated from the
+   reference track's mixer value (restamped Unchanged) so the web app can
+   render a full mixer strip. Restores the lost 044a9a7 feature. *)
+let test_reference_populates_unchanged_mixer () =
+  let mixer = Track_helpers.make_mixer 0.70 (-0.30) in
+  let mk_track name =
+    {
+      Track.MidiTrack.id = 1; name; current_name = name; group_id = -1;
+      clips = []; automations = []; devices = [];
+      mixer; routings = Track_helpers.make_empty_routing_set ();
+    }
+  in
+  (* Two tracks, same id, different name -> Modified track, Unchanged mixer. *)
+  let t1 = mk_track "Old" in
+  let t2 = mk_track "New" in
+  let patch = Track.MidiTrack.diff t1 t2 in
+  let find_mixer it =
+    List.find_opt (fun ch -> match ch with Item mi when mi.name = "Mixer" -> true | _ -> false) it.children
+  in
+  let get_pointee_name _ = "?" in
+  (* WITHOUT reference: Mixer is an empty placeholder. *)
+  let item_no_ref = create_midi_track_item ~get_pointee_name (`Modified patch) in
+  (match find_mixer item_no_ref with
+   | Some (Item mi) ->
+     check bool "without reference: mixer is empty placeholder" true (mi.children = [])
+   | _ -> check bool "without reference: mixer placeholder present" true false);
+  (* WITH reference: Mixer is populated with Volume/Pan/Mute/Solo. *)
+  let item_with_ref = create_midi_track_item ~get_pointee_name ~reference_track:t1 (`Modified patch) in
+  (match find_mixer item_with_ref with
+   | Some (Item mi) ->
+     let names = List.filter_map (fun v ->
+         match v with Item ci -> Some ci.name | _ -> None) mi.children in
+     check bool "with reference: mixer has 4 children" true (List.length mi.children = 4);
+     check bool "with reference: mixer has Volume child" true (List.mem "Volume" names);
+     let vol = List.find_opt (fun v -> match v with Item ci when ci.name = "Volume" -> true | _ -> false) mi.children in
+     (match vol with
+      | Some (Item vi) ->
+        check bool "with reference: Volume is Unchanged" true (vi.change = Unchanged)
+      | _ -> check bool "with reference: Volume child present" true false)
+   | _ -> check bool "with reference: mixer present" true false)
+
+
+let test_create_locator_item_added () =
+  let loc : Liveset.Locator.t = { id = 7; name = "Verse"; time = 4.0 } in
+  let item = create_locator_item (`Added loc) in
+  check string "Name includes id" "Locator (id=7)" item.name;
+  check bool "Item is Added" true (item.change = Added);
+  let id_field = get_field (find_view_by_name "Id" item.children) in
+  check bool "Id field is Added" true (id_field.change = Added)
+
+
+let test_create_locator_item_modified () =
+  let old_loc : Liveset.Locator.t = { id = 7; name = "Verse"; time = 4.0 } in
+  let new_loc : Liveset.Locator.t = { id = 7; name = "Chorus"; time = 8.0 } in
+  let patch = Liveset.Locator.diff old_loc new_loc in
+  let item = create_locator_item (`Modified patch) in
+  check string "Name includes id" "Locator (id=7)" item.name;
+  check bool "Item is Modified" true (item.change = Modified);
+  let name_field = get_field (find_view_by_name "Name" item.children) in
+  check bool "Name field is Modified" true (name_field.change = Modified)
+
+
+let test_build_liveset_track_sections_added () =
+  let path = Utils.resolve_test_data_path "t4.xml" in
+  let xml = read_file path in
+  let ls = Liveset.create xml path in
+  let tracks = build_liveset_tracks_items ~get_pointee_name:(fun _ -> "?") (`Added ls) in
+  let returns = build_liveset_returns_items ~get_pointee_name:(fun _ -> "?") (`Added ls) in
+  (* t4.xml has 1 MidiTrack + 1 AudioTrack; Main/Return excluded by the regular-track filter. *)
+  check int "renders 2 regular tracks (Midi+Audio)" 2 (List.length tracks);
+  check int "renders 0 returns" 0 (List.length returns)
+
+
 let () =
   run "ViewModel" [
     "ViewBuilder.change_type_of", [
@@ -601,8 +677,17 @@ let () =
       test_case "Added automation renders its events" `Quick test_create_automation_item_added_event_summary;
       test_case "Removed automation renders its events" `Quick test_create_automation_item_removed_event_summary;
     ];
+    "create_locator_item", [
+      test_case "Create locator item for Added" `Quick test_create_locator_item_added;
+      test_case "Create locator item for Modified" `Quick test_create_locator_item_modified;
+    ];
+    "build_liveset_sections", [
+      test_case "Added liveset renders regular tracks and returns" `Quick
+        test_build_liveset_track_sections_added;
+    ];
     "create_liveset_item", [
       test_case "Renders main track when it is the only change" `Quick test_create_liveset_item_with_main_only_change;
       test_case "Unchanged section placeholder handling" `Quick test_unchanged_section_placeholder_handling;
+      test_case "Reference liveset populates unchanged mixer" `Quick test_reference_populates_unchanged_mixer;
     ];
   ]

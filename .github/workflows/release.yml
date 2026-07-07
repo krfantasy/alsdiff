@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  test:
+  native-test:
     strategy:
       fail-fast: false
       matrix:
@@ -33,6 +33,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Guard opam dependency filters
+        shell: bash
+        run: |
+          if grep -n "with-native" dune-project alsdiff.opam; then
+            echo "::error::Found deprecated with-native filter in package metadata."
+            exit 1
+          fi
+
       - name: Set-up OCaml
         uses: ocaml/setup-ocaml@v3
         with:
@@ -50,8 +58,56 @@ jobs:
         shell: bash
         run: opam exec -- dune runtest
 
+  js-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            os_name: ubuntu
+            arch: x86_64
+          - os: macos-latest
+            os_name: macos
+            arch: arm64
+          - os: macos-15-intel
+            os_name: macos
+            arch: x86_64
+          - os: windows-latest
+            os_name: windows
+            arch: x86_64
+
+    runs-on: ${{ matrix.os }}
+    env:
+      # Enable JS-only dependencies filtered by {with_js} in opam metadata.
+      OPAMVAR_with_js: "true"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Guard opam dependency filters
+        shell: bash
+        run: |
+          if grep -n "with-native" dune-project alsdiff.opam; then
+            echo "::error::Found deprecated with-native filter in package metadata."
+            exit 1
+          fi
+
+      - name: Set-up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5
+
+      - name: Install dependencies
+        shell: bash
+        run: source .github/scripts/ci-utils.sh && retry 10 opam install . --deps-only --with-test
+
+      - name: Run JS regression tests
+        shell: bash
+        run: opam exec -- dune build @runtest-js
+
   build-and-release:
-    needs: test
+    needs: [native-test, js-test]
     strategy:
       fail-fast: false
       matrix:
@@ -98,12 +154,19 @@ jobs:
         shell: bash
         run: source .github/scripts/ci-utils.sh && retry 10 opam install . --deps-only
 
-      - name: Build
+      - name: Build native CLI target
         shell: bash
-        run: opam exec -- dune build
+        run: opam exec -- dune build bin/alsdiff.exe
 
-      - name: Install
-        run: opam exec -- dune install alsdiff --prefix install
+      - name: Prepare install tree
+        shell: bash
+        run: |
+          mkdir -p install/bin
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp _build/default/bin/alsdiff.exe install/bin/alsdiff.exe
+          else
+            cp _build/default/bin/alsdiff.exe install/bin/alsdiff
+          fi
 
       - name: Create zip (Linux/macOS)
         if: runner.os != 'Windows'

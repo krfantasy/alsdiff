@@ -272,11 +272,11 @@ module PresetRef = struct
     name : string;              [@patch.skip] [@view.const]
     preset_type : preset_type;  [@patch.skip]
     relative_path : string;
-    path : string;              [@view.skip]
+    path : string;              [@view.skip] [@patch.skip]  (* absolute Ableton app path — install-specific, not a meaningful diff *)
     pack_name : string;
-    pack_id : int;              [@view.skip]
-    file_size : int;            [@view.skip]
-    crc : int;                  [@view.skip]
+    pack_id : int;              [@view.skip] [@patch.skip]  (* install-specific metadata *)
+    file_size : int;            [@view.skip] [@patch.skip]
+    crc : int;                  [@view.skip] [@patch.skip]
   } [@@deriving eq, id, patch, view_spec] [@@patch.generate_diff]
 
   let create (xml : Xml.t) : t =
@@ -327,11 +327,11 @@ module PatchRef = struct
     name : string;                         [@patch.skip] [@view.const]
     preset_type : PresetRef.preset_type;   [@patch.skip]
     relative_path : string;
-    path : string;                         [@view.skip]
+    path : string;                         [@view.skip] [@patch.skip]  (* absolute Ableton app path — install-specific *)
     pack_name : string;
-    pack_id : int;                         [@view.skip]
-    file_size : int;                       [@view.skip]
-    crc : int;                             [@view.skip]
+    pack_id : int;                         [@view.skip] [@patch.skip]
+    file_size : int;                       [@view.skip] [@patch.skip]
+    crc : int;                             [@view.skip] [@patch.skip]
     last_mod_date : int;  (* LastModDate Value attribute - UNIX timestamp *) [@view.scalar unix_timestamp] [@view.label "Last Modified"]
   } [@@deriving eq, id, patch, view_spec] [@@patch.generate_diff]
 
@@ -1215,6 +1215,7 @@ module RegularDevice = struct
   module ViewSpec(B : Alsdiff_view_spec_types.View_spec_types.S) = struct
     [@@@warning "-27"]
     module DP = DeviceParam.ViewSpec(B)
+    module PR = PresetRef.ViewSpec(B)
 
     let build_section_name (c : (t, Patch.t) structured_change) : string =
       match c with
@@ -1241,6 +1242,16 @@ module RegularDevice = struct
     ]
     let section_specs ~(format_time : B.dual_time_formatter) = [
       B.Spec.inline_fields ~specs:field_specs ~domain_type:(B.domain_type_of_name "DTDevice");
+      (* Mirrors Plugin/Max4Live/Group devices: a preset-only change (no parameter
+         diffs) must still surface the Preset change so the device does not render
+         as an empty "Modified" card. (Enabled is not a separate patch field for
+         Regular devices — it is one of the Parameters.) *)
+      B.Spec.child_optional ~name:"Preset"
+        ~of_value:(fun (d : t) -> d.preset)
+        ~of_patch:(fun (p : Patch.t) -> p.preset)
+        ~build_value_children:(fun ct pr -> PR.build_value_fields ~format_time ct pr)
+        ~build_patch_children:(fun p -> PR.build_patch_fields ~format_time p)
+        ~domain_type:(B.domain_type_of_name "DTPreset");
       B.Spec.collection ~name:"Parameters"
         ~of_value:(fun (d : t) -> d.params)
         ~of_patch:(fun (p : Patch.t) -> p.params)

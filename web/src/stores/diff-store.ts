@@ -1,0 +1,57 @@
+import { createSignal } from "solid-js";
+import type { DiffResult, TrackData } from "../types";
+import { computeTimelineRange } from "../lib/diff-parser";
+import type { TimeSignature } from "../lib/time-format";
+
+export const [diffResult, setDiffResult] = createSignal<DiffResult | null>(
+  null,
+);
+export const [rawJson, setRawJson] = createSignal<string>("");
+export const [tracks, setTracks] = createSignal<TrackData[]>([]);
+export const [tempo, setTempo] = createSignal(120);
+export const [timeSignature, setTimeSignature] = createSignal<TimeSignature>({
+  numer: 4,
+  denom: 4,
+});
+export const [isLoading, setIsLoading] = createSignal(false);
+export const [loadFileNameA, setLoadFileNameA] = createSignal("");
+export const [loadFileNameB, setLoadFileNameB] = createSignal("");
+export const [error, setError] = createSignal<string | null>(null);
+export const [selectedTrackIdx, setSelectedTrackIdx] = createSignal<
+  number | null
+>(null);
+export const [selectedClipName, setSelectedClipName] = createSignal<
+  string | null
+>(null);
+
+export const [zoomFactor, setZoomFactor] = createSignal(1.0);
+export const [timelineWidth, setTimelineWidth] = createSignal(800);
+
+export const pixelsPerBeat = (): number => {
+  const range = computeTimelineRange(tracks());
+  if (range.totalBeats <= 0) return 1;
+  return (timelineWidth() / range.totalBeats) * zoomFactor();
+};
+
+export const [detailHeight, setDetailHeight] = createSignal(300);
+export const [detailCollapsed, setDetailCollapsed] = createSignal(false);
+export const [detailTab, setDetailTab] = createSignal<
+  "devices" | "clip" | "pianoRoll" | "automation"
+>("devices");
+
+export const [pianoRollZoomFactor, setPianoRollZoomFactor] = createSignal(1.0);
+
+export const [selectedAutomationIdx, setSelectedAutomationIdx] = createSignal(0);
+export const [automationZoomFactor, setAutomationZoomFactor] = createSignal(1.0);
+
+export const [collapsedGroups, setCollapsedGroups] = createSignal<Set<number>>(new Set());
+
+export function resetSelection(): void {
+  setSelectedTrackIdx(null);
+  setSelectedClipName(null);
+  setDetailTab("devices");
+  setDetailHeight(300);
+  setDetailCollapsed(false);
+  setSelectedAutomationIdx(0);
+  setCollapsedGroups(new Set<number>());
+}

@@ -235,13 +235,25 @@
 ;; Test needing all three libraries
 (test
  (name test_view_model)
- (modules test_view_model utils)
+ (modules test_view_model utils track_helpers)
  (libraries alsdiff_base alsdiff_live alsdiff_output alcotest))
 
 (test
  (name test_stats_renderer)
  (modules test_stats_renderer)
  (libraries alsdiff_output alcotest))
+
+(rule
+ (alias runtest-js)
+ (deps
+  browser/js_regression_runner.js
+  data/t4.xml
+  ../lib/browser/alsdiff.js)
+ (action
+  (run node
+   %{dep:browser/js_regression_runner.js}
+   %{dep:../lib/browser/alsdiff.js}
+   %{dep:data/t4.xml})))
 
 (test
  (name test_config_text_renderer)

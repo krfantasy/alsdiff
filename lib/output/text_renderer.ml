@@ -56,12 +56,13 @@ let rec pp_item cfg fmt (elem : item) =
     Fmt.(box (fun fmt () -> pf fmt "%a %s" (pp_change_type cfg) elem.change elem.name)) fmt ()
   else if level = Inline then begin
     (* Inline mode: name + fields in brackets, nested items on new lines *)
+    let sub_views = renderable_sub_views cfg elem in
     let fields = List.filter_map (fun (v : view) ->
         match v with Field f -> Some f | _ -> None
-      ) elem.children in
+      ) sub_views in
     let nested = List.filter (fun (v : view) ->
         match v with Item _ | Collection _ -> true | _ -> false
-      ) elem.children in
+      ) sub_views in
     Fmt.(vbox ~indent:cfg.indent_width (fun fmt () ->
         pf fmt "%a %s" (pp_change_type cfg) elem.change elem.name;
         (* Only show brackets if there are fields *)
@@ -84,21 +85,22 @@ let rec pp_item cfg fmt (elem : item) =
     (* Full mode: name + symbol + fields (multiline) *)
     Fmt.(vbox ~indent:cfg.indent_width (fun fmt () ->
         pf fmt "%a %s" (pp_change_type cfg) elem.change elem.name;
-        if should_show_fields cfg elem then (
+        let sub_views = renderable_sub_views cfg elem in
+        if sub_views <> [] then (
           Fmt.cut fmt ();
           (* Render Field children *)
           let fields = List.filter_map (fun (v : view) ->
               match v with
               | Field f -> Some f
               | _ -> None
-            ) elem.children in
+            ) sub_views in
           list ~sep:(fun fmt () -> Fmt.cut fmt ()) (pp_field cfg) fmt fields;
           (* Render Item and Collection children *)
           let nested = List.filter (fun (v : view) ->
               match v with
               | Item _ | Collection _ -> true
               | _ -> false
-            ) elem.children in
+            ) sub_views in
           List.iter (fun v ->
               Fmt.cut fmt ();
               match v with

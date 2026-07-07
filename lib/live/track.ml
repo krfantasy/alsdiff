@@ -120,9 +120,10 @@ end
 
 module MidiTrack = struct
   type t = {
-    id : int;                     [@id.id] [@patch.identity] [@view.skip]
+    id : int;                     [@id.id] [@patch.identity] [@view.const] [@view.label "TrackId"]
     name : string;                [@view.name] [@view.skip]
     current_name : string;        [@patch.identity] [@view.name_patch]
+    group_id : int;               [@view.label "GroupId"]
     clips : Clip.MidiClip.t list; [@view.collection "DTClip"] [@view.builder "build_clips"]
     automations : Automation.t list; [@view.collection "DTAutomation"] [@view.builder "build_automations"]
     devices : Device.t list;      [@view.collection "DTDevice"] [@view.builder "build_devices"]
@@ -133,6 +134,7 @@ module MidiTrack = struct
   let create (xml : Xml.t) : t =
     let id = Xml.get_int_attr "Id" xml in
     let name = Upath.get_attr "/Name/EffectiveName" "Value" xml in
+    let group_id = Option.value (Upath.get_int_attr_opt "/TrackGroupId" "Value" xml) ~default:(-1) in
     let automations =
       Upath.find_all_seq "/AutomationEnvelopes/*/AutomationEnvelope" xml
       |> Seq.map (fun x -> x |> snd |> Automation.create)
@@ -148,16 +150,17 @@ module MidiTrack = struct
     let mixer = Upath.find "/DeviceChain/Mixer" xml |> snd |> Mixer.create in
     let routings = Upath.find "/DeviceChain" xml |> snd |> RoutingSet.create in
 
-    { id; name; current_name = name; clips; automations; devices; mixer; routings }
+    { id; name; current_name = name; group_id; clips; automations; devices; mixer; routings }
 
 end
 
 
 module AudioTrack = struct
   type t = {
-    id : int;                     [@id.id] [@patch.identity] [@view.skip]
+    id : int;                     [@id.id] [@patch.identity] [@view.const] [@view.label "TrackId"]
     name : string;                [@view.name] [@view.skip]
     current_name : string;        [@patch.identity] [@view.name_patch]
+    group_id : int;               [@view.label "GroupId"]
     clips : Clip.AudioClip.t list; [@view.collection "DTClip"] [@view.builder "build_clips"]
     automations : Automation.t list; [@view.collection "DTAutomation"] [@view.builder "build_automations"]
     devices : Device.t list;      [@view.collection "DTDevice"] [@view.builder "build_devices"]
@@ -168,6 +171,7 @@ module AudioTrack = struct
   let create (xml : Xml.t) : t =
     let id = Xml.get_int_attr "Id" xml in
     let name = Upath.get_attr "/Name/EffectiveName" "Value" xml in
+    let group_id = Option.value (Upath.get_int_attr_opt "/TrackGroupId" "Value" xml) ~default:(-1) in
     let automations =
       Upath.find_all_seq "/AutomationEnvelopes/*/AutomationEnvelope" xml
       |> Seq.map (fun x -> x |> snd |> Automation.create)
@@ -182,7 +186,7 @@ module AudioTrack = struct
       |> List.of_seq in
     let mixer = Upath.find "/DeviceChain/Mixer" xml |> snd |> Mixer.create in
     let routings = Upath.find "/DeviceChain" xml |> snd |> RoutingSet.create in
-    { id; name; current_name = name; clips; automations; devices; mixer; routings }
+    { id; name; current_name = name; group_id; clips; automations; devices; mixer; routings }
 
 end
 

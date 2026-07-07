@@ -22,14 +22,11 @@
  (depends
    (ocaml (>= 5.5.0))
     re
-    camlzip
     xmlm
     angstrom
    (cmdliner (>= 2.0.0))
     dune-build-info
    (ocp-indent :build)
-    eio
-    eio_main
     alcotest
     ppxlib
     ppx_deriving
@@ -38,7 +35,20 @@
     jsonschema
     fmt
     ptime
-    mosaic)
+
+   ; Native-specific dependencies
+   camlzip
+   eio
+   eio_main
+
+   ; JS-specific dependencies (opt-in via OPAMVAR_with_js=true)
+   (lwt :with_js)
+   (lwt_ppx :with_js)
+   (js_of_ocaml :with_js)
+   (js_of_ocaml-ppx :with_js)
+
+   ; TUI dependency
+   mosaic)
  (tags
   ("ableton live" "diff" "git" "version control")))
 

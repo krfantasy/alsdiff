@@ -19,9 +19,7 @@ let test_empty_no_changes () =
 let test_single_added_track () =
   let views =
     [ mk_item "LiveSet" Modified DTLiveset
-        [ mk_collection "Tracks" Modified DTTrack
-            [ mk_item "Track 1" Added DTTrack [mk_field "Name" Added] ]
-        ]
+        [ mk_item "Track 1" Added DTTrack [mk_field "Name" Added] ]
     ]
   in
   let output = render stats_default views in
@@ -30,30 +28,26 @@ let test_single_added_track () =
 let test_mixed_changes () =
   let views =
     [ mk_item "LiveSet" Modified DTLiveset
-        [ mk_collection "Tracks" Modified DTTrack
-            [ mk_item "Track 1" Added DTTrack
-                [ mk_collection "Devices" Modified DTDevice
-                    [ mk_item "Compressor" Added DTDevice [];
-                      mk_item "EQ8" Removed DTDevice [];
-                      mk_item "Reverb" Modified DTDevice [] ]
-                ;
-                  mk_collection "Clips" Modified DTClip
-                    [ mk_item "Clip A" Modified DTClip
-                        [ mk_collection "Notes" Modified DTNote
-                            [ mk_item "C4" Added DTNote [];
-                              mk_item "E4" Modified DTNote [];
-                              mk_item "G4" Modified DTNote [] ]
-                        ]
+        [ mk_item "Track 1" Added DTTrack
+            [ mk_collection "Devices" Modified DTDevice
+                [ mk_item "Compressor" Added DTDevice [];
+                  mk_item "EQ8" Removed DTDevice [];
+                  mk_item "Reverb" Modified DTDevice [] ]
+            ;
+              mk_collection "Clips" Modified DTClip
+                [ mk_item "Clip A" Modified DTClip
+                    [ mk_collection "Notes" Modified DTNote
+                        [ mk_item "C4" Added DTNote [];
+                          mk_item "E4" Modified DTNote [];
+                          mk_item "G4" Modified DTNote [] ]
                     ]
                 ]
-            ;
-              mk_item "Track 2" Modified DTTrack
-                [ mk_collection "Clips" Modified DTClip
-                    [ mk_item "Clip 1" Removed DTClip [] ]
-                ]
-            ;
-              mk_item "Track 3" Removed DTTrack []
-            ]
+            ];
+          mk_item "Track 2" Modified DTTrack
+            [ mk_collection "Clips" Modified DTClip
+                [ mk_item "Clip 1" Removed DTClip [] ]
+            ];
+          mk_item "Track 3" Removed DTTrack []
         ]
     ]
   in
@@ -85,10 +79,8 @@ let test_non_reportable_types_excluded () =
 let test_unchanged_items_omitted () =
   let views =
     [ mk_item "LiveSet" Modified DTLiveset
-        [ mk_collection "Tracks" Modified DTTrack
-            [ mk_item "Track 1" Unchanged DTTrack [];
-              mk_item "Track 2" Added DTTrack []
-            ]
+        [ mk_item "Track 1" Unchanged DTTrack [];
+          mk_item "Track 2" Added DTTrack []
         ]
     ]
   in
@@ -99,11 +91,9 @@ let test_ordering () =
   let views =
     [ mk_item "LiveSet" Modified DTLiveset
         [ mk_item "Locator 1" Added DTLocator [];
-          mk_collection "Tracks" Modified DTTrack
-            [ mk_item "Track 1" Modified DTTrack
-                [ mk_collection "Notes" Modified DTNote
-                    [ mk_item "C4" Added DTNote [] ]
-                ]
+          mk_item "Track 1" Modified DTTrack
+            [ mk_collection "Notes" Modified DTNote
+                [ mk_item "C4" Added DTNote [] ]
             ]
         ]
     ]
@@ -118,13 +108,11 @@ let test_ordering () =
 let test_deeply_nested () =
   let views =
     [ mk_item "LiveSet" Modified DTLiveset
-        [ mk_collection "Tracks" Modified DTTrack
-            [ mk_item "Track 1" Modified DTTrack
-                [ mk_collection "Devices" Modified DTDevice
-                    [ mk_item "Group" Modified DTDevice
-                        [ mk_collection "Devices" Modified DTDevice
-                            [ mk_item "Inner" Added DTDevice [] ]
-                        ]
+        [ mk_item "Track 1" Modified DTTrack
+            [ mk_collection "Devices" Modified DTDevice
+                [ mk_item "Group" Modified DTDevice
+                    [ mk_collection "Devices" Modified DTDevice
+                        [ mk_item "Inner" Added DTDevice [] ]
                     ]
                 ]
             ]
@@ -140,10 +128,8 @@ let test_deeply_nested () =
 let test_zero_count_change_types_omitted () =
   let views =
     [ mk_item "LiveSet" Modified DTLiveset
-        [ mk_collection "Tracks" Modified DTTrack
-            [ mk_item "Track 1" Added DTTrack [];
-              mk_item "Track 2" Added DTTrack []
-            ]
+        [ mk_item "Track 1" Added DTTrack [];
+          mk_item "Track 2" Added DTTrack []
         ]
     ]
   in

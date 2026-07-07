@@ -7,7 +7,7 @@ on:
 permissions: read-all
 
 jobs:
-  build:
+  native:
     strategy:
       fail-fast: false
       matrix:
@@ -26,10 +26,17 @@ jobs:
             arch: x86_64
 
     runs-on: ${{ matrix.os }}
-
     steps:
       - name: Checkout tree
         uses: actions/checkout@v6
+
+      - name: Guard opam dependency filters
+        shell: bash
+        run: |
+          if grep -n "with-native" dune-project alsdiff.opam; then
+            echo "::error::Found deprecated with-native filter in package metadata."
+            exit 1
+          fi
 
       - name: Set-up OCaml
         uses: ocaml/setup-ocaml@v3
@@ -40,10 +47,80 @@ jobs:
         shell: bash
         run: source .github/scripts/ci-utils.sh && retry 10 opam install . --deps-only --with-test
 
-      - name: Build
+      # Build only the native CLI target; full `dune build` would pull JS targets.
+      - name: Build native CLI
         shell: bash
-        run: opam exec -- dune build
+        run: opam exec -- dune build bin/alsdiff.exe
 
       - name: Run tests
         shell: bash
         run: opam exec -- dune runtest
+
+  js:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            os_name: ubuntu
+            arch: x86_64
+          - os: macos-latest
+            os_name: macos
+            arch: arm64
+          - os: macos-15-intel
+            os_name: macos
+            arch: x86_64
+          - os: windows-latest
+            os_name: windows
+            arch: x86_64
+
+    runs-on: ${{ matrix.os }}
+    env:
+      # Enable JS-only dependencies filtered by {with_js} in opam metadata.
+      OPAMVAR_with_js: "true"
+
+    steps:
+      - name: Checkout tree
+        uses: actions/checkout@v6
+
+      - name: Guard opam dependency filters
+        shell: bash
+        run: |
+          if grep -n "with-native" dune-project alsdiff.opam; then
+            echo "::error::Found deprecated with-native filter in package metadata."
+            exit 1
+          fi
+
+      - name: Set-up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5
+
+      - name: Install dependencies
+        shell: bash
+        run: source .github/scripts/ci-utils.sh && retry 10 opam install . --deps-only --with-test
+
+      - name: Run JS tests
+        shell: bash
+        run: opam exec -- dune build @runtest-js
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - name: Checkout tree
+        uses: actions/checkout@v6
+
+      - name: Set-up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: latest
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run build

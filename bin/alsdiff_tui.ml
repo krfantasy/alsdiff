@@ -11,9 +11,9 @@ let load_liveset ~domain_mgr file =
   let xml = File.open_als file in
   Liveset.create xml file
 
-let create_views ~note_name_style ~(format_time : View_model.dual_time_formatter) (change : (Liveset.t, Liveset.Patch.t) Diff.structured_change)
+let create_views ~note_name_style ~(format_time : View_model.dual_time_formatter) ?(reference_liveset : Liveset.t option) (change : (Liveset.t, Liveset.Patch.t) Diff.structured_change)
   : View_model.view list =
-  let item = View_model.create_liveset_item ~note_name_style ~format_time change in
+  let item = View_model.create_liveset_item ~note_name_style ~format_time ?reference_liveset change in
   [View_model.Item item]
 
 type config = {
@@ -60,7 +60,7 @@ let tui_cmd ~config ~domain_mgr : int =
           ~ts_events_new:(Track.MainTrack.get_time_signature_events main_new)
           ()
     in
-    let views = create_views ~note_name_style:config.note_name_style ~format_time liveset_change in
+    let views = create_views ~note_name_style:config.note_name_style ~format_time ~reference_liveset:liveset1 liveset_change in
 
     (* Run the TUI *)
     Alsdiff_tui_lib.App.run ~views ~detail_config:Config.full

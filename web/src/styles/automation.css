@@ -1,0 +1,55 @@
+.automation-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.automation-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.automation-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.automation-y-axis {
+  flex-shrink: 0;
+  width: 40px;
+  overflow-y: hidden;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+}
+
+.automation-y-tick {
+  position: absolute;
+  right: 4px;
+  font-size: 9px;
+  color: var(--text-dim);
+  transform: translateY(-50%);
+  user-select: none;
+}
+
+.automation-scroll-area {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.automation-selector {
+  font-size: 11px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 4px;
+  max-width: 200px;
+}

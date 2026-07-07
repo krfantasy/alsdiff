@@ -1,0 +1,156 @@
+.arrangement-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.arrangement-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.track-headers {
+  flex-shrink: 0;
+  width: var(--header-width);
+  overflow-y: hidden;
+  overflow-x: hidden;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+}
+
+.track-header {
+  height: var(--track-height);
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  position: relative;
+  gap: 8px;
+}
+
+.track-header:hover {
+  background: var(--bg-hover);
+}
+
+.track-header.selected {
+  background: var(--bg-selected);
+}
+
+.track-header .change-indicator {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+}
+
+.track-header .track-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-area {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.timeline-ruler {
+  height: var(--ruler-height);
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.timeline-ruler-bottom {
+  height: var(--ruler-height);
+  background: var(--bg-header);
+  border-top: 1px solid var(--border);
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+}
+
+/* Mixer strip in track headers */
+.mixer-strip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.mixer-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mixer-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mixer-bar {
+  height: 20px;
+  background: #444;
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+}
+
+.mixer-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 3px 0 0 3px;
+}
+
+.mixer-bar-fill.ghost {
+  opacity: 0.35;
+}
+
+.mixer-bar-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #fff;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+
+.mixer-toggle {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-dim);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+}
+
+.mixer-toggle.active {
+  background: rgba(255, 179, 0, 0.12);
+  color: var(--color-modified);
+  border-color: var(--color-modified);
+}
+
+.mixer-toggle.changed {
+  border-color: var(--color-modified);
+}

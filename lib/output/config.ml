@@ -2,6 +2,7 @@ open Output_types
 open Presentation_model
 open Ppx_deriving_jsonschema_runtime.Primitives.Yojson
 
+
 (** How much detail to show for a particular diff item. *)
 type detail_level =
   | Ignore   (** Completely hide the item - not rendered at all *)
@@ -87,14 +88,16 @@ let override ?(added:(detail_level option)=None) ?(removed:(detail_level option)
   unchanged;
 }
 
-(* Helper: Create a uniform override (same level for all changes) *)
-(* Preserves current type_modes behavior *)
-let uniform_override level = {
+(* Helper: override added/removed/modified, but keep unchanged as-is *)
+let changed_override level = {
   added = Some level;
   removed = Some level;
   modified = Some level;
-  unchanged = Some level;
+  unchanged = None;
 }
+
+(* Helper: Create a uniform override (same level for all changes) *)
+let uniform_override level = { (changed_override level) with unchanged = Some level }
 
 (* Helper to get detail level for a change type (legacy, no type override) *)
 let get_detail_level_by_change (cfg : detail_config) (ct : change_type) : detail_level =
@@ -141,22 +144,10 @@ let get_effective_detail (cfg : detail_config) (ct : change_type) (dt : domain_t
   | Some overrides ->
     (* Step 2: Check for change-specific override within this type *)
     (match ct with
-     | Added -> begin match overrides.added with
-         | Some level -> level
-         | None -> cfg.added
-       end
-     | Removed -> begin match overrides.removed with
-         | Some level -> level
-         | None -> cfg.removed
-       end
-     | Modified -> begin match overrides.modified with
-         | Some level -> level
-         | None -> cfg.modified
-       end
-     | Unchanged -> begin match overrides.unchanged with
-         | Some level -> level
-         | None -> cfg.unchanged
-       end
+     | Added -> Option.value overrides.added ~default:cfg.added
+     | Removed -> Option.value overrides.removed ~default:cfg.removed
+     | Modified -> Option.value overrides.modified ~default:cfg.modified
+     | Unchanged -> Option.value overrides.unchanged ~default:cfg.unchanged
     )
   | None ->
     (* Step 3: Fall back to change-type base default *)
@@ -168,10 +159,6 @@ let should_render_level (level : detail_level) : bool =
   | Ignore -> false
   | Summary | Compact | Inline | Full -> true
 
-(* Helper to check if we should show fields for an element *)
-let should_show_fields (cfg : detail_config) (elem : item) : bool =
-  let level = get_effective_detail cfg elem.change elem.domain_type in
-  (level = Full || level = Inline) && elem.children <> []
 
 (* Truncation info for collections when max_collection_items is applied *)
 type truncation_info = {
@@ -349,22 +336,22 @@ let compact = {
     };
 
     (* Clips: Summary to show counts without individual clip details *)
-    { domain_type = DTClip; override = uniform_override Summary; };
+    { domain_type = DTClip; override = changed_override Summary; };
 
     (* Devices: Summary to show counts without individual device details *)
-    { domain_type = DTDevice; override = uniform_override Summary; };
+    { domain_type = DTDevice; override = changed_override Summary; };
 
     (* LiveSet: show top-level structure (Tracks, Locators) *)
-    { domain_type = DTLiveset; override = uniform_override Compact; };
+    { domain_type = DTLiveset; override = changed_override Compact; };
 
     (* Notes: Summary to avoid flooding output with individual note changes *)
-    { domain_type = DTNote; override = uniform_override Summary; };
+    { domain_type = DTNote; override = changed_override Summary; };
 
     (* Events: Summary for automation event collections *)
-    { domain_type = DTEvent; override = uniform_override Summary; };
+    { domain_type = DTEvent; override = changed_override Summary; };
 
     (* Automation: Summary for envelope structure *)
-    { domain_type = DTAutomation; override = uniform_override Summary; };
+    { domain_type = DTAutomation; override = changed_override Summary; };
   ];
 
   (* Limit output - more than quiet (10) but bounded to prevent overwhelming diffs *)
@@ -429,13 +416,13 @@ let inline = {
   (* Type-specific overrides for inline-friendly types *)
   type_overrides = [
     (* Notes: Inline is perfect for MIDI notes (pitch, velocity, duration) *)
-    { domain_type = DTNote; override = uniform_override Inline; };
+    { domain_type = DTNote; override = changed_override Inline; };
 
     (* Parameters: Inline shows name + value cleanly *)
-    { domain_type = DTParam; override = uniform_override Inline; };
+    { domain_type = DTParam; override = changed_override Inline; };
 
     (* Automation Events: Inline shows time + value *)
-    { domain_type = DTEvent; override = uniform_override Inline; };
+    { domain_type = DTEvent; override = changed_override Inline; };
   ];
 
   (* Moderate limit - inline format is compact so we can show more *)
@@ -468,7 +455,7 @@ let quiet = {
 
   (* Only LiveSet gets Compact to show top-level sections *)
   type_overrides = [
-    { domain_type = DTLiveset; override = uniform_override Compact; }
+    { domain_type = DTLiveset; override = changed_override Compact; }
   ];
 
   (* Low limit for minimal output *)
@@ -501,14 +488,14 @@ let stats_default = {
 
   (* Show the 7 historically tracked types *)
   type_overrides = [
-    { domain_type = DTTrack; override = uniform_override Summary; };
-    { domain_type = DTDevice; override = uniform_override Summary; };
-    { domain_type = DTClip; override = uniform_override Summary; };
-    { domain_type = DTNote; override = uniform_override Summary; };
-    { domain_type = DTAutomation; override = uniform_override Summary; };
-    { domain_type = DTSend; override = uniform_override Summary; };
-    { domain_type = DTParam; override = uniform_override Summary; };
-    { domain_type = DTLocator; override = uniform_override Summary; };
+    { domain_type = DTTrack; override = changed_override Summary; };
+    { domain_type = DTDevice; override = changed_override Summary; };
+    { domain_type = DTClip; override = changed_override Summary; };
+    { domain_type = DTNote; override = changed_override Summary; };
+    { domain_type = DTAutomation; override = changed_override Summary; };
+    { domain_type = DTSend; override = changed_override Summary; };
+    { domain_type = DTParam; override = changed_override Summary; };
+    { domain_type = DTLocator; override = changed_override Summary; };
 
     (* Explicitly ignore all other types for stats mode *)
     { domain_type = DTLiveset; override = uniform_override Ignore; };
@@ -590,27 +577,27 @@ let mixing = {
     (* === Core mixing types (Full detail) === *)
 
     (* Automation: full details - automation is critical for mixing adjustments *)
-    { domain_type = DTAutomation; override = uniform_override Full; };
+    { domain_type = DTAutomation; override = changed_override Full; };
 
     (* Devices: full details - plugin/effect changes are important *)
-    { domain_type = DTDevice; override = uniform_override Full; };
+    { domain_type = DTDevice; override = changed_override Full; };
 
     (* Mixer: full details - volume/pan/mute/solo are core mixing concerns *)
-    { domain_type = DTMixer; override = uniform_override Full; };
+    { domain_type = DTMixer; override = changed_override Full; };
 
     (* Parameters: inline - device parameter name + value shown concisely *)
-    { domain_type = DTParam; override = uniform_override Inline; };
+    { domain_type = DTParam; override = changed_override Inline; };
 
     (* SampleRef: full details - audio file changes are critical for mixing *)
-    { domain_type = DTSampleRef; override = uniform_override Full; };
+    { domain_type = DTSampleRef; override = changed_override Full; };
 
     (* === Secondary mixing types (Summary/Inline) === *)
 
     (* Routing: Inline to show Type and Target concisely *)
-    { domain_type = DTRouting; override = uniform_override Inline; };
+    { domain_type = DTRouting; override = changed_override Inline; };
 
     (* Sends: Inline to show send target and level concisely *)
-    { domain_type = DTSend; override = uniform_override Inline; };
+    { domain_type = DTSend; override = changed_override Inline; };
 
     (* Clips: Ignore - stem tracks don't modify clip content/position *)
     { domain_type = DTClip; override = uniform_override Ignore; };
@@ -619,15 +606,15 @@ let mixing = {
     { domain_type = DTLoop; override = uniform_override Ignore; };
 
     (* Events: Inline - show automation events concisely (time + value) *)
-    { domain_type = DTEvent; override = uniform_override Inline; };
+    { domain_type = DTEvent; override = changed_override Inline; };
 
     (* === Structural types === *)
 
     (* Liveset: Compact structure overview *)
-    { domain_type = DTLiveset; override = uniform_override Compact; };
+    { domain_type = DTLiveset; override = changed_override Compact; };
 
     (* Tracks: Compact structure with sections *)
-    { domain_type = DTTrack; override = uniform_override Compact; };
+    { domain_type = DTTrack; override = changed_override Compact; };
 
     (* === Ignored types (not relevant for mixing) === *)
 
@@ -668,27 +655,27 @@ let composer = {
     (* === Composition-critical types (Full detail) === *)
 
     (* Clips: full details - the core compositional element *)
-    { domain_type = DTClip; override = uniform_override Full; };
+    { domain_type = DTClip; override = changed_override Full; };
 
     (* Notes: inline - MIDI note content displayed concisely (pitch, velocity, duration) *)
-    { domain_type = DTNote; override = uniform_override Inline; };
+    { domain_type = DTNote; override = changed_override Inline; };
 
     (* Loop: inline - loop boundaries shown concisely (start, end, enabled) *)
-    { domain_type = DTLoop; override = uniform_override Inline; };
+    { domain_type = DTLoop; override = changed_override Inline; };
 
     (* Signature: inline - time signature shown concisely (numerator/denominator) *)
-    { domain_type = DTSignature; override = uniform_override Inline; };
+    { domain_type = DTSignature; override = changed_override Inline; };
 
     (* SampleRef: full details - audio sample references matter for arrangement *)
-    { domain_type = DTSampleRef; override = uniform_override Full; };
+    { domain_type = DTSampleRef; override = changed_override Full; };
 
     (* === Structural types (Compact) === *)
 
     (* Tracks: show structure with clip sections visible *)
-    { domain_type = DTTrack; override = uniform_override Compact; };
+    { domain_type = DTTrack; override = changed_override Compact; };
 
     (* Liveset: show top-level structure *)
-    { domain_type = DTLiveset; override = uniform_override Compact; };
+    { domain_type = DTLiveset; override = changed_override Compact; };
 
     (* === Mixing/Engineering types (Ignored) === *)
 
@@ -716,7 +703,7 @@ let composer = {
     { domain_type = DTMacro; override = uniform_override Ignore; };
     { domain_type = DTSnapshot; override = uniform_override Ignore; };
     { domain_type = DTVersion; override = uniform_override Ignore; };
-    { domain_type = DTOther; override = uniform_override Ignore; };
+    { domain_type = DTOther; override = changed_override Full; };
   ];
 
   (* No limit - composers need to see all notes/clips in their arrangements *)

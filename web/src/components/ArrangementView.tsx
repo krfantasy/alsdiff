@@ -1,0 +1,389 @@
+import { For, Show, createEffect, createSignal, onMount, onCleanup } from "solid-js";
+import {
+  tracks,
+  pixelsPerBeat,
+  zoomFactor,
+  setZoomFactor,
+  setTimelineWidth,
+  setSelectedTrackIdx,
+  setSelectedClipName,
+  setDetailTab,
+  tempo,
+  timeSignature,
+  selectedTrackIdx,
+  selectedClipName,
+  collapsedGroups,
+} from "../stores/diff-store";
+import { computeTimelineRange, extractClips, extractAutomations, buildTrackHierarchy, flattenVisibleTracks } from "../lib/diff-parser";
+import { extractMidiNotes } from "../lib/midi-notes";
+import { quarterNoteToPosition, formatPosition, quarterNoteToRealtime, formatRealtime } from "../lib/time-format";
+import { zoomToSlider, sliderToZoom, handleWheelZoom } from "../lib/zoom";
+import { setupCanvas, clearCSSColorCache, computeGridInterval } from "../lib/canvas-utils";
+import TrackHeader from "./TrackHeader";
+import {
+  renderArrangement,
+  hitTestTracks,
+  getTrackIndexFromY,
+  type ArrangementRenderParams,
+} from "../lib/renderers/arrangement-renderer";
+import type { HitRect } from "../lib/hit-testing";
+
+const ZOOM_MIN = 0.1;
+const ZOOM_MAX = 20;
+const TRACK_HEIGHT = 64;
+const RULER_HEIGHT = 28;
+const GRID_INTERVALS = [0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512];
+const MIN_GRID_PX = 30;
+
+export default function ArrangementView() {
+  let headersRef: HTMLDivElement | undefined;
+  let timelineRef: HTMLDivElement | undefined;
+  let canvasRef: HTMLCanvasElement | undefined;
+  let hitRects: HitRect[] = [];
+  let rafId = 0;
+
+  const range = () => computeTimelineRange(tracks());
+  const totalWidth = () => {
+    const ppb = pixelsPerBeat();
+    return range().totalBeats * ppb;
+  };
+
+  const trackNodes = () => buildTrackHierarchy(tracks());
+  const visibleNodes = () => flattenVisibleTracks(trackNodes(), collapsedGroups());
+  const tracksHeight = () => visibleNodes().length * TRACK_HEIGHT;
+
+  const [bottomSpacer, setBottomSpacer] = createSignal(RULER_HEIGHT);
+
+  const measureBottomSpacer = () => {
+    if (timelineRef && headersRef) {
+      const diff = headersRef.clientHeight - timelineRef.clientHeight;
+      setBottomSpacer(RULER_HEIGHT + Math.max(0, diff));
+    }
+  };
+
+  const measureWidth = () => {
+    const el = document.querySelector(".timeline-area");
+    if (el) setTimelineWidth(el.clientWidth);
+  };
+
+  createEffect(() => {
+    tracks();
+    requestAnimationFrame(() => {
+      measureWidth();
+      measureBottomSpacer();
+    });
+  });
+
+  createEffect(() => {
+    if (tracks().length > 0) setZoomFactor(1.0);
+  });
+
+  createEffect(() => {
+    tracks();
+    const timeline = timelineRef;
+    const headers = headersRef;
+    if (!timeline || !headers) return;
+    const handler = () => { headers.scrollTop = timeline.scrollTop; };
+    timeline.addEventListener("scroll", handler);
+    onCleanup(() => timeline.removeEventListener("scroll", handler));
+  });
+
+  onMount(() => {
+    window.addEventListener("resize", () => {
+      measureWidth();
+      measureBottomSpacer();
+    });
+  });
+
+  onCleanup(() => {
+    window.removeEventListener("resize", measureWidth);
+  });
+
+  const selectTrack = (idx: number) => {
+    setSelectedTrackIdx(idx);
+    setSelectedClipName(null);
+    setDetailTab("devices");
+  };
+
+  const selectClip = (trackIdx: number, clipName: string) => {
+    setSelectedTrackIdx(trackIdx);
+    setSelectedClipName(clipName);
+    const track = tracks()[trackIdx];
+    if (track) {
+      const clip = extractClips(track).find((c) => c.name === clipName);
+      if (clip && clip.clipType === "midi" && extractMidiNotes(clip.children).length > 0) {
+        setDetailTab("pianoRoll");
+        return;
+      }
+      if (extractAutomations(track).length > 0) {
+        setDetailTab("automation");
+        return;
+      }
+    }
+    setDetailTab("clip");
+  };
+
+  const draw = () => {
+    const canvas = canvasRef;
+    const timeline = timelineRef;
+    if (!canvas || !timeline) return;
+
+    const vn = visibleNodes();
+    const w = totalWidth();
+    const h = vn.length * TRACK_HEIGHT;
+    if (w <= 0 || h <= 0) return;
+
+    clearCSSColorCache();
+    const ctx = setupCanvas(canvas, w, h);
+
+    const visibleTrackData = vn.map((n) => n.track);
+
+    const trackIndices = vn.map((n) => n.trackIndex);
+
+    const params: ArrangementRenderParams = {
+      tracks: visibleTrackData,
+      trackIndices,
+      range: range(),
+      ppb: pixelsPerBeat(),
+      selectedTrackIdx: selectedTrackIdx(),
+      selectedClipName: selectedClipName(),
+      totalWidth: w,
+      extractClips,
+    };
+
+    hitRects = renderArrangement(ctx, params, {
+      scrollLeft: timeline.scrollLeft,
+      visibleWidth: timeline.clientWidth,
+    });
+  };
+
+  const scheduleDraw = () => {
+    cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(draw);
+  };
+
+  createEffect(() => {
+    tracks();
+    pixelsPerBeat();
+    selectedTrackIdx();
+    selectedClipName();
+    collapsedGroups();
+    scheduleDraw();
+  });
+
+  createEffect(() => {
+    const timeline = timelineRef;
+    if (!timeline) return;
+    timeline.addEventListener("scroll", scheduleDraw, { passive: true });
+    onCleanup(() => timeline.removeEventListener("scroll", scheduleDraw));
+  });
+
+  const handleCanvasClick = (e: MouseEvent) => {
+    const canvas = canvasRef;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const worldX = e.clientX - rect.left;
+    const worldY = e.clientY - rect.top;
+
+    const vn = visibleNodes();
+    const hit = hitTestTracks(hitRects, worldX, worldY);
+    if (hit) {
+      const node = vn[hit.trackIdx];
+      if (node) selectClip(node.trackIndex, hit.clipName);
+      return;
+    }
+    const trackIdx = getTrackIndexFromY(worldY);
+    if (trackIdx !== null && trackIdx < vn.length) {
+      selectTrack(vn[trackIdx].trackIndex);
+    }
+  };
+
+  const beatMarkers = () => {
+    const markers: { pos: number; label: string; isMajor: boolean }[] = [];
+    const r = range();
+    const ppb = pixelsPerBeat();
+    const ts = timeSignature();
+
+    const minor = computeGridInterval(ppb, GRID_INTERVALS, MIN_GRID_PX);
+    const major = minor * 2;
+
+    const start = Math.floor(r.minStart / minor) * minor;
+    const end = Math.ceil(r.maxEnd / minor) * minor;
+
+    for (let b = start; b <= end + minor * 0.5; b += minor) {
+      const isMajor = Math.abs(((b % major) + major) % major) < 1e-6;
+      let label = "";
+      if (isMajor) {
+        const p = quarterNoteToPosition(b, ts);
+        label = formatPosition(p.bar, p.beat, p.sixteenth);
+      }
+      markers.push({ pos: (b - r.minStart) * ppb, label, isMajor });
+    }
+    return markers;
+  };
+
+  const realtimeMarkers = () => {
+    const markers: { pos: number; label: string; isMajor: boolean }[] = [];
+    const r = range();
+    const ppb = pixelsPerBeat();
+    const bpm = tempo();
+
+    const minor = computeGridInterval(ppb, GRID_INTERVALS, MIN_GRID_PX);
+    const major = minor * 2;
+
+    const start = Math.floor(r.minStart / minor) * minor;
+    const end = Math.ceil(r.maxEnd / minor) * minor;
+
+    for (let b = start; b <= end + minor * 0.5; b += minor) {
+      const isMajor = Math.abs(((b % major) + major) % major) < 1e-6;
+      let label = "";
+      if (isMajor) {
+        const rt = quarterNoteToRealtime(b, bpm);
+        label = formatRealtime(rt.min, rt.sec, rt.ms);
+      }
+      markers.push({ pos: (b - r.minStart) * ppb, label, isMajor });
+    }
+    return markers;
+  };
+
+  return (
+    <div class="arrangement-view">
+      <Show
+        when={tracks().length > 0}
+        fallback={
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              "align-items": "center",
+              "justify-content": "center",
+              color: "var(--text-dim)",
+              padding: "32px",
+            }}
+          >
+            No track changes detected between files.
+          </div>
+        }
+      >
+        <div
+          style={{
+            display: "flex",
+            "align-items": "center",
+            gap: "8px",
+            padding: "4px 16px",
+            background: "var(--bg-header)",
+            "border-bottom": "1px solid var(--border)",
+            "flex-shrink": 0,
+          }}
+        >
+          <span style={{ color: "var(--text-secondary)", "font-size": "12px" }}>
+            Zoom
+          </span>
+          <input
+            type="range"
+            data-testid="zoom-slider"
+            min="0"
+            max="100"
+            value={zoomToSlider(zoomFactor(), ZOOM_MIN, ZOOM_MAX)}
+            onInput={(e) => setZoomFactor(sliderToZoom(Number(e.currentTarget.value), ZOOM_MIN, ZOOM_MAX))}
+            style={{ width: "120px" }}
+          />
+          <span data-testid="zoom-label" style={{ color: "var(--text-dim)", "font-size": "11px" }}>
+            {zoomFactor().toFixed(1)}x
+          </span>
+        </div>
+
+        <div class="arrangement-content">
+          <div
+            class="track-headers"
+            data-testid="track-headers"
+            ref={headersRef}
+            onWheel={(e) => {
+              const timeline = timelineRef;
+              if (!timeline) return;
+              timeline.scrollTop += e.deltaY;
+            }}
+          >
+            <div style={{ height: `${RULER_HEIGHT}px` }} />
+            <For each={visibleNodes()}>
+              {(node) => (
+                <TrackHeader
+                  track={node.track}
+                  index={node.trackIndex}
+                  depth={node.depth}
+                  isGroup={node.children.length > 0}
+                  onSelect={() => selectTrack(node.trackIndex)}
+                />
+              )}
+            </For>
+            <div style={{ height: `${bottomSpacer()}px` }} />
+          </div>
+
+          <div
+            class="timeline-area"
+            data-testid="timeline-area"
+            ref={timelineRef}
+            onWheel={(e) =>
+              handleWheelZoom(e, zoomFactor(), setZoomFactor, ZOOM_MIN, ZOOM_MAX)
+            }
+          >
+            <div class="timeline-ruler" data-testid="timeline-ruler-top" style={{ width: `${totalWidth()}px` }}>
+              <For each={beatMarkers()}>
+                {(m) => (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: `${m.pos}px`,
+                      top: "0",
+                      height: "100%",
+                      "border-left": `${m.isMajor ? "2px" : "1px"} solid ${m.isMajor ? "var(--border-light)" : "var(--border)"}`,
+                      display: "flex",
+                      "align-items": "flex-end",
+                      "padding-left": "3px",
+                      "font-size": "10px",
+                      color: "var(--text-dim)",
+                    }}
+                  >
+                    {m.label}
+                  </div>
+                )}
+              </For>
+            </div>
+
+            <div style={{ width: `${totalWidth()}px`, height: `${tracksHeight()}px`, position: "relative" }}>
+              <canvas
+                ref={canvasRef}
+                data-testid="arrangement-canvas"
+                onClick={handleCanvasClick}
+                style={{ display: "block" }}
+              />
+            </div>
+
+            <div class="timeline-ruler-bottom" data-testid="timeline-ruler-bottom" style={{ width: `${totalWidth()}px` }}>
+              <For each={realtimeMarkers()}>
+                {(m) => (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: `${m.pos}px`,
+                      top: "0",
+                      height: "100%",
+                      "border-left": `${m.isMajor ? "2px" : "1px"} solid ${m.isMajor ? "var(--border-light)" : "var(--border)"}`,
+                      display: "flex",
+                      "align-items": "flex-start",
+                      "padding-left": "3px",
+                      "font-size": "10px",
+                      color: "var(--text-dim)",
+                    }}
+                  >
+                    {m.label}
+                  </div>
+                )}
+              </For>
+            </div>
+          </div>
+        </div>
+      </Show>
+    </div>
+  );
+}
