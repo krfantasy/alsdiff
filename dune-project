@@ -2,7 +2,7 @@
 
 (name alsdiff)
 
-(version 0.5.3)
+(version 0.5.4)
 
 (source
  (github krfantasy/alsdiff))
