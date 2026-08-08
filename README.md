@@ -76,6 +76,7 @@ mv alsdiff alsdiff-tui alsflow ~/.local/bin  # or any directory in your PATH
 A helper script is provided at [./scripts/setup-git.sh](./scripts/setup-git.sh). Simply download it to your git repository root and run `./setup-git.sh`. This script will automatically configure git to use `alsdiff` for `.als` files and optionally install a prepare-commit-msg hook for auto-generating commit messages.
 
 The script provides:
+
 - Automatic `.gitattributes` configuration for `.als` files
 - Git diff driver setup using `alsdiff --git`
 - Optional prepare-commit-msg hook that auto-generates commit message summaries using `alsdiff --mode stats`
@@ -91,17 +92,25 @@ cd /path/to/live_projects/
 echo "*.als diff=alsdiff" >> .gitattributes
 ```
 
-2. Configure git:
+1. Configure git:
 
 ```bash
-git config --global diff.alsdiff.command "alsdiff <put_extra_args_here> --git"
+git config --global diff.alsdiff.command "alsdiff --git"
 ```
 
-3. Now `git diff` will use `alsdiff` to compare `.als` files:
+   Extra flags may be appended (e.g. `alsdiff --preset full --git`), but note
+   that passing `--preset` or `--config` disables `.alsdiff.json`
+   auto-discovery.
+
+1. Now `git diff` will use `alsdiff` to compare `.als` files:
 
 ```bash
 git diff HEAD~1 -- your-project.als
 ```
+
+Added, deleted, and renamed/copied `.als` files are supported: git reports them
+via `/dev/null` and the 9-argument rename invocation, which alsdiff renders as
+all-tracks-added/removed and a `diff --git` header.
 
 #### Prepare-Commit-Msg Hook
 
@@ -127,7 +136,7 @@ If the hook runs multiple times for the same commit message (for example during 
 
 #### Prerequisites
 
- - [opam](https://opam.ocaml.org/doc/Install.html): OCaml package manager
+- [opam](https://opam.ocaml.org/doc/Install.html): OCaml package manager
 
 #### Setup (first time only)
 
@@ -191,11 +200,13 @@ The workflow builds binaries for Ubuntu, Windows, and macOS (Intel & Apple Silic
 #### Download
 
 After the workflow completes, find the release at the bottom of the [Releases page](https://github.com/krfantasy/alsdiff/releases) named like:
+
 ```
 Build master-ca82745
 ```
 
 Download the appropriate file for your system:
+
 ```
 alsdiff-ubuntu-x86_64-master-ca82745.zip
 alsdiff-macos-arm64-master-ca82745.zip
@@ -224,7 +235,7 @@ When multiple configuration sources are provided, `alsdiff` resolves conflicts u
 The easiest way to get started is using one of the built-in presets:
 
 | Preset | What it feels like | When to use it |
-|---|---|---|
+| --- | --- | --- |
 | `quiet` | Minimal output | Quick checks, very large sets |
 | `compact` | Balanced summary (recommended) | Daily use |
 | `inline` | Detailed, but dense | When you want detail without big blocks |
@@ -232,7 +243,6 @@ The easiest way to get started is using one of the built-in presets:
 | `mixing` | Emphasizes mixer/devices/automation | Mixing / sound design changes |
 | `composer` | Emphasizes clips/notes | MIDI writing / arrangement changes |
 | `verbose` | Includes unchanged items (can get huge) | Debugging / auditing |
-
 
 ```bash
 alsdiff v1.als v2.als --preset quiet      # Minimal output
@@ -266,6 +276,7 @@ alsdiff v1.als v2.als --mode stats
 ```
 
 Example output:
+
 ```
 Tracks: 2 Added, 1 Removed, 5 Modified
 Devices: 3 Added, 2 Modified
@@ -287,12 +298,14 @@ alsdiff v1.als v2.als --mode stats --config myconfig.json
 <summary>Preset output comparison</summary>
 
 **quiet** - Shows only top-level structure:
+
 ```
 * LiveSet
   * Tracks (1 Modified)
 ```
 
 **compact** - Shows structure with change counts:
+
 ```
 * LiveSet
   * Tracks
@@ -302,6 +315,7 @@ alsdiff v1.als v2.als --mode stats --config myconfig.json
 ```
 
 **full** - Expands all details:
+
 ```
 * LiveSet
   * Tracks
@@ -337,7 +351,7 @@ alsdiff v1.als v2.als --mode stats --config myconfig.json
 
 #### Git Integration
 
-- `--git` - Enable git diff driver mode (expects 7 positional arguments from git)
+- `--git` - Enable git diff driver mode (expects 7 positional arguments from git, 9 for renames/copies)
 
 #### Utility Commands
 
@@ -345,8 +359,8 @@ alsdiff v1.als v2.als --mode stats --config myconfig.json
 - `--dump-schema` - Output JSON schema to stdout
 - `--validate-config FILE` - Validate config file against schema
 
-
 ### Advanced configurations
+
 <details>
 <summary>Click to expand</summary>
 
@@ -384,7 +398,7 @@ Configuration files use JSON format with the following structure:
 #### Configuration Options Reference
 
 | Option | Type | Default | Description |
-|--------|------|---------|-------------|
+| -------- | ------ | --------- | ------------- |
 | `added` | detail_level | varies | Detail level for added items (one of: Ignore, Summary, Compact, Inline, Full) |
 | `removed` | detail_level | varies | Detail level for removed items |
 | `modified` | detail_level | varies | Detail level for modified items |
@@ -399,6 +413,7 @@ Configuration files use JSON format with the following structure:
 | `indent_width` | integer | `2` | Number of spaces per indentation level |
 
 **JSON Format Notes:**
+
 - Detail levels and enums use JSON array format: `["Full"]`, `["Sharp"]`
 - `max_collection_items` can be `null` for unlimited, or omitted to use preset default
 - Preset defaults vary: `quiet` uses 0, `compact` uses 20, `full` uses 100, `verbose` uses null
@@ -408,7 +423,7 @@ Configuration files use JSON format with the following structure:
 The configuration system uses five detail levels to control how items are displayed:
 
 | Level | Description |
-|-------|-------------|
+| ------- | ------------- |
 | `Ignore` | Completely hide the item |
 | `Summary` | Show name + change symbol + counts (e.g., "Notes (3 Added, 1 Removed)") |
 | `Compact` | Show name + change symbol (same as Summary for elements/collections) |
@@ -420,7 +435,7 @@ The configuration system uses five detail levels to control how items are displa
 `alsdiff` represents Live sets using a hierarchical view model with three types of views:
 
 | Type | Description | Ableton Live Examples |
-|------|-------------|-----------------------|
+| ------ | ------------- | ----------------------- |
 | **Field** | A single value with old/new values | Track volume, pan position, note pitch, loop length |
 | **Item** | A named entity that contains child views | A track, a clip, a device, a mixer |
 | **Collection** | A list of items (possibly with counts) | Tracks list, Notes list, Devices list, Locators |
@@ -435,6 +450,8 @@ When no `--config` or `--preset` is specified, alsdiff automatically searches fo
 4. Falls back to `quiet` preset
 
 This allows project-specific or user-specific defaults without manual configuration.
+In git diff driver mode, the repo-root `.alsdiff.json` is used only when no
+`--preset`/`--config` is passed to the driver command.
 
 ### Type-Based Overrides
 
@@ -443,7 +460,7 @@ You can customize display behavior for specific types of elements using `type_ov
 #### Available Domain Types
 
 | Type | Description |
-|------|-------------|
+| ------ | ------------- |
 | `DTLiveset` | Root level of the Live set |
 | `DTTrack` | MIDI/Audio/Group tracks |
 | `DTDevice` | Plugin, Group, and Max for Live devices |
@@ -518,43 +535,43 @@ alsflow project.als --format dot        # output DOT graph
 <details open>
 <summary>Click to expand</summary>
 
- * Tracks
-   + [x] MIDI track & Audio track
-   + [x] Group track
-   + [x] Return track
-   + [x] Main track
-   + [ ] Take lanes & Comping
- * Devices
-   + [x] Built+in devices
-   + [x] Plugin devices (VST/VST3/AU)
-   + [x] Max for Live devices
-   + [x] Rack devices, Branches, Macros and Snapshots
-   + [x] Presets
-   + [ ] Sidechain support
- * Clips
-   + MIDI Clip
-     - [x] MIDI Note (pitch, velocity, time, duration, off velocity)
-     - [x] Loop
-     - [ ] MPE
-     - [ ] Scale
-   + Audio Clip
-     - [x] External audio file changes
-     - [x] Loop
-     - [x] Fade
-     - [ ] Warp markers & settings
- * Automation
-   + [x] Basic
-   + [x] Curve
- * Global settings
-   - [x] Tempo
-   - [x] Time signature
-   - [ ] Scale
- * Utils
-   - [x] Mixer
-   - [x] Send
-   - [x] Routing (MIDI in, Audio out, etc.)
- * [ ] Session View
- * [ ] Groove Pool
+- Tracks
+  - [x] MIDI track & Audio track
+  - [x] Group track
+  - [x] Return track
+  - [x] Main track
+  - [ ] Take lanes & Comping
+- Devices
+  - [x] Built+in devices
+  - [x] Plugin devices (VST/VST3/AU)
+  - [x] Max for Live devices
+  - [x] Rack devices, Branches, Macros and Snapshots
+  - [x] Presets
+  - [ ] Sidechain support
+- Clips
+  - MIDI Clip
+    - [x] MIDI Note (pitch, velocity, time, duration, off velocity)
+    - [x] Loop
+    - [ ] MPE
+    - [ ] Scale
+  - Audio Clip
+    - [x] External audio file changes
+    - [x] Loop
+    - [x] Fade
+    - [ ] Warp markers & settings
+- Automation
+  - [x] Basic
+  - [x] Curve
+- Global settings
+  - [x] Tempo
+  - [x] Time signature
+  - [ ] Scale
+- Utils
+  - [x] Mixer
+  - [x] Send
+  - [x] Routing (MIDI in, Audio out, etc.)
+- [ ] Session View
+- [ ] Groove Pool
 
 </details>
 

@@ -13,6 +13,53 @@ let load_liveset ~domain_mgr file =
   let xml = File.open_als file in
   Liveset.create xml file
 
+(* Git passes "/dev/null" for the missing side of an added or deleted file. *)
+let is_dev_null file = file = "/dev/null"
+
+(* Build an "empty" liveset from another liveset's XML: same root attributes and
+   MainTrack (so version/creator/master stay unchanged), empty Tracks (every track
+   shows as added/removed), no Locators. [file_path] is the OTHER side's path so
+   the displayed LiveSet name matches and shows no spurious rename. *)
+let make_empty_liveset_from_xml (xml : Xml.t) (file_path : string) : Liveset.t =
+  let empty_tracks = Xml.Element { name = "Tracks"; attrs = []; childs = [] } in
+  let strip_liveset childs =
+    List.filter_map (fun child ->
+        match child with
+        | Xml.Element { name = "Tracks"; _ } -> Some empty_tracks
+        | Xml.Element { name = "Locators"; _ } -> None
+        | other -> Some other)
+      childs
+  in
+  match xml with
+  | Xml.Element { name = "Ableton"; attrs; childs } ->
+    let childs =
+      List.map (fun child ->
+          match child with
+          | Xml.Element { name = "LiveSet"; attrs; childs } ->
+            Xml.Element { name = "LiveSet"; attrs; childs = strip_liveset childs }
+          | other -> other)
+        childs
+    in
+    Liveset.create (Xml.Element { name = "Ableton"; attrs; childs }) file_path
+  | _ -> raise (Xml.Xml_error (xml, "Invalid Ableton file: expected root element 'Ableton'"))
+
+let load_xml ~domain_mgr file =
+  Eio.Domain_manager.run domain_mgr @@ fun () -> File.open_als file
+
+(* In git mode one side may be "/dev/null": represent it as an empty liveset
+   derived from the present file's XML. *)
+let load_livesets ~domain_mgr ~git_mode file1 file2 =
+  if git_mode && (is_dev_null file1 || is_dev_null file2) then begin
+    let real_file = if is_dev_null file1 then file2 else file1 in
+    let xml = load_xml ~domain_mgr real_file in
+    let real = Liveset.create xml real_file in
+    let empty = make_empty_liveset_from_xml xml real_file in
+    if is_dev_null file1 then (empty, real) else (real, empty)
+  end else
+    Fiber.pair
+      (fun () -> load_liveset ~domain_mgr file1)
+      (fun () -> load_liveset ~domain_mgr file2)
+
 let create_views ~note_name_style ~(format_time : View_model.dual_time_formatter) ?(reference_liveset : Liveset.t option) (change : (Liveset.t, Liveset.Patch.t) Diff.structured_change)
   : View_model.view list =
   let item = View_model.create_liveset_item ~note_name_style ~format_time ?reference_liveset change in
@@ -42,14 +89,17 @@ type git_args = {
   path: string;
   old_file: string;
   new_file: string;
+  new_path: string option;  (* set for renames/copies, where git passes 9 arguments *)
 }
 
 let parse_git_args args =
   match args with
   | [path; old_file; _old_hex; _old_mode; new_file; _new_hex; _new_mode] ->
-    Ok { path; old_file; new_file }
+    Ok { path; old_file; new_file; new_path = None }
+  | [path; old_file; _old_hex; _old_mode; new_file; _new_hex; _new_mode; new_path; _similarity] ->
+    Ok { path; old_file; new_file; new_path = Some new_path }
   | _ ->
-    Error "Git mode requires exactly 7 positional arguments: path old-file old-hex old-mode new-file new-hex new-mode"
+    Error "Git mode requires 7 positional arguments (path old-file old-hex old-mode new-file new-hex new-mode), or 9 for renames/copies (adds new-path similarity-index)"
 
 let parse_preset_args = function
   | `Compact -> Text_renderer.compact
@@ -113,20 +163,21 @@ let diff_cmd ~config ~domain_mgr : int =
              --note-name-style, --time-format, and --max-collection-items@.";
     if config.git_mode then 2 else 1
   end else begin
-    let file1, file2, reference_path =
+    let file1, file2, reference_path, git_args =
       if config.git_mode then
         match parse_git_args config.positional_args with
-        | Error msg -> failwith msg
-        | Ok git_args -> (git_args.old_file, git_args.new_file, git_args.path)
+        | Error msg ->
+          Fmt.epr "Error: %s@." msg;
+          exit 2
+        | Ok ga -> (ga.old_file, ga.new_file, ga.path, Some ga)
       else
         match config.positional_args with
-        | [f1; f2] -> (f1, f2, f2)
+        | [f1; f2] -> (f1, f2, f2, None)
         | _ -> failwith "FILE1.als and FILE2.als are required for diff"
     in
 
-    let liveset1, liveset2 = Fiber.pair
-        (fun () -> load_liveset ~domain_mgr file1)
-        (fun () -> load_liveset ~domain_mgr file2)
+    let liveset1, liveset2 =
+      load_livesets ~domain_mgr ~git_mode:config.git_mode file1 file2
     in
 
     let liveset_patch = Liveset.diff liveset1 liveset2 in
@@ -166,7 +217,13 @@ let diff_cmd ~config ~domain_mgr : int =
 
     let output = match config.output_mode with
       | Stats -> render_stats ~config ~reference_path views
-      | Tree -> render_tree ~config ~reference_path views
+      | Tree ->
+        (match git_args with
+         | Some { path; new_path; _ } when has_changes || new_path <> None ->
+           let new_disp = Option.value new_path ~default:path in
+           Fmt.pr "diff --git a/%s b/%s@." path new_disp
+         | _ -> ());
+        render_tree ~config ~reference_path views
       | Json -> render_json ~config ~reference_path views
     in
 
@@ -184,10 +241,10 @@ let positional_args =
   Arg.(value & pos_all string [] & info [] ~docv:"ARGS" ~doc)
 
 let git_mode =
-  let doc = "Enable git external diff driver mode. Expects exactly 7 positional arguments: \
-             path old-file old-hex old-mode new-file new-hex new-mode. \
-             Exit code 0 = no changes, 1 = changes found (for trustExitCode). \
-             All other flags (--preset, --config, etc.) work in git mode." in
+  let doc = "Enable git external diff driver mode. Expects 7 positional arguments as passed \
+             by git (9 for renames/copies). Exit code 0 = no changes, 1 = changes found (for \
+             trustExitCode). Unparseable files report a clean error and exit 1 so the rest of \
+             the diff continues. All other flags (--preset, --config, etc.) work in git mode." in
   Arg.(value & flag & info ["git"] ~doc)
 
 let config_file =
@@ -301,14 +358,17 @@ let cmd =
     `P "5. quiet preset (default)";
     `S "GIT DIFF DRIVER MODE";
     `P "$(cmd) can be used as a git external diff driver. When invoked with $(b,--git), \
-        it expects exactly 7 positional arguments as passed by git:";
+        it expects the 7 positional arguments git passes (or 9 for renames/copies):";
     `P "$(b,path old-file old-hex old-mode new-file new-hex new-mode)";
     `P "In git mode, exit code 0 means no differences found, and exit code 1 means \
         differences were found. This is compatible with git's $(b,trustExitCode) setting.";
+    `P "Added/deleted files (git passes $(b,/dev/null)) render as all tracks added/removed; \
+        renames/copies render with a $(b,diff --git) header.";
     `P "Configure git to use alsdiff (.gitconfig):";
     `Pre "[diff \"als\"]";
-    `Pre "    command = alsdiff --preset quiet --git";
+    `Pre "    command = alsdiff --git";
     `Pre "    trustExitCode = true";
+    `P "Extra flags may be appended, but $(b,--preset)/$(b,--config) disable .alsdiff.json auto-discovery.";
     `P "Configure .gitattributes:";
     `Pre "*.als diff=als";
     `P "Git mode with custom preset:";
@@ -330,7 +390,7 @@ let cmd =
     `P "$(b,--dump-preset PRESET) dumps preset configuration as JSON to stdout and exits. Same format as --config file. Available presets: $(b,compact), $(b,composer), $(b,full), $(b,inline), $(b,mixing), $(b,quiet), $(b,verbose).";
     `P "$(b,--dump-schema) dumps JSON schema for configuration to stdout and exits.";
     `P "$(b,--validate-config FILE) validates a configuration file against the JSON schema and exits. Useful for checking config files before use.";
-    `P "$(b,--git) enables git external diff driver mode. Expects exactly 7 positional arguments from git. Exit code 0 = no differences, 1 = differences found. All other options work in git mode.";
+    `P "$(b,--git) enables git external diff driver mode. Expects 7 positional arguments from git (9 for renames/copies). Exit code 0 = no differences, 1 = differences found. All other options work in git mode.";
     `S Manpage.s_bugs;
     `P "Report bugs at https://github.com/krfantasy/alsdiff/issues";
   ] in
@@ -358,6 +418,11 @@ let main () =
       match !config_ref with
       | Some cfg when cfg.git_mode -> 2
       | _ -> 1
+    in
+    let is_git_mode () =
+      match !config_ref with
+      | Some cfg when cfg.git_mode -> true
+      | _ -> false
     in
     try
       let exit_code = Cmd.eval cmd_term in
@@ -392,8 +457,9 @@ let main () =
                   (* Normal diff operation - validate args based on mode *)
                   let has_valid_args =
                     if cfg.git_mode then
-                      (* Git mode needs exactly 7 positional args *)
-                      List.length cfg.positional_args = 7
+                      (* Git mode needs 7 positional args, or 9 for renames/copies *)
+                      let n = List.length cfg.positional_args in
+                      n = 7 || n = 9
                     else
                       (* Normal mode needs exactly 2 positional args *)
                       List.length cfg.positional_args = 2
@@ -403,7 +469,7 @@ let main () =
                     let domain_mgr = Eio.Stdenv.domain_mgr env in
                     diff_cmd ~config:cfg ~domain_mgr
                   else if cfg.git_mode then begin
-                    Fmt.epr "Error: --git mode requires exactly 7 positional arguments@.";
+                    Fmt.epr "Error: --git mode requires 7 positional arguments (or 9 for renames/copies)@.";
                     Fmt.epr "Usage: alsdiff --git path old-file old-hex old-mode new-file new-hex new-mode@.";
                     2
                   end else begin
@@ -418,30 +484,40 @@ let main () =
         exit_code
     with
     | File.File_error (file, msg) ->
-      let bt = Printexc.get_backtrace () in
       Fmt.epr "Error: Failed to process file '%s': %s@." file msg;
-      Fmt.epr "%s@." bt;
-      error_exit_code ()
+      if is_git_mode () then 1
+      else begin
+        Fmt.epr "%s@." (Printexc.get_backtrace ());
+        1
+      end
     | Xml.Xml_error (xml, msg) ->
-      let bt = Printexc.get_backtrace () in
       Fmt.epr "Error: Invalid XML format: %s@.%a@." msg Xml.pp xml;
-      Fmt.epr "%s@." bt;
-      error_exit_code ()
+      if is_git_mode () then 1
+      else begin
+        Fmt.epr "%s@." (Printexc.get_backtrace ());
+        1
+      end
     | Upath.Path_not_found (path, xml) ->
-      let bt = Printexc.get_backtrace () in
       Fmt.epr "Error: Required path '%s' not found in @.%a@." path Xml.pp xml;
-      Fmt.epr "%s@." bt;
-      error_exit_code ()
+      if is_git_mode () then 1
+      else begin
+        Fmt.epr "%s@." (Printexc.get_backtrace ());
+        1
+      end
     | Sys_error msg ->
-      let bt = Printexc.get_backtrace () in
       Fmt.epr "System Error: %s@." msg;
-      Fmt.epr "%s@." bt;
-      error_exit_code ()
+      if is_git_mode () then 1
+      else begin
+        Fmt.epr "%s@." (Printexc.get_backtrace ());
+        1
+      end
     | Failure msg ->
-      let bt = Printexc.get_backtrace () in
       Fmt.epr "Error: %s@." msg;
-      Fmt.epr "%s@." bt;
-      error_exit_code ()
+      if is_git_mode () then 2
+      else begin
+        Fmt.epr "%s@." (Printexc.get_backtrace ());
+        1
+      end
     | exn ->
       let bt = Printexc.get_backtrace () in
       Fmt.epr "Unexpected error: %s@.%s@." (Printexc.to_string exn) bt;

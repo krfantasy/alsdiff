@@ -265,6 +265,27 @@
  (modules test_domain_type_mapping)
  (libraries alsdiff_output alcotest))
 
+;; Git mode integration tests: run the real alsdiff binary with git driver args
+(executable
+ (name test_git_mode)
+ (modules test_git_mode)
+ (libraries alcotest unix cmdliner))
+
+(rule
+ (alias runtest)
+ (deps
+  test_git_mode.exe
+  %{exe:../bin/alsdiff.exe}
+  data/git_base.als
+  data/git_modified.als
+  data/not_an_als.als)
+ (action
+  (run %{dep:test_git_mode.exe}
+       %{exe:../bin/alsdiff.exe}
+       %{dep:data/git_base.als}
+       %{dep:data/git_modified.als}
+       %{dep:data/not_an_als.als})))
+
 ;; Auto indent files with `dune build @fmt`
 (subdir
  run

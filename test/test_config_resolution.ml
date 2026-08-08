@@ -16,7 +16,12 @@ let write_config path cfg =
       output_string oc (detail_config_to_string_with_schema cfg);
       output_char oc '\n')
 
-let test_explicit_config_beats_preset_and_auto () =
+let contains (sub : string) (s : string) : bool =
+  let n = String.length sub and m = String.length s in
+  let rec go i = i + n <= m && (String.sub s i n = sub || go (i + 1)) in
+  n <= m && go 0
+
+let test_preset_beats_explicit_config_and_auto () =
   let root = make_temp_dir "alsdiff-config-explicit-" in
   let repo = Filename.concat root "repo" in
   let project = Filename.concat repo "project" in
@@ -100,13 +105,34 @@ let test_discover_config_file_search_order () =
        ~reference_path:(Filename.concat nongit "song.als")
        ())
 
+let test_partial_config_validation_message () =
+  let root = make_temp_dir "alsdiff-config-partial-" in
+  let config_path = Filename.concat root "partial.json" in
+  Out_channel.with_open_text config_path (fun oc ->
+      output_string oc "{\"prefix_added\": \"+++\"}\n");
+  match resolve_detail_config
+          ~cwd:root
+          ~default_config:quiet
+          ~reference_path:(Filename.concat root "song.als")
+          ~config_file:(Some config_path)
+          ~preset_config:None
+          ()
+  with
+  | Error msg ->
+    check bool "explains complete preset requirement" true (contains "complete preset" msg);
+    check bool "suggests dump-preset" true (contains "--dump-preset" msg)
+  | Ok _ -> fail "partial config must fail validation"
+
 let () =
   run "Config resolution" [
     "precedence", [
-      test_case "preset beats explicit config and auto-discovery" `Quick test_explicit_config_beats_preset_and_auto;
+      test_case "preset beats explicit config and auto-discovery" `Quick test_preset_beats_explicit_config_and_auto;
       test_case "preset beats auto-discovery" `Quick test_preset_beats_auto_discovery;
     ];
     "discovery", [
       test_case "search order stays unchanged" `Quick test_discover_config_file_search_order;
+    ];
+    "validation", [
+      test_case "partial config error message is actionable" `Quick test_partial_config_validation_message;
     ];
   ]

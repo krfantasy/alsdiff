@@ -73,6 +73,8 @@ echo "  --prefix-removed PREFIX Custom prefix for removed items (default: '-')"
 echo "  --note-name-style STYLE Note name style (Sharp, Flat)"
 echo "  --max-collection-items N Max items to show in collections"
 echo ""
+echo "Note: passing --preset or --config disables .alsdiff.json auto-discovery."
+echo ""
 read -p "Enter extra arguments (or press Enter to skip): " extra_args
 
 # Build the command with arguments

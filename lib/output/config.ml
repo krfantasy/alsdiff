@@ -925,6 +925,28 @@ let write_schema_to_file (path : string) : unit =
 
 (* ==================== JSON Schema Validation ==================== *)
 
+(* Find the substring after [sub] in [s], if present. Stdlib-only. *)
+let find_after (sub : string) (s : string) : string option =
+  let n = String.length s and m = String.length sub in
+  let rec go i =
+    if i + m > n then None
+    else if String.sub s i m = sub then Some (String.sub s (i + m) (n - i - m))
+    else go (i + 1)
+  in
+  if m > n then None else go 0
+
+(* Rewrite jsonschema "missing properties" errors into an actionable message:
+   a config file must be a complete preset, not a partial override. *)
+let format_validation_details (details : string) : string =
+  match find_after "missing properties " details with
+  | Some rest ->
+    let fields = String.trim rest in
+    Printf.sprintf
+      "Configuration must be a complete preset; missing required fields: %s.\n\
+       Tip: generate a full preset and edit it: `alsdiff --dump-preset quiet > .alsdiff.json`"
+      fields
+  | None -> details
+
 (** Cached compiled validator for performance.
     Compiled once on first use, then reused. *)
 let cached_validator : Jsonschema.validator option ref = ref None
@@ -1004,7 +1026,10 @@ let validate_config_file (file_path : string) : (unit, string) result =
 
     (* Step 2: Validate against JSON schema *)
     match validate_config_json json with
-    | Error err -> Error (Printf.sprintf "Validation failed for %s:\n%s" file_path err.details)
+    | Error err ->
+      Error
+        (Printf.sprintf "Validation failed for %s:\n%s" file_path
+           (format_validation_details err.details))
     | Ok () ->
       (* Step 3: Parse config for business logic validation *)
       let json_str = Yojson.Basic.to_string (filter_schema_metadata_fields json) in
@@ -1035,7 +1060,9 @@ let load_and_validate_config (file_path : string) : (detail_config, string) resu
     (* Validate against schema *)
     match validate_config_json json_basic with
     | Error err ->
-      Error (Printf.sprintf "Config validation failed in %s:\n%s" file_path err.details)
+      Error
+        (Printf.sprintf "Config validation failed in %s:\n%s" file_path
+           (format_validation_details err.details))
     | Ok () ->
       (* Filter out schema metadata fields before PPX parsing *)
       let filtered_str = Yojson.Basic.to_string (filter_schema_metadata_fields json_basic) in

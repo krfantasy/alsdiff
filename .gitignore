@@ -15,6 +15,7 @@ web/public
 
 .vscode
 .claude
+.opencode
 
 .gemini/
 gha-creds-*.json
@@ -23,3 +24,8 @@ gha-creds-*.json
 /docs/superpowers/
 
 *.trace
+
+*.als
+!test/data/git_base.als
+!test/data/git_modified.als
+!test/data/not_an_als.als
