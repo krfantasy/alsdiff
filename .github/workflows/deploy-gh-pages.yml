@@ -1,9 +1,12 @@
 name: Deploy GitHub Pages
 
+# Deploys the web app when a commit on master modifies anything under web/.
 on:
   push:
     branches:
-      - js_of_ocaml
+      - master
+    paths:
+      - 'web/**'
 
 permissions:
   actions: read
@@ -29,6 +32,9 @@ jobs:
             const repo = context.repo.repo;
             const headSha = context.sha;
             const workflowId = "build.yml";
+            // build.yml runs on every branch; wait for the run of this same
+            // commit on the branch being deployed (not a hardcoded branch).
+            const branch = context.ref.replace("refs/heads/", "");
             const maxWaitMs = 45 * 60 * 1000;
             const pollIntervalMs = 30 * 1000;
             const startedAt = Date.now();
@@ -38,7 +44,7 @@ jobs:
                 owner,
                 repo,
                 workflow_id: workflowId,
-                branch: "js_of_ocaml",
+                branch,
                 event: "push",
                 per_page: 100
               });
