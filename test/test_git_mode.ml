@@ -17,19 +17,22 @@ let run_alsdiff (args : string list) : run_result =
   let argv = Array.of_list (alsdiff_bin :: args) in
   let out_file = Filename.temp_file "alsdiff_test_stdout" ".txt" in
   let err_file = Filename.temp_file "alsdiff_test_stderr" ".txt" in
+  let stdin_file = Filename.temp_file "alsdiff_test_stdin" ".txt" in
+  let stdin_fd = Unix.openfile stdin_file [ Unix.O_RDONLY ] 0 in
   let out_fd = Unix.openfile out_file [ Unix.O_WRONLY; Unix.O_TRUNC; Unix.O_CREAT ] 0o644 in
   let err_fd = Unix.openfile err_file [ Unix.O_WRONLY; Unix.O_TRUNC; Unix.O_CREAT ] 0o644 in
-  let dev_null = Unix.openfile "/dev/null" [ Unix.O_RDONLY ] 0 in
-  (* create_process prog args stdin stdout stderr *)
-  let pid = Unix.create_process alsdiff_bin argv dev_null out_fd err_fd in
+  (* create_process prog args stdin stdout stderr; stdin is a temp file rather
+     than /dev/null so the tests also run on Windows (no null device). *)
+  let pid = Unix.create_process alsdiff_bin argv stdin_fd out_fd err_fd in
+  Unix.close stdin_fd;
   Unix.close out_fd;
   Unix.close err_fd;
-  Unix.close dev_null;
   let _, status = Unix.waitpid [] pid in
   let exit_code = match status with Unix.WEXITED n -> n | _ -> -1 in
   let read_file f = In_channel.with_open_bin f In_channel.input_all in
   let stdout = read_file out_file in
   let stderr = read_file err_file in
+  Sys.remove stdin_file;
   Sys.remove out_file;
   Sys.remove err_file;
   { exit_code; stdout; stderr }
