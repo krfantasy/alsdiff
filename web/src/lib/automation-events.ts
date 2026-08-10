@@ -12,6 +12,17 @@ function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));
 }
 
+// Ableton writes `Time="-63072000"` (exactly -2 years, in seconds) as a
+// "no time" sentinel on the initial envelope point of an automation. Such a
+// point sits at the start of the arrangement, so normalize it to 0 both for
+// the visible range and for rendering positions.
+const SENTINEL_TIME = -63072000;
+
+function normalizeTime(t: number | undefined): number | undefined {
+  if (t === undefined) return undefined;
+  return t <= SENTINEL_TIME + 1 ? 0 : t;
+}
+
 // --- Old format: parse from name string ---
 
 const RE_ADDED_REMOVED = /Time=([\d.-]+),\s*Value=([\d.]+)/;
@@ -120,11 +131,12 @@ function parseNewFormat(child: ItemView): AutomationEvent | undefined {
   const valueF = getField(fields, "Value");
 
   if (child.change === "Added" || child.change === "Removed") {
-    const t = timeF.new;
+    // Removed events only carry `old_value`, so fall back to it.
+    const t = timeF.new ?? timeF.old;
     if (t === undefined) return undefined;
     return {
-      time: t,
-      value: valueF.new ?? 0,
+      time: normalizeTime(t) ?? 0,
+      value: valueF.new ?? valueF.old ?? 0,
       change: child.change,
       curve: getCurveControls(fields, false),
     };
@@ -132,10 +144,10 @@ function parseNewFormat(child: ItemView): AutomationEvent | undefined {
     const t = timeF.new ?? timeF.old;
     if (t === undefined) return undefined;
     return {
-      time: t,
+      time: normalizeTime(t) ?? 0,
       value: valueF.new ?? valueF.old ?? 0,
       change: "Modified",
-      oldTime: timeF.old,
+      oldTime: normalizeTime(timeF.old),
       oldValue: valueF.old,
       curve: getCurveControls(fields, false),
       oldCurve: getCurveControls(fields, true),
@@ -199,6 +211,8 @@ export function computeAutomationRange(
   let minTime = Infinity;
   let maxTime = -Infinity;
 
+  // Times are already normalized by parseAutomationEvents; this loop only
+  // needs to handle the default range when there are no events at all.
   for (const e of events) {
     const v = e.oldValue ?? e.value;
     if (v < minValue) minValue = v;

@@ -12,6 +12,7 @@ import {
   timeSignature,
   selectedTrackIdx,
   selectedClipName,
+  setSelectedAutomationIdx,
   collapsedGroups,
 } from "../stores/diff-store";
 import { computeTimelineRange, extractClips, extractAutomations, buildTrackHierarchy, flattenVisibleTracks } from "../lib/diff-parser";
@@ -102,6 +103,9 @@ export default function ArrangementView() {
   const selectTrack = (idx: number) => {
     setSelectedTrackIdx(idx);
     setSelectedClipName(null);
+    // Automation selection is per-track: reset so a stale index from a
+    // previous track cannot point past a smaller automation list.
+    setSelectedAutomationIdx(0);
     setDetailTab("devices");
   };
 
