@@ -25,7 +25,9 @@ import type { HitCircle } from "../lib/hit-testing";
 
 const VALUE_TICKS = 6;
 
-const ZOOM_MIN = 0.2;
+// ZOOM_MIN is low enough that a full-curve fit works for typical songs:
+// at 0.05 (2px/beat) an automation of ~600 beats fits a 1200px pane.
+const ZOOM_MIN = 0.05;
 const ZOOM_MAX = 10;
 
 interface Props {
@@ -72,6 +74,22 @@ export default function AutomationView(props: Props) {
     }
     return ticks;
   };
+
+  const fitZoom = (): number | null => {
+    const width = surfaceRef?.clientWidth ?? 0;
+    const beats = totalBeats();
+    if (width <= 0 || beats <= 0) return null;
+    return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, width / (beats * 40)));
+  };
+
+  // Adaptive default zoom: fit the whole curve on first open and whenever
+  // the automation selection changes, so the curve is always fully visible.
+  // Manual zoom (slider/wheel) survives until the next selection change.
+  createEffect(() => {
+    totalBeats();
+    const fit = fitZoom();
+    if (fit !== null) setAutomationZoomFactor(fit);
+  });
 
   createEffect(() => {
     events();
