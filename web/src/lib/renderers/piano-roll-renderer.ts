@@ -67,7 +67,9 @@ export function renderPianoRoll(
   for (let b = gridStart; b <= gridEnd + minor * 0.5; b += minor) {
     const isBar = Math.abs(((b % qnPerBar) + qnPerBar) % qnPerBar) < 1e-6;
     let label = "";
-    if (isBar) {
+    // minTime can be negative (left pad for t=0 notes); quarterNoteToPosition
+    // maps every qn <= 0 to "1.1.1", so suppress pre-zero labels (ticks stay).
+    if (isBar && b >= 0) {
       const p = quarterNoteToPosition(b, timeSignature);
       label = formatPosition(p.bar, p.beat, p.sixteenth);
     }

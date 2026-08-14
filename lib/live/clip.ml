@@ -19,7 +19,7 @@ end
 
 module MidiNote = struct
   type t = {
-    id : int; [@id.id] [@patch.skip] [@view.skip]
+    id : int; [@id.id] [@patch.identity] [@view.skip]
     note : int;
     time : float; [@view.scalar time]
     duration : float;

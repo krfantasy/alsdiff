@@ -510,6 +510,7 @@ let default_note_name_style = Sharp
 let create_note_item
     ?(note_name_style : note_display_style = default_note_name_style)
     ?(format_time : dual_time_formatter = default_dual_time_formatter)
+    ?(reference_note : Clip.MidiNote.t option)
     (c : (Clip.MidiNote.t, Clip.MidiNote.Patch.t) structured_change)
   : item =
   let open Clip.MidiNote in
@@ -521,15 +522,40 @@ let create_note_item
     make_float "Off Velocity" (fun (x : t) -> x.off_velocity) (fun (x : Patch.t) -> x.off_velocity);
   ]
   in
-  let note_name = match c with
-    | `Added n | `Removed n ->
-      let name = get_note_name_from_int ~style:note_name_style n.note in
-      Printf.sprintf "Note %s (%d)" name n.note
-    | `Modified _ -> "Note"
-    | `Unchanged -> "Note"
+  let pitch = match c with
+    | `Added n | `Removed n -> Some n.note
+    | `Modified np ->
+      (match np.Patch.note with
+       | `Modified { newval; _ } -> Some newval
+       | `Unchanged -> Option.map (fun (r : t) -> r.note) reference_note)
+    | `Unchanged -> None
+  in
+  let note_name = match pitch, c with
+    | Some p, _ ->
+      Printf.sprintf "Note %s (%d)" (get_note_name_from_int ~style:note_name_style p) p
+    | None, `Modified np -> Printf.sprintf "Note (#%d)" np.Patch.id
+    | None, _ -> "Note"
   in
   let section_spec = Spec.inline_fields ~specs ~domain_type:DTNote in
-  build_item_from_specs ~name:note_name ~domain_type:DTNote ~specs:[section_spec] c
+  let item = build_item_from_specs ~name:note_name ~domain_type:DTNote ~specs:[section_spec] c in
+  match c, reference_note with
+  | `Modified _, Some ref ->
+    (* Unchanged leaf fields carry no values in the patch: re-attach them from
+       the reference note as Unchanged context so consumers render the real
+       pitch/duration/velocity instead of defaults (mirrors the mixer-context
+       population). Fields the patch path emitted stay untouched. *)
+    let present name = List.exists (function
+        | Field f -> f.name = name
+        | _ -> false) item.children in
+    let ctx = build_value_field_views specs Added ref ~domain_type:DTNote
+      |> List.filter_map (fun v ->
+          match v with
+          | Field ({ name; _ } as f) when not (present name) ->
+            Some (view_to_unchanged (Field f))
+          | _ -> None)
+    in
+    { item with children = ctx @ item.children }
+  | _ -> item
 
 
 (** [event_value_to_field_value] converts an Automation.event_value to a field_value *)
@@ -719,11 +745,26 @@ let create_events_item
 let create_midi_clip_item
     ?(note_name_style : note_display_style = default_note_name_style)
     ?(format_time : dual_time_formatter = default_dual_time_formatter)
+    ?(reference_clips : Clip.MidiClip.t list option)
     (c : (Clip.MidiClip.t, Clip.MidiClip.Patch.t) structured_change)
   : item =
   let name = build_midi_clip_section_name c in
+  (* For a Modified clip, resolve the old clip's notes (matched by clip id) so
+     Modified notes can render their unchanged fields as context. *)
+  let ref_notes = match c, reference_clips with
+    | `Modified cp, Some clips ->
+      List.find_opt (fun (rc : Clip.MidiClip.t) -> rc.Clip.MidiClip.id = cp.Clip.MidiClip.Patch.id) clips
+      |> Option.map (fun (rc : Clip.MidiClip.t) -> rc.Clip.MidiClip.notes)
+    | _ -> None
+  in
   let specs = MidiClipVS.section_specs ~format_time
-      ~build_notes:(create_note_item ~note_name_style ~format_time) in
+      ~build_notes:(fun nc ->
+          create_note_item ~note_name_style ~format_time
+            ?reference_note:(match nc, ref_notes with
+                | `Modified np, Some notes ->
+                  List.find_opt (fun (rn : Clip.MidiNote.t) -> rn.Clip.MidiNote.id = np.Clip.MidiNote.Patch.id) notes
+                | _ -> None)
+            nc) in
   build_item_from_specs ~name ~domain_type:DTClip ~specs c
 
 (** [create_audio_clip_item] creates a [item] from an AudioClip structured change.
@@ -957,7 +998,8 @@ let create_midi_track_item
   : item =
   let item = MidiTrackVS.build_item
       ~format_time
-      ~build_clips:(create_midi_clip_item ~note_name_style ~format_time)
+      ~build_clips:(create_midi_clip_item ~note_name_style ~format_time
+                      ?reference_clips:(Option.map (fun (rt : Track.MidiTrack.t) -> rt.Track.MidiTrack.clips) reference_track))
       ~build_automations:(create_automation_item ~get_pointee_name ~format_time)
       ~build_devices:(create_device_item ~format_time)
       ~name:(MidiTrackVS.build_section_name c)

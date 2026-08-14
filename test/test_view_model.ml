@@ -118,6 +118,45 @@ let test_create_note_item_modified () =
      check (float 0.001) "New time" 0.5 n
    | _ -> fail "Expected Ffloat old and new for Time")
 
+(* Modified notes must carry their unchanged leaf fields as Unchanged context
+   (from the reference note) so consumers render the real pitch/duration/
+   velocity instead of defaults; the item name carries the pitch like
+   Added/Removed notes. *)
+let test_modified_note_reference_context () =
+  let old_note = { MidiNote.id = 7; note = 52; time = 4.0; duration = 11.0; velocity = 102.0; off_velocity = 64.0 } in
+  (* only velocity changes *)
+  let new_note = { old_note with velocity = 110.0 } in
+  let patch = MidiNote.diff old_note new_note in
+  let item = create_note_item ~reference_note:old_note (`Modified patch) in
+  check string "note name includes pitch" "Note E3 (52)" item.name;
+  let note_field = get_field (find_view_by_name "Note" item.children) in
+  check bool "Note field is Unchanged context" true (note_field.change = Unchanged);
+  (match note_field.newval with
+   | Some (Fint 52) -> () | _ -> fail "Note newval expected Fint 52");
+  let dur_field = get_field (find_view_by_name "Duration" item.children) in
+  (match dur_field.newval with
+   | Some (Ffloat 11.0) -> () | _ -> fail "Duration newval expected Ffloat 11.0");
+  let vel_field = get_field (find_view_by_name "Velocity" item.children) in
+  check bool "changed Velocity stays Modified" true (vel_field.change = Modified);
+  (match vel_field.oldval, vel_field.newval with
+   | Some (Ffloat 102.0), Some (Ffloat 110.0) -> ()
+   | _ -> fail "Velocity old/new expected 102/110");
+  (* Context fields come first, matching the Added/Removed field order. *)
+  (match item.children with
+   | Field { name = "Time"; _ } :: Field { name = "Duration"; _ } :: _ -> ()
+   | _ -> fail "Time/Duration should lead the children")
+
+(* Without a reference the Modified item keeps the old behavior (patch fields
+   only) but is at least identifiable by note id. *)
+let test_modified_note_no_reference_falls_back_to_id_name () =
+  let old_note = { MidiNote.id = 7; note = 52; time = 4.0; duration = 11.0; velocity = 102.0; off_velocity = 64.0 } in
+  let new_note = { old_note with velocity = 110.0 } in
+  let patch = MidiNote.diff old_note new_note in
+  let item = create_note_item (`Modified patch) in
+  check string "note name falls back to id" "Note (#7)" item.name;
+  check bool "no Note context field without reference" true
+    (not (List.exists (function Field { name = "Note"; _ } -> true | _ -> false) item.children))
+
 
 let test_create_note_item_sharp_style () =
   (* Note 54 = F#3 in sharp notation *)
@@ -796,6 +835,8 @@ let () =
     "create_note_item", [
       test_case "Create note item for Added" `Quick test_create_note_item_added;
       test_case "Create note item for Modified" `Quick test_create_note_item_modified;
+      test_case "Modified note carries reference context" `Quick test_modified_note_reference_context;
+      test_case "Modified note without reference falls back to id name" `Quick test_modified_note_no_reference_falls_back_to_id_name;
     ];
     "create_note_item note_name_style", [
       test_case "Sharp style produces sharp notes" `Quick test_create_note_item_sharp_style;

@@ -136,16 +136,26 @@ export function computeNoteRange(notes: MidiNoteData[]): NoteRange {
   let minTime = Infinity;
   let maxTime = -Infinity;
 
+  // Bound across BOTH the old and new coordinates: a modified note may have
+  // moved far in pitch or time, and both ghost/old and current positions must
+  // stay inside the fitted canvas.
   for (const note of notes) {
-    const p = note.oldPitch ?? note.pitch;
-    if (p < minPitch) minPitch = p;
-    if (p > maxPitch) maxPitch = p;
+    for (const p of [note.oldPitch ?? note.pitch, note.pitch]) {
+      if (p < minPitch) minPitch = p;
+      if (p > maxPitch) maxPitch = p;
+    }
 
-    const t = note.oldTime ?? note.time;
-    if (t < minTime) minTime = t;
+    for (const t of [note.oldTime ?? note.time, note.time]) {
+      if (t < minTime) minTime = t;
+    }
 
-    const endTime = (note.oldTime ?? note.time) + (note.oldDuration ?? note.duration);
-    if (endTime > maxTime) maxTime = endTime;
+    const endTimes = [
+      (note.oldTime ?? note.time) + (note.oldDuration ?? note.duration),
+      note.time + note.duration,
+    ];
+    for (const e of endTimes) {
+      if (e > maxTime) maxTime = e;
+    }
   }
 
   const pitchPad = Math.max(2, Math.ceil((maxPitch - minPitch) * 0.15));
@@ -154,7 +164,10 @@ export function computeNoteRange(notes: MidiNoteData[]): NoteRange {
   return {
     minPitch: Math.max(0, minPitch - pitchPad),
     maxPitch: Math.min(127, maxPitch + pitchPad),
-    minTime: Math.max(0, minTime - timePad),
+    // Negative minTime is intentional — it pads the canvas left edge so
+    // t=0 notes render fully instead of half-clipped, mirroring
+    // computeAutomationRange.
+    minTime: minTime - timePad,
     maxTime: maxTime + timePad,
   };
 }
