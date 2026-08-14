@@ -8,16 +8,18 @@ import {
   detailHeight,
 } from "../stores/diff-store";
 import {
-  extractDevices,
-  extractClips,
-  extractAutomations,
-  extractCollectionCounts,
+	extractDevices,
+	extractClips,
+	extractAutomations,
+	extractCollectionCounts,
+	sumCounts,
 } from "../lib/diff-parser";
 import { extractMidiNotes } from "../lib/midi-notes";
 import DeviceChain from "./DeviceChain";
 import ClipDetail from "./ClipDetail";
 import PianoRollView from "./PianoRollView";
 import AutomationView from "./AutomationView";
+import CountsBanner from "./CountsBanner";
 import type { ClipData } from "../types";
 
 export default function DetailView() {
@@ -49,7 +51,15 @@ export default function DetailView() {
   };
   const hasDevices = () => devices().length > 0 || deviceCounts() !== null;
 
-  const hasClip = () => selectedClip() !== null;
+  // Clips are reachable in two shapes: a selected clip (listable Clips
+  // collection, chosen via the arrangement or firstAvailableDetailTab) or a
+  // counts-only Clips collection (Summary/Compact), where no clip is
+  // selectable and the pane shows the counts banner instead.
+  const clipCounts = () => {
+    const track = selectedTrack();
+    return track ? extractCollectionCounts(track.children, "Clips") : null;
+  };
+  const hasClip = () => selectedClip() !== null || clipCounts() !== null;
   const hasNotes = () => {
     const clip = selectedClip();
     if (!clip || clip.clipType !== "midi") return false;
@@ -65,6 +75,10 @@ export default function DetailView() {
     return track ? extractCollectionCounts(track.children, "Automations") : null;
   };
   const hasAutomations = () => automations().length > 0 || automationCounts() !== null;
+  // Count-aware tab labels: counts-only collections (Summary/Compact) show
+  // the counts total instead of a misleading "(0)".
+  const deviceCount = () => devices().length || sumCounts(deviceCounts());
+  const automationCount = () => automations().length || sumCounts(automationCounts());
 
   return (
     <div class="detail-pane" data-testid="detail-pane" style={{ height: `${detailHeight()}px` }}>
@@ -91,16 +105,18 @@ export default function DetailView() {
               data-testid="detail-tab-devices"
               onClick={() => setDetailTab("devices")}
             >
-              Devices ({devices().length})
+              Devices ({deviceCount()})
             </div>
           </Show>
           <Show when={hasClip()}>
             <div
               class={`detail-tab ${detailTab() === "clip" ? "active" : ""}`}
-              data-testid="detail-tab-clip"
+              data-testid={selectedClip() ? "detail-tab-clip" : "detail-tab-clips"}
               onClick={() => setDetailTab("clip")}
             >
-              Clip: {selectedClip()?.name}
+              <Show when={selectedClip()} fallback={`Clips (${sumCounts(clipCounts())})`}>
+                Clip: {selectedClip()?.name}
+              </Show>
             </div>
           </Show>
           <Show when={hasNotes()}>
@@ -118,7 +134,7 @@ export default function DetailView() {
               data-testid="detail-tab-automation"
               onClick={() => setDetailTab("automation")}
             >
-              Automation ({automations().length})
+              Automation ({automationCount()})
             </div>
           </Show>
         </div>
@@ -129,7 +145,12 @@ export default function DetailView() {
             </Show>
           </Show>
           <Show when={detailTab() === "clip" && hasClip()}>
-            <ClipDetail clipChildren={selectedClip()?.children ?? []} />
+            <Show
+              when={selectedClip()}
+              fallback={<CountsBanner label="Clips" counts={clipCounts()} />}
+            >
+              <ClipDetail clipChildren={selectedClip()?.children ?? []} />
+            </Show>
           </Show>
           <Show when={detailTab() === "pianoRoll" && hasNotes()}>
             <PianoRollView clipChildren={selectedClip()?.children ?? []} />
@@ -139,37 +160,21 @@ export default function DetailView() {
               <AutomationView automationItems={automations()} />
             </Show>
           </Show>
+          {/* Summary-level track items carry no collections at all: surface
+              their counts so the pane isn't empty. */}
+          <Show
+            when={
+              !hasDevices() &&
+              !hasClip() &&
+              !hasNotes() &&
+              !hasAutomations() &&
+              selectedTrack()?.counts
+            }
+          >
+            <CountsBanner label="Track" counts={selectedTrack()?.counts ?? null} />
+          </Show>
         </div>
       </Show>
-    </div>
-  );
-}
-
-function CountsBanner(props: {
-  label: string;
-  counts: { added: number; removed: number; modified: number } | null;
-}) {
-  const parts: string[] = [];
-  if (props.counts) {
-    if (props.counts.added) parts.push(`${props.counts.added} added`);
-    if (props.counts.removed) parts.push(`${props.counts.removed} removed`);
-    if (props.counts.modified) parts.push(`${props.counts.modified} modified`);
-  }
-  const summary = parts.length > 0 ? parts.join(", ") : "no changes";
-  return (
-    <div
-      data-testid="counts-banner"
-      style={{
-        display: "flex",
-        "align-items": "center",
-        "justify-content": "center",
-        height: "100%",
-        color: "var(--text-dim)",
-        "font-size": "13px",
-        padding: "16px",
-      }}
-    >
-      {props.label}: {summary} — switch to Verbose/Full to view.
     </div>
   );
 }

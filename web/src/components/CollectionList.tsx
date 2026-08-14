@@ -1,5 +1,16 @@
 import type { CollectionView, ViewNode } from "../types";
 import { For } from "solid-js";
+import CountsBanner from "./CountsBanner";
+
+// True when a collection is counts-only (Summary/Compact): the backend omits
+// `items` entirely and emits `counts` instead. Such a collection renders the
+// "switch to Verbose/Full" banner rather than an empty list.
+function isCountsOnly(collection: CollectionView): boolean {
+  return (
+    collection.counts != null &&
+    (!collection.items || collection.items.length === 0)
+  );
+}
 
 interface Props {
   collection: CollectionView;
@@ -46,14 +57,9 @@ export function ViewNodeRow(props: { node: ViewNode; depth?: number }) {
       {props.node.type === "collection" && (
         <div>
           <div class="collection-header">{props.node.name}</div>
-          {/* TODO(future): under Summary/Compact detail levels the OCaml backend
-              omits `items` entirely and emits `counts` instead, so a counts-only
-              collection renders here as just a header. To show a "switch to
-              Verbose/Full" banner instead, lift CountsBanner out of
-              DetailView.tsx into a shared component and render it when
-              `props.node.counts && (!props.node.items || props.node.items.length === 0)`
-              (same pattern as DetailView.tsx's Devices/Automations tabs). Same
-              TODO applies to the `<For>` in the default CollectionList export. */}
+          {isCountsOnly(props.node) && (
+            <CountsBanner label={props.node.name} counts={props.node.counts ?? null} />
+          )}
           <For each={props.node.items ?? []}>
             {(item) => <ViewNodeRow node={item} depth={depth() + 1} />}
           </For>
@@ -75,6 +81,12 @@ export default function CollectionList(props: Props) {
           ({props.collection.displayed}/{props.collection.total})
         </Show>
       </div>
+      {isCountsOnly(props.collection) && (
+        <CountsBanner
+          label={props.collection.name}
+          counts={props.collection.counts ?? null}
+        />
+      )}
       <For each={props.collection.items ?? []}>
         {(item) => <ViewNodeRow node={item} />}
       </For>

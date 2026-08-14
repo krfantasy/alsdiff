@@ -1,5 +1,6 @@
 import { Show } from "solid-js";
 import type { ItemView, ViewNode, ChangeType } from "../types";
+import { sumCounts } from "../lib/diff-parser";
 
 interface MixerProps {
   mixer: ItemView;
@@ -155,7 +156,9 @@ function MixerToggle(props: { label: string; value: ReturnType<typeof getParamVa
 
 export default function MixerStrip(props: MixerProps) {
   const children = () => props.mixer.children ?? [];
-  const hasChanges = () => children().length > 0;
+  // Counts-only Mixer items (Summary/Compact) carry no children; still render
+  // so the change is visible instead of silently dropped.
+  const hasChanges = () => children().length > 0 || !!props.mixer.counts;
 
   const volume = () => {
     const vol = findMixerParam(children(), "Volume");
@@ -180,6 +183,21 @@ export default function MixerStrip(props: MixerProps) {
   return (
     <Show when={hasChanges()}>
       <div class="mixer-strip" data-testid="mixer-strip">
+        <Show when={children().length === 0 && props.mixer.counts}>
+          <div
+            data-testid="mixer-counts-banner"
+            style={{
+              "font-size": "10px",
+              color: "var(--text-dim)",
+              "white-space": "nowrap",
+            }}
+            title="Switch to the Verbose or Full preset to view mixer values"
+          >
+            Mixer: {sumCounts(props.mixer.counts)} change
+            {sumCounts(props.mixer.counts) === 1 ? "" : "s"} — Verbose/Full to
+            view
+          </div>
+        </Show>
         <div class="mixer-toggles">
           <Show when={mute()}>
             {(m) => <MixerToggle label="M" value={m()} />}

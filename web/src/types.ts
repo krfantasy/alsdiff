@@ -34,11 +34,14 @@ export interface FieldView {
 }
 
 export interface ItemView {
-  type: "item";
-  name: string;
-  change: ChangeType;
-  domain_type: DomainType;
-  children?: ViewNode[];
+	type: "item";
+	name: string;
+	change: ChangeType;
+	domain_type: DomainType;
+	children?: ViewNode[];
+	// Counts-only items (Summary detail level) carry a breakdown instead of
+	// children.
+	counts?: { added: number; removed: number; modified: number };
 }
 
 export interface CollectionView {
@@ -63,12 +66,14 @@ export interface DiffResult {
 }
 
 export interface TrackData {
-  name: string;
-  change: ChangeType;
-  domainType: DomainType;
-  trackId: number;
-  groupId: number;
-  children: ViewNode[];
+	name: string;
+	change: ChangeType;
+	domainType: DomainType;
+	trackId: number;
+	groupId: number;
+	children: ViewNode[];
+	// Track-level counts when the track item is counts-only (Summary).
+	counts?: { added: number; removed: number; modified: number };
 }
 
 export interface TrackNode {

@@ -77,6 +77,7 @@ export function extractTracks(livesetChildren: ViewNode[]): TrackData[] {
       domainType: child.domain_type,
       trackId: fieldTrackId || extractTrackIdFromName(child.name),
       groupId: getTrackIntField(tc, "GroupId", -1),
+      counts: child.counts,
       children: tc,
     });
   };
@@ -216,12 +217,23 @@ export function extractRoutings(track: TrackData): ItemView | undefined {
 	);
 }
 
+/** Total number of changes in a counts breakdown (0 for null/undefined). */
+export function sumCounts(
+	counts:
+		| { added: number; removed: number; modified: number }
+		| null
+		| undefined,
+): number {
+	return counts ? counts.added + counts.removed + counts.modified : 0;
+}
+
 export type DetailTabName = "devices" | "clip" | "pianoRoll" | "automation";
 
 /** First detail tab with data for a freshly selected track (no clip chosen
- *  yet): devices → clip (pianoRoll when the first note-bearing clip exists)
- *  → automation. Mirrors DetailView's tab visibility, including counts-only
- *  collections (Summary/Compact). Returns null when nothing renders. */
+ *  yet): devices → clip (pianoRoll when the first note-bearing clip exists,
+ *  and counts-only Clips when no clip is selectable) → automation. Mirrors
+ *  DetailView's tab visibility, including counts-only collections
+ *  (Summary/Compact). Returns null when nothing renders. */
 export function firstAvailableDetailTab(
 	track: TrackData,
 ): { tab: DetailTabName; clipName?: string } | null {
@@ -231,12 +243,19 @@ export function firstAvailableDetailTab(
 	if (hasDevices) return { tab: "devices" };
 
 	const clips = extractClips(track);
-	if (clips.length > 0) {
-		const withNotes = clips.find(
-			(c) => c.clipType === "midi" && extractMidiNotes(c.children).length > 0,
-		);
-		if (withNotes) return { tab: "pianoRoll", clipName: withNotes.name };
-		return { tab: "clip", clipName: clips[0].name };
+	const clipCounts = extractCollectionCounts(track.children, "Clips");
+	if (clips.length > 0 || clipCounts !== null) {
+		if (clips.length > 0) {
+			const withNotes = clips.find(
+				(c) =>
+					c.clipType === "midi" && extractMidiNotes(c.children).length > 0,
+			);
+			if (withNotes) return { tab: "pianoRoll", clipName: withNotes.name };
+			return { tab: "clip", clipName: clips[0].name };
+		}
+		// Counts-only Clips (Summary/Compact): nothing is selectable, so no
+		// clipName — DetailView shows the Clips counts tab in that state.
+		return { tab: "clip" };
 	}
 
 	const hasAutomations =
