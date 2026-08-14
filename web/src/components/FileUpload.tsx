@@ -1,7 +1,7 @@
 import { Show, For } from "solid-js";
 import { setIsLoading, setError, setDiffResult, setTracks, setRawJson, setTempo, setTimeSignature, isLoading, error, setLoadFileNameA, setLoadFileNameB } from "../stores/diff-store";
 import { diffFilesJson } from "../lib/alsdiff-api";
-import { extractTracks, extractTempo, extractTimeSignature } from "../lib/diff-parser";
+import { extractTracks, extractTempo, extractTimeSignature, hasAnyChange } from "../lib/diff-parser";
 import {
   preset, setPreset,
   customConfigName,
@@ -61,7 +61,7 @@ export default function FileUpload() {
       const result = await diffFilesJson(file1, file2, options);
       setRawJson(JSON.stringify(result, null, 2));
 
-      if (!result.diff || result.diff.length === 0) {
+      if (!result.diff || result.diff.length === 0 || !hasAnyChange(result.diff)) {
         setError("No differences found between files.");
         setDiffResult(null);
         return;

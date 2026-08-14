@@ -227,6 +227,22 @@ export function sumCounts(
 	return counts ? counts.added + counts.removed + counts.modified : 0;
 }
 
+/** True when any node in the tree carries a real change. The JSON contract
+ *  always emits the top-level LiveSet item (even Unchanged), so an empty
+ *  change list must be detected recursively. */
+export function hasAnyChange(nodes: ViewNode[]): boolean {
+	for (const node of nodes) {
+		if (node.change !== "Unchanged") return true;
+		if (node.type === "item" && node.children && hasAnyChange(node.children)) {
+			return true;
+		}
+		if (node.type === "collection" && node.items && hasAnyChange(node.items)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 export type DetailTabName = "devices" | "clip" | "pianoRoll" | "automation";
 
 /** First detail tab with data for a freshly selected track (no clip chosen
