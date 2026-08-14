@@ -46,26 +46,19 @@ export default function DeviceCard(props: Props) {
     const children = props.device.children ?? [];
 
     for (const child of children) {
-      if (child.type === "item" && child.name === "Parameters") {
-        for (const param of child.children ?? []) {
-          if (param.type !== "item") continue;
-          const fields = param.children ?? [];
-          let paramName = param.name;
-          let oldVal: string | undefined;
-          let newVal: string | undefined;
-
-          for (const f of fields) {
-            if (f.type !== "field") continue;
-            if (f.name === "Name" && f.new_value) paramName = String(f.new_value);
-            if (f.name === "Value") {
-              oldVal = f.old_value != null ? String(f.old_value) : undefined;
-              newVal = f.new_value != null ? String(f.new_value) : undefined;
-            }
-          }
-
-          if (oldVal !== undefined || newVal !== undefined) {
-            params.push({ name: paramName, oldVal, newVal, change: param.change });
-          }
+      // The backend emits Parameters as a collection of param items; the
+      // param's identity is its item name (no "Name" field).
+      if (child.type !== "collection" || child.name !== "Parameters") continue;
+      for (const param of child.items ?? []) {
+        if (param.type !== "item") continue;
+        const value = (param.children ?? []).find(
+          (f) => f.type === "field" && f.name === "Value"
+        );
+        if (!value || value.type !== "field") continue;
+        const oldVal = value.old_value != null ? String(value.old_value) : undefined;
+        const newVal = value.new_value != null ? String(value.new_value) : undefined;
+        if (oldVal !== undefined || newVal !== undefined) {
+          params.push({ name: param.name, oldVal, newVal, change: param.change });
         }
       }
     }
@@ -77,8 +70,12 @@ export default function DeviceCard(props: Props) {
     const children = props.device.children ?? [];
     return children.filter(
       (c) =>
-        !(c.type === "item" && c.name === "Parameters") &&
-        !(c.type === "collection" && c.name === "Branches")
+        !(c.type === "collection" && c.name === "Branches") &&
+        !(
+          c.type === "collection" &&
+          c.name === "Parameters" &&
+          (c.items?.length ?? 0) > 0
+        )
     );
   };
 
