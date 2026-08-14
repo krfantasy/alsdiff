@@ -678,6 +678,7 @@ module AudioTrackVS = Track.AudioTrack.ViewSpec(DeviceViewSpecB)
 module MainTrackVS = Track.MainTrack.ViewSpec(DeviceViewSpecB)
 module MixerVS = Track.Mixer.ViewSpec(DeviceViewSpecB)
 module MainMixerVS = Track.MainMixer.ViewSpec(DeviceViewSpecB)
+module GenericParamVS = Device.GenericParam.ViewSpec(DeviceViewSpecB)
 module RoutingSetVS = Track.RoutingSet.ViewSpec(DeviceViewSpecB)
 module MidiClipVS = Clip.MidiClip.ViewSpec(DeviceViewSpecB)
 module AudioClipVS = Clip.AudioClip.ViewSpec(DeviceViewSpecB)
@@ -901,6 +902,47 @@ let prepend_track_identity_fields
   { item with children = extras @ item.children }
 
 
+(** [populate_unchanged_main_mixer_item] fills the master's empty Unchanged
+    param placeholders — Tempo/Time Signature/Crossfade/Global Groove, the
+    inner base Mixer, or the whole Mixer item when the entire MainMixer is
+    unchanged — from the reference main track, so the current tempo/time
+    signature stays readable even when only part of the master mixer changed.
+    Mirrors [populate_unchanged_mixer_item]. *)
+let populate_unchanged_main_mixer_item
+    ~(format_time : dual_time_formatter)
+    (item : item)
+    (ref : Track.MainTrack.t)
+  : item =
+  let param_children (v : Device.GenericParam.t) =
+    List.map view_to_unchanged (GenericParamVS.build_value_children ~format_time Added v)
+  in
+  let fill_mixer_child = function
+    | Item ({ name = ("Tempo" | "Time Signature" | "Crossfade" | "Global Groove");
+              change = Unchanged; children = []; _ } as mi) ->
+      let v = match mi.name with
+        | "Tempo" -> ref.Track.MainTrack.mixer.tempo
+        | "Time Signature" -> ref.Track.MainTrack.mixer.time_signature
+        | "Crossfade" -> ref.Track.MainTrack.mixer.crossfade
+        | _ -> ref.Track.MainTrack.mixer.global_groove
+      in
+      Item { mi with children = param_children v }
+    | Item ({ name = "Mixer"; change = Unchanged; children = []; _ } as mi) ->
+      let mc = MixerVS.build_value_children ~format_time Added ref.Track.MainTrack.mixer.base in
+      Item { mi with children = List.map view_to_unchanged mc }
+    | v -> v
+  in
+  let children = List.map (function
+      | Item ({ name = "Mixer"; change = Unchanged; children = []; _ } as mi) ->
+        (* whole MainMixer unchanged: rebuild all five sub-items *)
+        let mc = MainMixerVS.build_value_children ~format_time Added ref.Track.MainTrack.mixer in
+        Item { mi with children = List.map view_to_unchanged mc }
+      | Item ({ name = "Mixer"; _ } as mi) ->
+        Item { mi with children = List.map fill_mixer_child mi.children }
+      | v -> v) item.children
+  in
+  { item with children }
+
+
 (** [create_midi_track_item] creates a [item] from a MidiTrack structured change (new type system).
     @param get_pointee_name function to resolve pointee IDs to names
     @param note_name_style the style to use for note names (Sharp or Flat)
@@ -997,15 +1039,19 @@ let create_main_track_item
     ~(get_pointee_name : int -> string)
     ?(note_name_style : note_display_style = default_note_name_style)
     ?(format_time : dual_time_formatter = default_dual_time_formatter)
+    ?(reference_track : Track.MainTrack.t option)
     (c : (Track.MainTrack.t, Track.MainTrack.Patch.t) structured_change)
   : item =
   ignore (note_name_style : note_display_style);
-  MainTrackVS.build_item
-    ~format_time
-    ~build_automations:(create_automation_item ~get_pointee_name ~format_time)
-    ~build_devices:(create_device_item ~format_time)
-    ~name:(MainTrackVS.build_section_name c)
-    ~domain_type:DTTrack c
+  let item = MainTrackVS.build_item
+      ~format_time
+      ~build_automations:(create_automation_item ~get_pointee_name ~format_time)
+      ~build_devices:(create_device_item ~format_time)
+      ~name:(MainTrackVS.build_section_name c)
+      ~domain_type:DTTrack c in
+  match reference_track with
+  | None -> item
+  | Some rt -> populate_unchanged_main_mixer_item ~format_time item rt
 
 
 (* ==================== Liveset View ==================== *)
@@ -1287,7 +1333,11 @@ let create_liveset_item
     | `Modified p ->
       (match p.Liveset.Patch.main with
        | `Modified pt ->
-         Some (create_main_track_item ~get_pointee_name ~note_name_style ~format_time (`Modified pt))
+         let ref_main = match reference_liveset with
+           | Some ls -> (match ls.Liveset.main with Track.Main m -> Some m | _ -> None)
+           | None -> None
+         in
+         Some (create_main_track_item ~get_pointee_name ~note_name_style ~format_time ?reference_track:ref_main (`Modified pt))
        | `Unchanged -> None)
     | _ -> None
   in

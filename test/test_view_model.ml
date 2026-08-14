@@ -514,6 +514,38 @@ let test_create_liveset_item_with_main_only_change () =
   check bool "main track rendered flat under liveset" true
     (String.starts_with ~prefix:"MainTrack: Main" main_track_item.name)
 
+(* Unchanged master-mixer params must be populated from the reference liveset
+   so consumers can read the current tempo/time signature even when only part
+   of the master mixer changed (mirrors the track-mixer population). *)
+let test_reference_populates_unchanged_main_mixer_params () =
+  let path = Utils.resolve_test_data_path "t4.xml" in
+  let xml = read_file path in
+  let liveset1 = Liveset.create xml path in
+  let liveset2 = Liveset.create xml path in
+  let updated_main =
+    match liveset2.Liveset.main with
+    | Track.Main main_track ->
+      let tempo = { main_track.Track.MainTrack.mixer.tempo with value = Device.Float 138.0 } in
+      Track.Main { main_track with mixer = { main_track.Track.MainTrack.mixer with tempo } }
+    | _ -> fail "Expected Track.Main type for main track"
+  in
+  let patch = Liveset.diff liveset1 { liveset2 with main = updated_main } in
+  let item = create_liveset_item ~reference_liveset:liveset1 (`Modified patch) in
+  let main_item = get_item (find_view_by_name "MainTrack: Main" item.children) in
+  let mixer = get_item (find_view_by_name "Mixer" main_item.children) in
+  (* Tempo changed: Modified Value field with old/new. *)
+  let tempo = get_item (find_view_by_name "Tempo" mixer.children) in
+  let tempo_value = get_field (find_view_by_name "Value" tempo.children) in
+  check bool "Tempo Value is Modified" true (tempo_value.change = Modified);
+  (match tempo_value.oldval, tempo_value.newval with
+   | Some (Ffloat 120.0), Some (Ffloat 138.0) -> ()
+   | _ -> check bool "Tempo old/new are 120/138" true false);
+  (* Time signature unchanged: placeholder populated with the code (t4: 201 = 4/4). *)
+  let ts = get_item (find_view_by_name "Time Signature" mixer.children) in
+  (match List.find_opt (function Field { name = "Value"; _ } -> true | _ -> false) ts.children with
+      | Some (Field { change = Unchanged; newval = Some (Fint 201); _ }) -> ()
+      | _ -> check bool "Time Signature Value populated as Unchanged 201" true false)
+
 (* When only part of the liveset changes, an unchanged nested section (here
    Version) emits a placeholder {change=Unchanged} item from the projector so
    JSON/web consumers see the node (restoring Mixer/Routing/Send data lost by
@@ -746,6 +778,7 @@ let () =
     ];
     "create_liveset_item", [
       test_case "Renders main track when it is the only change" `Quick test_create_liveset_item_with_main_only_change;
+      test_case "Reference populates unchanged main mixer params" `Quick test_reference_populates_unchanged_main_mixer_params;
       test_case "Unchanged section placeholder handling" `Quick test_unchanged_section_placeholder_handling;
       test_case "Reference liveset populates unchanged mixer" `Quick test_reference_populates_unchanged_mixer;
       test_case "Modified track carries identity fields" `Quick test_modified_track_identity_fields;
