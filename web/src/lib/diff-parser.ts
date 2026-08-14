@@ -1,13 +1,14 @@
 import type {
-  ViewNode,
-  ItemView,
-  CollectionView,
-  TrackData,
-  TrackNode,
-  ClipData,
-  TimelineRange,
+	ViewNode,
+	ItemView,
+	CollectionView,
+	TrackData,
+	TrackNode,
+	ClipData,
+	TimelineRange,
 } from "../types";
 import type { TimeSignature } from "./time-format";
+import { extractMidiNotes } from "./midi-notes";
 
 function isItem(node: ViewNode): node is ItemView {
   return node.type === "item";
@@ -210,9 +211,40 @@ export function extractCollectionCounts(
 }
 
 export function extractRoutings(track: TrackData): ItemView | undefined {
-  return track.children.find(
-    (c): c is ItemView => isItem(c) && c.name === "Routings",
-  );
+	return track.children.find(
+		(c): c is ItemView => isItem(c) && c.name === "Routings",
+	);
+}
+
+export type DetailTabName = "devices" | "clip" | "pianoRoll" | "automation";
+
+/** First detail tab with data for a freshly selected track (no clip chosen
+ *  yet): devices → clip (pianoRoll when the first note-bearing clip exists)
+ *  → automation. Mirrors DetailView's tab visibility, including counts-only
+ *  collections (Summary/Compact). Returns null when nothing renders. */
+export function firstAvailableDetailTab(
+	track: TrackData,
+): { tab: DetailTabName; clipName?: string } | null {
+	const hasDevices =
+		extractDevices(track).length > 0 ||
+		extractCollectionCounts(track.children, "Devices") !== null;
+	if (hasDevices) return { tab: "devices" };
+
+	const clips = extractClips(track);
+	if (clips.length > 0) {
+		const withNotes = clips.find(
+			(c) => c.clipType === "midi" && extractMidiNotes(c.children).length > 0,
+		);
+		if (withNotes) return { tab: "pianoRoll", clipName: withNotes.name };
+		return { tab: "clip", clipName: clips[0].name };
+	}
+
+	const hasAutomations =
+		extractAutomations(track).length > 0 ||
+		extractCollectionCounts(track.children, "Automations") !== null;
+	if (hasAutomations) return { tab: "automation" };
+
+	return null;
 }
 
 /**

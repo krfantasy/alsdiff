@@ -28,6 +28,7 @@ import {
 	extractAutomations,
 	buildTrackHierarchy,
 	flattenVisibleTracks,
+	firstAvailableDetailTab,
 } from "../lib/diff-parser";
 import { extractMidiNotes } from "../lib/midi-notes";
 import {
@@ -131,7 +132,16 @@ export default function ArrangementView() {
 		// Automation selection is per-track: reset so a stale index from a
 		// previous track cannot point past a smaller automation list.
 		setSelectedAutomationIdx(0);
-		setDetailTab("devices");
+		// Open the first tab that has data so tracks without devices (e.g. the
+		// Master track) don't land on an empty pane.
+		const track = tracks()[idx];
+		const first = track ? firstAvailableDetailTab(track) : null;
+		if (!first) {
+			setDetailTab("devices");
+			return;
+		}
+		if (first.clipName) setSelectedClipName(first.clipName);
+		setDetailTab(first.tab);
 	};
 
 	const selectClip = (trackIdx: number, clipName: string) => {
