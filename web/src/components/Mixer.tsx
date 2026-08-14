@@ -156,9 +156,6 @@ function MixerToggle(props: { label: string; value: ReturnType<typeof getParamVa
 
 export default function MixerStrip(props: MixerProps) {
   const children = () => props.mixer.children ?? [];
-  // Counts-only Mixer items (Summary/Compact) carry no children; still render
-  // so the change is visible instead of silently dropped.
-  const hasChanges = () => children().length > 0 || !!props.mixer.counts;
 
   const volume = () => {
     const vol = findMixerParam(children(), "Volume");
@@ -179,6 +176,13 @@ export default function MixerStrip(props: MixerProps) {
     const s = findMixerParam(children(), "Solo");
     return s?.children ? getParamValue(s.children) : null;
   };
+
+  // Render only with real controls (Volume/Pan/Mute/Solo) or the counts-only
+  // banner case; a Mixer with children but no recognizable control (the
+  // master's Tempo/Time Signature/Crossfade/Global Groove) renders nothing.
+  const hasControls = () => !!(volume() || pan() || mute() || solo());
+  const hasChanges = () =>
+    hasControls() || (children().length === 0 && !!props.mixer.counts);
 
   return (
     <Show when={hasChanges()}>
