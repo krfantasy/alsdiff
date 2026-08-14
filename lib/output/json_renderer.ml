@@ -38,36 +38,54 @@ let rec item_to_yojson (cfg : detail_config) (item : item) : Yojson.Safe.t optio
     if children = [] then `Assoc base
     else `Assoc (base @ [("children", `List children)])
   in
+  (* TrackId/GroupId are structural identity, not diff content: consumers (the
+     web app) nest tracks under their group by these fields, so they ride along
+     at every detail level — including counts-only Summary and Field-dropping
+     Compact — exactly once each, even where the normal path would render them. *)
+  let is_identity (f : field) =
+    item.domain_type = DTTrack && (f.name = "TrackId" || f.name = "GroupId") in
+  let identity =
+    List.filter_map (function
+        | Field f when is_identity f -> Some (field_to_yojson f)
+        | _ -> None) item.children
+  in
+  let sub_views = List.filter (function
+      | Field f -> not (is_identity f)
+      | _ -> true) item.children in
   match level with
   | Ignore -> None
   | Summary ->
     (* Summary mode: change counts, no children. LiveSet is the root container,
        so it shows its sub-views even in Summary (mirrors text_renderer.ml:162-174). *)
     if item.domain_type = DTLiveset then
-      Some (node (List.filter_map (view_to_yojson cfg) item.children))
-    else
+      Some (node (List.filter_map (view_to_yojson cfg) sub_views))
+    else begin
       let breakdown =
         if is_element_like_item cfg item then count_fields_breakdown item
         else count_sub_views_breakdown cfg item
       in
-      Some (`Assoc (base @ [("counts", change_breakdown_to_yojson breakdown)]))
+      let with_counts = base @ [("counts", change_breakdown_to_yojson breakdown)] in
+      if identity = [] then Some (`Assoc with_counts)
+      else Some (`Assoc (with_counts @ [("children", `List identity)]))
+    end
   | Compact ->
     (* Compact mode: Item/Collection sub-views only, no Fields (mirrors
        text_renderer.ml:200-206). Element-like items have only Fields, so this
-       yields no children for them. *)
+       yields no children for them — track identity fields are the exception. *)
     let children =
-      List.filter_map
+      identity
+      @ List.filter_map
         (fun (v : view) ->
            match v with
            | Item _ | Collection _ -> view_to_yojson cfg v
            | Field _ -> None)
-        item.children
+        sub_views
     in
     Some (node children)
   | Inline | Full ->
     (* Inline/Full mode: all sub-views, each rendered at its own level. This
        reproduces the original behavior, so Full/verbose output stays identical. *)
-    Some (node (List.filter_map (view_to_yojson cfg) item.children))
+    Some (node (identity @ List.filter_map (view_to_yojson cfg) sub_views))
 
 and collection_to_yojson (cfg : detail_config) (col : collection) : Yojson.Safe.t option =
   let level = get_effective_detail cfg col.change col.domain_type in
@@ -114,24 +132,26 @@ and view_to_yojson (cfg : detail_config) (view : view) : Yojson.Safe.t option =
   | Field f ->
     let level = get_effective_detail cfg f.change f.domain_type in
     if not (should_render_level level) then None
-    else
-      let base = [
-        ("type", `String "field");
-        ("name", `String f.name);
-        ("change", `String (change_type_to_string f.change));
-        ("domain_type", `String (domain_type_to_string f.domain_type));
-      ] in
-      let with_old = match f.oldval with
-        | None -> base
-        | Some v -> base @ [("old_value", field_value_to_yojson v)]
-      in
-      let with_new = match f.newval with
-        | None -> with_old
-        | Some v -> with_old @ [("new_value", field_value_to_yojson v)]
-      in
-      Some (`Assoc with_new)
+    else Some (field_to_yojson f)
   | Item item -> item_to_yojson cfg item
   | Collection col -> collection_to_yojson cfg col
+
+(** [field_to_yojson] serializes a field view without any detail-level gate.
+    Only for views that must render unconditionally (track identity fields). *)
+and field_to_yojson (f : field) : Yojson.Safe.t =
+  let base = [
+    ("type", `String "field");
+    ("name", `String f.name);
+    ("change", `String (change_type_to_string f.change));
+    ("domain_type", `String (domain_type_to_string f.domain_type));
+  ] in
+  let with_old = match f.oldval with
+    | None -> base
+    | Some v -> base @ [("old_value", field_value_to_yojson v)]
+  in
+  match f.newval with
+  | None -> `Assoc with_old
+  | Some v -> `Assoc (with_old @ [("new_value", field_value_to_yojson v)])
 
 let render (cfg : detail_config) (views : view list) : string =
   let entries = List.filter_map (view_to_yojson cfg) views in

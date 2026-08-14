@@ -171,6 +171,95 @@ let test_ignore () =
   let items = render_one (cfg_of Ignore) elem_item in
   Alcotest.(check int) "ignore renders nothing" 0 (List.length items)
 
+(* Track items carry TrackId/GroupId identity fields at EVERY detail level:
+   consumers (the web app) nest tracks by them, including in counts-only
+   Summary and Field-dropping Compact shapes where no other children render. *)
+let track_identity_item change =
+  Item
+    {
+      name = "MidiTrack (#14): Lead";
+      change;
+      domain_type = DTTrack;
+      children =
+        [
+          Field
+            {
+              name = "TrackId"; change = Unchanged; domain_type = DTTrack;
+              oldval = None; newval = Some (Fint 14);
+            };
+          Field
+            {
+              name = "GroupId"; change = Unchanged; domain_type = DTTrack;
+              oldval = None; newval = Some (Fint 91);
+            };
+          Item { name = "Mixer"; change = Modified; domain_type = DTMixer; children = [] };
+        ];
+    }
+
+let children_of = function
+  | `Assoc fields -> (List.assoc "children" fields : Yojson.Safe.t)
+  | other -> Alcotest.failf "expected object with children, got %s" (Yojson.Safe.to_string other)
+
+let is_field_named name = function
+  | `Assoc fields ->
+    (match List.assoc_opt "name" fields with
+     | Some (`String n) -> n = name
+     | _ -> false)
+  | _ -> false
+
+(* Summary is counts-only for a section-like track item — identity still rides
+   along as the only children. *)
+let test_track_identity_at_summary () =
+  let item = one (render_one (cfg_of Summary) (track_identity_item Removed)) in
+  Alcotest.(check bool) "counts still present" true (has_key "counts" item);
+  (match children_of item with
+   | `List fields ->
+     Alcotest.(check bool) "TrackId in children" true (List.exists (is_field_named "TrackId") fields);
+     Alcotest.(check bool) "GroupId in children" true (List.exists (is_field_named "GroupId") fields);
+     Alcotest.(check int) "only identity children" 2 (List.length fields)
+   | other -> Alcotest.failf "expected children list, got %s" (Yojson.Safe.to_string other))
+
+(* Compact keeps Item children but drops Fields — identity is the exception. *)
+let test_track_identity_at_compact_no_duplicate () =
+  let item = one (render_one (cfg_of Compact) (track_identity_item Modified)) in
+  (match children_of item with
+   | `List fields ->
+     Alcotest.(check int) "TrackId exactly once" 1 (List.length (List.filter (is_field_named "TrackId") fields));
+     Alcotest.(check int) "GroupId exactly once" 1 (List.length (List.filter (is_field_named "GroupId") fields));
+     Alcotest.(check int) "Mixer child still present" 1 (List.length (List.filter (is_field_named "Mixer") fields))
+   | other -> Alcotest.failf "expected children list, got %s" (Yojson.Safe.to_string other))
+
+(* Full renders everything — identity must not be duplicated even though the
+   normal path would also render these Unchanged fields at this level. *)
+let test_track_identity_at_full () =
+  let cfg = { (cfg_of Full) with unchanged = Full } in
+  let item = one (render_one cfg (track_identity_item Modified)) in
+  (match children_of item with
+   | `List fields ->
+     Alcotest.(check int) "TrackId exactly once" 1 (List.length (List.filter (is_field_named "TrackId") fields));
+     Alcotest.(check int) "GroupId exactly once" 1 (List.length (List.filter (is_field_named "GroupId") fields))
+   | other -> Alcotest.failf "expected children list, got %s" (Yojson.Safe.to_string other))
+
+(* A non-track item with same-named fields gets NO special treatment: at
+   Summary it stays counts-only. *)
+let test_non_track_item_no_identity_hoisting () =
+  let other =
+    Item
+      {
+        name = "Foo"; change = Modified; domain_type = DTOther;
+        children =
+          [
+            Field
+              {
+                name = "TrackId"; change = Unchanged; domain_type = DTOther;
+                oldval = None; newval = Some (Fint 7);
+              };
+          ];
+      }
+  in
+  let item = one (render_one (cfg_of Summary) other) in
+  Alcotest.(check bool) "no children key for non-track Summary item" true (not (has_key "children" item))
+
 (* Ffloat NaN/Inf must serialize to JSON null, not the raw NaN/Infinity tokens.
    RFC 8259 forbids NaN/Infinity, so emitting them makes the whole document
    unparseable by strict consumers (jq, Python json.loads). NaN/Inf is
@@ -233,6 +322,10 @@ let tests =
     "collection Compact", `Quick, test_collection_compact;
     "collection Compact empty", `Quick, test_collection_compact_empty;
     "ignore", `Quick, test_ignore;
+    "track identity at Summary", `Quick, test_track_identity_at_summary;
+    "track identity at Compact no duplicate", `Quick, test_track_identity_at_compact_no_duplicate;
+    "track identity at Full", `Quick, test_track_identity_at_full;
+    "non-track item gets no identity hoisting", `Quick, test_non_track_item_no_identity_hoisting;
     "NaN float serializes to null", `Quick, test_nan_float_is_null;
     "Infinity float serializes to null", `Quick, test_infinity_float_is_null;
     "finite float stays a number", `Quick, test_finite_float_is_number;
