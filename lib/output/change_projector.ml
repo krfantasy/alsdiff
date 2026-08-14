@@ -873,6 +873,34 @@ let populate_unchanged_mixer_item
   { item with children }
 
 
+(** [prepend_track_identity_fields ~track_id ~group_id item] re-attaches the
+    TrackId/GroupId identity fields to a Modified track item. They are identity
+    metadata, not diff content: consumers (the web app) nest tracks under their
+    group by these fields, but the patch path drops them for Modified tracks
+    (the const spec yields no patch value; an unchanged group_id atom carries
+    none either). TrackId comes from the patch's identity field; GroupId from
+    the reference (old) track when the patch says unchanged. Fields the patch
+    path already emitted (GroupId changed -> Modified field) are left alone. *)
+let prepend_track_identity_fields
+    ~(track_id : int option)
+    ~(group_id : int option)
+    (item : item)
+  : item =
+  let present name = List.exists (function
+      | Field f -> f.name = name
+      | _ -> false) item.children in
+  let mk name v =
+    Field { name; change = Unchanged; domain_type = DTTrack; oldval = None; newval = Some (Fint v) }
+  in
+  let extras = List.filter_map (fun (name, v) ->
+      match v with
+      | Some v when not (present name) -> Some (mk name v)
+      | _ -> None)
+      [ ("TrackId", track_id); ("GroupId", group_id) ]
+  in
+  { item with children = extras @ item.children }
+
+
 (** [create_midi_track_item] creates a [item] from a MidiTrack structured change (new type system).
     @param get_pointee_name function to resolve pointee IDs to names
     @param note_name_style the style to use for note names (Sharp or Flat)
@@ -892,9 +920,18 @@ let create_midi_track_item
       ~build_devices:(create_device_item ~format_time)
       ~name:(MidiTrackVS.build_section_name c)
       ~domain_type:DTTrack c in
-  match reference_track with
-  | None -> item
-  | Some rt -> populate_unchanged_mixer_item ~format_time item rt.Track.MidiTrack.mixer
+  let item = match reference_track with
+    | None -> item
+    | Some rt -> populate_unchanged_mixer_item ~format_time item rt.Track.MidiTrack.mixer
+  in
+  match c with
+  | `Modified pt ->
+    let group_id = match (pt.Track.MidiTrack.Patch.group_id, reference_track) with
+      | `Unchanged, Some rt -> Some rt.Track.MidiTrack.group_id
+      | _ -> None
+    in
+    prepend_track_identity_fields ~track_id:(Some pt.Track.MidiTrack.Patch.id) ~group_id item
+  | _ -> item
 
 (** [create_audio_like_track_item] creates a [item] for AudioTrack-like structured changes.
     Shared implementation for AudioTrack and GroupTrack (which share the same internal structure).
@@ -916,9 +953,18 @@ let create_audio_like_track_item
       ~build_devices:(create_device_item ~format_time)
       ~name:(AudioTrackVS.build_section_name ~type_label:track_type_name c)
       ~domain_type:DTTrack c in
-  match reference_track with
-  | None -> item
-  | Some rt -> populate_unchanged_mixer_item ~format_time item rt.Track.AudioTrack.mixer
+  let item = match reference_track with
+    | None -> item
+    | Some rt -> populate_unchanged_mixer_item ~format_time item rt.Track.AudioTrack.mixer
+  in
+  match c with
+  | `Modified pt ->
+    let group_id = match (pt.Track.AudioTrack.Patch.group_id, reference_track) with
+      | `Unchanged, Some rt -> Some rt.Track.AudioTrack.group_id
+      | _ -> None
+    in
+    prepend_track_identity_fields ~track_id:(Some pt.Track.AudioTrack.Patch.id) ~group_id item
+  | _ -> item
 
 
 let create_audio_track_item

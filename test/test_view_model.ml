@@ -615,6 +615,65 @@ let test_reference_populates_unchanged_mixer () =
    | _ -> check bool "with reference: mixer present" true false)
 
 
+(* Modified tracks must carry TrackId/GroupId as Unchanged context fields so
+   consumers (the web app) can nest them under their group track: grouping is
+   by these fields and the item name only encodes the track id, never the
+   group. *)
+let test_modified_track_identity_fields () =
+  let mk_track name group_id mixer =
+    {
+      Track.MidiTrack.id = 14; name; current_name = name; group_id;
+      clips = []; automations = []; devices = [];
+      mixer; routings = Track_helpers.make_empty_routing_set ();
+    }
+  in
+  (* Same id -> Modified; group_id identical on both sides; mixer volume differs. *)
+  let t1 = mk_track "Old" 91 (Track_helpers.make_mixer 0.70 (-0.30)) in
+  let t2 = mk_track "New" 91 (Track_helpers.make_mixer 0.80 (-0.30)) in
+  let patch = Track.MidiTrack.diff t1 t2 in
+  let item = create_midi_track_item ~get_pointee_name:(fun _ -> "?") ~reference_track:t1 (`Modified patch) in
+  let track_id_field = get_field (find_view_by_name "TrackId" item.children) in
+  check bool "TrackId emitted for Modified track" true (track_id_field.change = Unchanged);
+  (match track_id_field.newval with
+   | Some (Fint 14) -> ()
+   | _ -> check bool "TrackId newval is Fint 14" true false);
+  let group_id_field = get_field (find_view_by_name "GroupId" item.children) in
+  check bool "GroupId emitted for Modified track" true (group_id_field.change = Unchanged);
+  (match group_id_field.newval with
+   | Some (Fint 91) -> ()
+   | _ -> check bool "GroupId newval is Fint 91" true false);
+  (* Identity fields come first, matching the Added/Removed field order. *)
+  (match item.children with
+   | Field { name = "TrackId"; _ } :: Field { name = "GroupId"; _ } :: _ -> ()
+   | _ -> check bool "TrackId/GroupId are the first children" true false)
+
+(* When the group_id actually changes, the patch path emits the Modified
+   GroupId field; the identity injection must not duplicate it. *)
+let test_modified_track_group_change_no_duplicate () =
+  let mk_track group_id =
+    {
+      Track.MidiTrack.id = 14; name = "Lead"; current_name = "Lead"; group_id;
+      clips = []; automations = []; devices = [];
+      mixer = Track_helpers.make_mixer 0.70 (-0.30);
+      routings = Track_helpers.make_empty_routing_set ();
+    }
+  in
+  let t1 = mk_track 91 in
+  let t2 = mk_track (-1) in
+  let patch = Track.MidiTrack.diff t1 t2 in
+  let item = create_midi_track_item ~get_pointee_name:(fun _ -> "?") ~reference_track:t1 (`Modified patch) in
+  let group_fields =
+    List.filter (function
+        | Field { name = "GroupId"; _ } -> true | _ -> false) item.children
+  in
+  check int "exactly one GroupId field" 1 (List.length group_fields);
+  let f = get_field (List.hd group_fields) in
+  check bool "GroupId field is Modified (patch path, not injected)" true (f.change = Modified);
+  (match f.oldval, f.newval with
+   | Some (Fint 91), Some (Fint (-1)) -> ()
+   | _ -> check bool "GroupId old/new are 91/-1" true false)
+
+
 let test_create_locator_item_added () =
   let loc : Liveset.Locator.t = { id = 7; name = "Verse"; time = 4.0 } in
   let item = create_locator_item (`Added loc) in
@@ -689,5 +748,7 @@ let () =
       test_case "Renders main track when it is the only change" `Quick test_create_liveset_item_with_main_only_change;
       test_case "Unchanged section placeholder handling" `Quick test_unchanged_section_placeholder_handling;
       test_case "Reference liveset populates unchanged mixer" `Quick test_reference_populates_unchanged_mixer;
+      test_case "Modified track carries identity fields" `Quick test_modified_track_identity_fields;
+      test_case "Changed group emits single Modified GroupId" `Quick test_modified_track_group_change_no_duplicate;
     ];
   ]
