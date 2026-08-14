@@ -1,5 +1,5 @@
 import { Show, For } from "solid-js";
-import { setIsLoading, setError, setDiffResult, setTracks, setRawJson, setTempo, setTimeSignature, isLoading, error, setLoadFileNameA, setLoadFileNameB } from "../stores/diff-store";
+import { setIsLoading, setError, setDiffResult, setTracks, setRawJson, setTempo, setTimeSignature, isLoading, error, setLoadFileNameA, setLoadFileNameB, resetSelection } from "../stores/diff-store";
 import { diffFilesJson } from "../lib/alsdiff-api";
 import { extractTracks, extractTempo, extractTimeSignature, hasAnyChange } from "../lib/diff-parser";
 import {
@@ -55,6 +55,14 @@ export default function FileUpload() {
     setLoadFileNameA(file1.name);
     setLoadFileNameB(file2.name);
     setError(null);
+    resetSelection();
+    // Clear the previous comparison's display: a failed re-comparison must
+    // not leave the old pair rendered next to the error message.
+    setDiffResult(null);
+    setTracks([]);
+    setRawJson("");
+    setTempo(120);
+    setTimeSignature({ numer: 4, denom: 4 });
 
     try {
       const options = buildDiffOptions();

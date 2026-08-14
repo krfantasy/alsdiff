@@ -53,5 +53,6 @@ export function resetSelection(): void {
   setDetailHeight(300);
   setDetailCollapsed(false);
   setSelectedAutomationIdx(0);
+  setPianoRollZoomFactor(1.0);
   setCollapsedGroups(new Set<number>());
 }

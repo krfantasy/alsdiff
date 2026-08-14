@@ -101,12 +101,19 @@ export default function PianoRollView(props: Props) {
           type="range"
           min="0"
           max="100"
+          data-testid="piano-zoom-slider"
           value={zoomToSlider(pianoRollZoomFactor(), ZOOM_MIN, ZOOM_MAX)}
           onInput={(e) =>
             setPianoRollZoomFactor(sliderToZoom(Number(e.currentTarget.value), ZOOM_MIN, ZOOM_MAX))
           }
           style={{ width: "100px" }}
         />
+        <span
+          data-testid="piano-zoom-label"
+          style={{ color: "var(--text-dim)", "font-size": "11px" }}
+        >
+          {pianoRollZoomFactor().toFixed(1)}x
+        </span>
         <span style={{ color: "var(--text-dim)", "font-size": "11px" }}>
           {notes().length} notes
         </span>
