@@ -84,7 +84,7 @@ export function renderAutomation(
   for (let b = gridStart; b <= gridEnd + minor * 0.5; b += minor) {
     const isBar = Math.abs(((b % qnPerBar) + qnPerBar) % qnPerBar) < 1e-6;
     let label = "";
-    if (isBar) {
+    if (isBar && b >= 0) {
       const p = quarterNoteToPosition(b, timeSignature);
       label = formatPosition(p.bar, p.beat, p.sixteenth);
     }

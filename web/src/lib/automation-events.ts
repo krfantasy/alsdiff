@@ -48,7 +48,9 @@ function parseOldFormat(child: ItemView): AutomationEvent | undefined {
 		const m = name.match(RE_ADDED_REMOVED);
 		if (m) {
 			return {
-				time: parseFloat(m[1]),
+				// The name's time may be Ableton's "no time" sentinel; run it
+				// through normalizeTime like the structured parser does.
+				time: normalizeTime(parseFloat(m[1])) ?? 0,
 				value: parseFloat(m[2]),
 				change: child.change,
 				curve: parseCurve(name),
@@ -60,16 +62,19 @@ function parseOldFormat(child: ItemView): AutomationEvent | undefined {
 		if (tm || vm) {
 			let time: number;
 			if (tm) {
-				time = parseFloat(tm[2]);
+				time = normalizeTime(parseFloat(tm[2])) ?? 0;
 			} else {
 				const fallback = name.match(/Time=([\d.]+)/);
-				time = fallback ? parseFloat(fallback[1]) : 0;
+				time = fallback ? normalizeTime(parseFloat(fallback[1])) ?? 0 : 0;
 			}
 			return {
 				time,
 				value: vm ? parseFloat(vm[2]) : 0,
 				change: "Modified",
-				oldTime: tm ? parseFloat(tm[1]) : undefined,
+				// The old time can carry the sentinel (the event "moved" from
+				// the arrangement start); normalize it too so the ghost marker
+				// and the fitted range stay sane.
+				oldTime: tm ? normalizeTime(parseFloat(tm[1])) : undefined,
 				oldValue: vm ? parseFloat(vm[1]) : undefined,
 				curve: parseCurve(name),
 			};
@@ -211,12 +216,19 @@ export function computeAutomationRange(
 	// Times are already normalized by parseAutomationEvents; this loop only
 	// needs to handle the default range when there are no events at all.
 	for (const e of events) {
-		const v = e.oldValue ?? e.value;
-		if (v < minValue) minValue = v;
-		if (v > maxValue) maxValue = v;
-		const t = e.oldTime ?? e.time;
-		if (t < minTime) minTime = t;
-		if (t > maxTime) maxTime = t;
+		// Bound across BOTH old and new coordinates: a modified event renders
+		// at its new position plus a ghost at its old one, so fitting only one
+		// side could leave the other outside the canvas.
+		for (const v of [e.oldValue, e.value]) {
+			if (v === undefined) continue;
+			if (v < minValue) minValue = v;
+			if (v > maxValue) maxValue = v;
+		}
+		for (const t of [e.oldTime, e.time]) {
+			if (t === undefined) continue;
+			if (t < minTime) minTime = t;
+			if (t > maxTime) maxTime = t;
+		}
 	}
 
 	const valuePad = Math.max(0.1, (maxValue - minValue) * 0.15);
@@ -225,7 +237,10 @@ export function computeAutomationRange(
 	return {
 		minValue: minValue - valuePad,
 		maxValue: maxValue + valuePad,
-		minTime: Math.max(0, minTime - timePad),
+		// Negative minTime is intentional — it pads the canvas left edge so
+		// t=0 events (the sentinel-normalized master Tempo change) render
+		// their markers fully instead of half-clipped.
+		minTime: minTime - timePad,
 		maxTime: maxTime + timePad,
 	};
 }
