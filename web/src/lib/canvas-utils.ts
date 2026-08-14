@@ -1,4 +1,6 @@
-const dpr = window.devicePixelRatio || 1;
+// Guarded so the module can be imported in Node (Playwright spec runner);
+// in the browser this is exactly `window.devicePixelRatio || 1`.
+const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
 
 export function setupCanvas(
   canvas: HTMLCanvasElement,
@@ -52,6 +54,25 @@ export interface RulerMarker {
   isMajor: boolean;
 }
 
+/** Decide which ruler labels to draw so they never overlap at low zoom.
+ *  Returns one boolean per marker (same order); ticks are unaffected. A
+ *  label is kept when it starts at least `gap` px after the previous kept
+ *  label's right edge (label offset 3 + measured width). */
+export function planRulerLabels(
+  markers: RulerMarker[],
+  textWidth: (label: string) => number,
+  gap = 12,
+): boolean[] {
+  let lastKeptEnd = -Infinity;
+  return markers.map((m) => {
+    if (!m.label) return false;
+    const start = m.pos + 3;
+    if (start < lastKeptEnd + gap) return false;
+    lastKeptEnd = start + textWidth(m.label);
+    return true;
+  });
+}
+
 export function drawRuler(
   ctx: CanvasRenderingContext2D,
   markers: RulerMarker[],
@@ -80,7 +101,9 @@ export function drawRuler(
   const textDim = getCSSColor("--text-dim");
   const borderLight = getCSSColor("--border-light");
 
-  for (const m of markers) {
+  ctx.font = "10px -apple-system, BlinkMacSystemFont, sans-serif";
+  const drawLabel = planRulerLabels(markers, (s) => ctx.measureText(s).width);
+  markers.forEach((m, i) => {
     const x = Math.round(m.pos) + 0.5;
     ctx.strokeStyle = m.isMajor ? borderLight : borderColor;
     ctx.lineWidth = m.isMajor ? 1.5 : 1;
@@ -89,13 +112,12 @@ export function drawRuler(
     ctx.lineTo(x, height);
     ctx.stroke();
 
-    if (m.label) {
+    if (m.label && drawLabel[i]) {
       ctx.fillStyle = textDim;
-      ctx.font = "10px -apple-system, BlinkMacSystemFont, sans-serif";
       ctx.textBaseline = alignBottom ? "top" : "bottom";
       ctx.fillText(m.label, m.pos + 3, alignBottom ? 2 : height - 2);
     }
-  }
+  });
 }
 
 export function getChangeColor(change: string): string {
