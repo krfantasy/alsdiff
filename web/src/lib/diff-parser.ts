@@ -215,44 +215,62 @@ export function extractRoutings(track: TrackData): ItemView | undefined {
   );
 }
 
+/**
+ * Find the master track's MainMixer item. The master is identified POSITIVELY
+ * by its item name ("MainTrack: ..."), never as "the first track with a Mixer
+ * child" — regular tracks changed earlier in the list also carry Mixer
+ * children, and reading theirs would attribute a track's volume to the
+ * project tempo. The backend labels the master's MainMixer "Mixer"
+ * (MainMixer.base label); keep the "Main Mixer" alias for compatibility.
+ */
+function findMasterMixer(children: ViewNode[]): ItemView | undefined {
+	for (const child of children) {
+		if (
+			isItem(child) &&
+			child.domain_type === "Track" &&
+			child.name.startsWith("MainTrack")
+		) {
+			const mixer = child.children?.find(
+				(c): c is ItemView =>
+					isItem(c) && (c.name === "Mixer" || c.name === "Main Mixer"),
+			);
+			if (mixer?.children) return mixer;
+		}
+	}
+	return undefined;
+}
+
+/** Decode Ableton's time-signature code: numer = code%99 + 1, denom = 2^(code/99). */
+function decodeTimeSignatureCode(code: number): TimeSignature {
+	if (code < 0 || Math.floor(code / 99) > 5) return { numer: 4, denom: 4 };
+	return { numer: (code % 99) + 1, denom: 1 << Math.floor(code / 99) };
+}
+
 export function extractTempo(diffChildren: ViewNode[]): number {
-  for (const child of diffChildren) {
-    if (isItem(child) && child.domain_type === "Track") {
-      const mixer = child.children?.find(
-        (c): c is ItemView => isItem(c) && c.name === "Main Mixer",
-      );
-      if (!mixer?.children) continue;
-      const tempo = mixer.children.find(
-        (c): c is ItemView => isItem(c) && c.name === "Tempo",
-      );
-      if (!tempo?.children) continue;
-      const value = getNumericField(tempo.children, "Value");
-      if (value !== undefined) return value;
-    }
-  }
-  return 120;
+	const mixer = findMasterMixer(diffChildren);
+	if (!mixer) return 120;
+	const mchildren = mixer.children ?? [];
+	const tempo = mchildren.find(
+		(c): c is ItemView => isItem(c) && c.name === "Tempo",
+	);
+	if (!tempo?.children) return 120;
+	const value = getNumericField(tempo.children, "Value");
+	return value ?? 120;
 }
 
 export function extractTimeSignature(
-  diffChildren: ViewNode[],
+	diffChildren: ViewNode[],
 ): TimeSignature {
-  for (const child of diffChildren) {
-    if (isItem(child) && child.domain_type === "Track") {
-      const mixer = child.children?.find(
-        (c): c is ItemView => isItem(c) && c.name === "Main Mixer",
-      );
-      if (!mixer?.children) continue;
-      const ts = mixer.children.find(
-        (c): c is ItemView => isItem(c) && c.name === "Time Signature",
-      );
-      if (!ts?.children) continue;
-      const numer = getNumericField(ts.children, "Numerator");
-      const denom = getNumericField(ts.children, "Denominator");
-      if (numer !== undefined && denom !== undefined)
-        return { numer, denom };
-    }
-  }
-  return { numer: 4, denom: 4 };
+	const mixer = findMasterMixer(diffChildren);
+	if (!mixer) return { numer: 4, denom: 4 };
+	const mchildren = mixer.children ?? [];
+	const ts = mchildren.find(
+		(c): c is ItemView => isItem(c) && c.name === "Time Signature",
+	);
+	if (!ts?.children) return { numer: 4, denom: 4 };
+	const code = getNumericField(ts.children, "Value");
+	if (code === undefined) return { numer: 4, denom: 4 };
+	return decodeTimeSignatureCode(Math.round(code));
 }
 
 export function computeTimelineRange(tracks: TrackData[]): TimelineRange {

@@ -546,6 +546,56 @@ let test_reference_populates_unchanged_main_mixer_params () =
       | Some (Field { change = Unchanged; newval = Some (Fint 201); _ }) -> ()
       | _ -> check bool "Time Signature Value populated as Unchanged 201" true false)
 
+(* The master item must be emitted (with populated mixer context) even when
+   the main track itself is unchanged, so consumers can read the project's
+   tempo/time signature when only regular tracks changed. *)
+let test_unchanged_main_track_emitted_with_reference () =
+  let path = Utils.resolve_test_data_path "t4.xml" in
+  let xml = read_file path in
+  let ls1 = Liveset.create xml path in
+  (* Change only the first regular track's mixer volume; main stays untouched. *)
+  let ls2 = match ls1.Liveset.tracks with
+    | Track.Midi t :: rest ->
+      let mixer = t.Track.MidiTrack.mixer in
+      let vol = { mixer.Track.Mixer.volume with value = Device.Float 0.9 } in
+      { ls1 with Liveset.tracks =
+                   Track.Midi { t with Track.MidiTrack.mixer = { mixer with Track.Mixer.volume = vol } } :: rest }
+    | _ -> fail "expected MidiTrack first in t4.xml"
+  in
+  let patch = Liveset.diff ls1 ls2 in
+  let item = create_liveset_item ~reference_liveset:ls1 (`Modified patch) in
+  let main_item =
+    List.find_opt (function
+        | Item i -> String.starts_with ~prefix:"MainTrack" i.name
+        | _ -> false) item.children
+    |> Option.map (function Item i -> i | _ -> assert false)
+  in
+  check bool "unchanged main track emitted with reference" true (main_item <> None);
+  (match main_item with
+   | None -> ()
+   | Some mi ->
+     check bool "main item is Unchanged" true (mi.change = Unchanged);
+     let mixer = get_item (find_view_by_name "Mixer" mi.children) in
+     (match List.find_opt (function
+          | Item { name = "Tempo"; _ } -> true | _ -> false) mixer.children with
+      | Some (Item { children; _ }) ->
+        (match List.find_opt (function Field { name = "Value"; _ } -> true | _ -> false) children with
+            | Some (Field { change; newval; _ }) ->
+              check bool "Tempo context is Unchanged" true (change = Unchanged);
+              (match newval with Some (Ffloat 120.0) -> () | _ -> fail "Tempo context expected 120.0")
+            | _ -> fail "Tempo Value context missing")
+      | _ -> fail "Tempo placeholder missing");
+     (* The Unchanged master carries MIXER context only: restamping the whole
+        reference subtree would materialize its Automations/Devices (t4's
+        master Limiter with all params) as pseudo-context. *)
+     let has_child name =
+       List.exists (function
+           | Item { name = n; _ } | Collection { name = n; _ } -> n = name
+           | _ -> false) mi.children
+     in
+     check bool "no Automations context on unchanged master" true (not (has_child "Automations"));
+     check bool "no Devices context on unchanged master" true (not (has_child "Devices")))
+
 (* When only part of the liveset changes, an unchanged nested section (here
    Version) emits a placeholder {change=Unchanged} item from the projector so
    JSON/web consumers see the node (restoring Mixer/Routing/Send data lost by
@@ -779,6 +829,7 @@ let () =
     "create_liveset_item", [
       test_case "Renders main track when it is the only change" `Quick test_create_liveset_item_with_main_only_change;
       test_case "Reference populates unchanged main mixer params" `Quick test_reference_populates_unchanged_main_mixer_params;
+      test_case "Unchanged main track emitted with reference" `Quick test_unchanged_main_track_emitted_with_reference;
       test_case "Unchanged section placeholder handling" `Quick test_unchanged_section_placeholder_handling;
       test_case "Reference liveset populates unchanged mixer" `Quick test_reference_populates_unchanged_mixer;
       test_case "Modified track carries identity fields" `Quick test_modified_track_identity_fields;

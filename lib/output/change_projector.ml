@@ -1034,7 +1034,17 @@ let create_group_track_item
 (** [create_main_track_item] creates a [item] from a MainTrack structured change (new type system).
     @param get_pointee_name function to resolve pointee IDs to names
     @param c the main track structured change
-*)
+
+    For an `` `Unchanged `` master with a reference value, [build_item] renders a
+    bare item with NO children — there is no Mixer placeholder for
+    [populate_unchanged_main_mixer_item] to fill. Instead the value side is
+    built from the reference ([`Added m]) and restamped [Unchanged] via
+    [view_to_unchanged] (fields get [oldval = newval]), so consumers can read
+    the project's tempo/time signature even when only regular tracks changed.
+    Only the Mixer child is kept: restamping the whole subtree would also
+    materialize the reference master's Automations/Devices as pseudo-context —
+    symmetric with [populate_unchanged_mixer_item], which fills only the
+    Mixer strip. *)
 let create_main_track_item
     ~(get_pointee_name : int -> string)
     ?(note_name_style : note_display_style = default_note_name_style)
@@ -1043,15 +1053,31 @@ let create_main_track_item
     (c : (Track.MainTrack.t, Track.MainTrack.Patch.t) structured_change)
   : item =
   ignore (note_name_style : note_display_style);
-  let item = MainTrackVS.build_item
+  let build_main
+      (tag : (Track.MainTrack.t, Track.MainTrack.Patch.t) structured_change)
+    : item =
+    MainTrackVS.build_item
       ~format_time
       ~build_automations:(create_automation_item ~get_pointee_name ~format_time)
       ~build_devices:(create_device_item ~format_time)
-      ~name:(MainTrackVS.build_section_name c)
-      ~domain_type:DTTrack c in
-  match reference_track with
-  | None -> item
-  | Some rt -> populate_unchanged_main_mixer_item ~format_time item rt
+      ~name:(MainTrackVS.build_section_name tag)
+      ~domain_type:DTTrack tag
+  in
+  match c, reference_track with
+  | `Unchanged, Some m ->
+    (match view_to_unchanged (Item (build_main (`Added m))) with
+     | Item i ->
+       { i with
+         children =
+           List.filter (function
+               | Item { name = "Mixer"; _ } -> true
+               | _ -> false) i.children }
+     | _ -> assert false)
+  | _ ->
+    let item = build_main c in
+    match reference_track with
+    | None -> item
+    | Some rt -> populate_unchanged_main_mixer_item ~format_time item rt
 
 
 (* ==================== Liveset View ==================== *)
@@ -1325,20 +1351,27 @@ let create_liveset_item
       ~domain_type:DTVersion
   in
 
-  (* Build Main Track section - singleton, always present and Modified.
+  (* Build Main Track section - singleton, always present.
      Emit the inner item directly so it appears flat under the LiveSet
-     instead of wrapped in a redundant "Main Track" envelope. *)
+     instead of wrapped in a redundant "Main Track" envelope. The item is
+     carried whenever a reference liveset is available — including when the
+     main patch is `Unchanged (built from the reference and populated with
+     Unchanged mixer context) so consumers can read the project's tempo/time
+     signature when only regular tracks changed. *)
   let main_track_item =
+    let ref_main = match reference_liveset with
+      | Some ls -> (match ls.Liveset.main with Track.Main m -> Some m | _ -> None)
+      | None -> None
+    in
     match c with
     | `Modified p ->
       (match p.Liveset.Patch.main with
        | `Modified pt ->
-         let ref_main = match reference_liveset with
-           | Some ls -> (match ls.Liveset.main with Track.Main m -> Some m | _ -> None)
-           | None -> None
-         in
          Some (create_main_track_item ~get_pointee_name ~note_name_style ~format_time ?reference_track:ref_main (`Modified pt))
-       | `Unchanged -> None)
+       | `Unchanged ->
+         (match ref_main with
+          | Some m -> Some (create_main_track_item ~get_pointee_name ~note_name_style ~format_time ~reference_track:m (`Unchanged))
+          | None -> None))
     | _ -> None
   in
 

@@ -9,6 +9,7 @@
     "build:full": "../scripts/sync_browser_dist.sh && vite build",
     "build:full:release": "DUNE_BUILD_DIR=_build-pages-release dune build --profile release lib/browser/alsdiff.js && mkdir -p web/public && cp _build-pages-release/default/lib/browser/alsdiff.js web/public/alsdiff.js && vite build",
     "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
     "test:update-snapshots": "playwright test --update-snapshots"
   },
