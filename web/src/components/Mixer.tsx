@@ -135,7 +135,7 @@ function MixerToggle(props: { label: string; value: ReturnType<typeof getParamVa
   if (!props.value) return null;
   const { oldVal, newVal, change } = props.value;
 
-  const isOn = () => (newVal ?? oldVal) !== 0;
+  const isOn = () => Boolean(newVal ?? oldVal);
   const glowColor = () => {
     if (change === "Added") return "var(--color-added)";
     if (change === "Removed") return "var(--color-removed)";
