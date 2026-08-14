@@ -78,6 +78,9 @@ test.describe("state reset on new comparison", () => {
 			"Select a track to view details",
 		);
 		// Collapse reset: Middle's "15 L" group is expanded (its members at depth 1).
+		// Intent note: this documents the intended post-reset behavior but is
+		// non-discriminating — collapsedGroups are keyed by per-file trackIds,
+		// so cross-pair leakage would only show up with matching IDs across pairs.
 		const member = page
 			.locator('[data-testid="track-header"]')
 			.filter({ hasText: /16 L Gem/ })
@@ -106,14 +109,15 @@ test.describe("state reset on new comparison", () => {
 		await expect(
 			page.locator('[data-testid="piano-zoom-label"]'),
 		).toHaveCount(0); // pane closed after reset — no stale zoom UI
-		// Re-open the piano roll and confirm the zoom reset to 1.0x.
+		// Re-open the piano roll and confirm the zoom reset to 1.0x. The
+		// label is unconditional JSX in PianoRollView, so assert it directly
+		// (no count() guard).
 		const reopened = await openPianoRoll(page, "Tela");
 		expect(reopened, "no note-bearing clip found on the track row").toBe(true);
 		await page.waitForTimeout(400);
-		const label = page.locator('[data-testid="piano-zoom-label"]');
-		if (await label.count()) {
-			await expect(label).toHaveText("1.0x");
-		}
+		await expect(
+			page.locator('[data-testid="piano-zoom-label"]'),
+		).toHaveText("1.0x");
 
 		expect(pageErrors).toEqual([]);
 	});

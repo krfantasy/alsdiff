@@ -1,7 +1,7 @@
-import type { ItemView, ViewNode } from "../types";
+import type { CollectionView, FieldView, ItemView, ViewNode } from "../types";
 import DiffIndicator from "./DiffIndicator";
 import { ViewNodeRow } from "./CollectionList";
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createMemo, createSignal } from "solid-js";
 
 interface Props {
   device: ItemView;
@@ -9,6 +9,20 @@ interface Props {
 
 function isItemView(node: ViewNode): node is ItemView {
   return node.type === "item";
+}
+
+function isFieldView(node: ViewNode): node is FieldView {
+  return node.type === "field";
+}
+
+// A compact row for one param: either "name old → new" (Value moved) or
+// "name meta" (only Automation/Modulation moved).
+interface ParamRow {
+  name: string;
+  oldVal?: string;
+  newVal?: string;
+  change: string;
+  meta?: string;
 }
 
 export default function DeviceCard(props: Props) {
@@ -36,46 +50,78 @@ export default function DeviceCard(props: Props) {
       .flatMap((branch) => (branch.children ?? []).filter(isItemView));
   };
 
-  const paramFields = () => {
-    const params: {
-      name: string;
-      oldVal?: string;
-      newVal?: string;
-      change: string;
-    }[] = [];
-    const children = props.device.children ?? [];
+  // Builds the compact row for one param item, or undefined when the param
+  // has nothing to summarize compactly (nothing moved at all).
+  const buildParamRow = (param: ItemView): ParamRow | undefined => {
+    const fields = (param.children ?? []).filter(isFieldView);
+    const value = fields.find((f) => f.name === "Value");
+    if (value && (value.old_value != null || value.new_value != null)) {
+      return {
+        name: param.name,
+        oldVal: value.old_value != null ? String(value.old_value) : undefined,
+        newVal: value.new_value != null ? String(value.new_value) : undefined,
+        change: param.change,
+      };
+    }
+    // Value did not move, but the param can still be Modified because its
+    // automation/modulation target did. Summarize that as meta text.
+    const metaParts = fields
+      .filter(
+        (f) =>
+          (f.name === "Automation" || f.name === "Modulation") &&
+          (f.old_value != null || f.new_value != null)
+      )
+      .map((f) => {
+        const parts = [f.old_value, f.new_value]
+          .filter((v) => v != null)
+          .map((v) => String(v));
+        return `${f.name} ${parts.join(" → ")}`;
+      });
+    if (metaParts.length === 0) return undefined;
+    return { name: param.name, change: param.change, meta: metaParts.join(" ") };
+  };
 
-    for (const child of children) {
+  // Computed once and shared by the compact rows and nonParamChildren so the
+  // drop decision below always matches what was actually rendered. For each
+  // Parameters collection we record its rows and whether EVERY param item in
+  // it got a compact row — the collection may only leave the generic path
+  // when nothing in it would be lost.
+  const paramCollections = createMemo(() => {
+    const out: { node: CollectionView; rows: ParamRow[]; allRendered: boolean }[] = [];
+    for (const child of props.device.children ?? []) {
       // The backend emits Parameters as a collection of param items; the
       // param's identity is its item name (no "Name" field).
       if (child.type !== "collection" || child.name !== "Parameters") continue;
-      for (const param of child.items ?? []) {
-        if (param.type !== "item") continue;
-        const value = (param.children ?? []).find(
-          (f) => f.type === "field" && f.name === "Value"
-        );
-        if (!value || value.type !== "field") continue;
-        const oldVal = value.old_value != null ? String(value.old_value) : undefined;
-        const newVal = value.new_value != null ? String(value.new_value) : undefined;
-        if (oldVal !== undefined || newVal !== undefined) {
-          params.push({ name: param.name, oldVal, newVal, change: param.change });
-        }
-      }
+      const rawItems = child.items ?? [];
+      const paramItems = rawItems.filter(isItemView);
+      const rows = paramItems
+        .map(buildParamRow)
+        .filter((r): r is ParamRow => r !== undefined);
+      const allRendered =
+        rawItems.length > 0 &&
+        paramItems.length === rawItems.length &&
+        rows.length === paramItems.length;
+      out.push({ node: child, rows, allRendered });
     }
+    return out;
+  });
 
-    return params;
-  };
+  const paramRows = createMemo(() => paramCollections().flatMap((c) => c.rows));
 
   const nonParamChildren = () => {
-    const children = props.device.children ?? [];
-    return children.filter(
+    // Drop the Parameters collection only when every one of its param items
+    // was rendered as a compact row. A param can be Modified because its
+    // automation/modulation changed while Value stayed put — if such an item
+    // (or any non-item entry) has no compact row, the collection must stay
+    // on the generic ViewNodeRow path or its change would disappear.
+    const dropped = new Set<ViewNode>(
+      paramCollections()
+        .filter((c) => c.allRendered)
+        .map((c) => c.node)
+    );
+    return (props.device.children ?? []).filter(
       (c) =>
-        !(c.type === "collection" && c.name === "Branches") &&
-        !(
-          c.type === "collection" &&
-          c.name === "Parameters" &&
-          (c.items?.length ?? 0) > 0
-        )
+        !(c.type === "collection" && c.name === "Branches") && !dropped.has(c)
     );
   };
 
@@ -87,9 +133,10 @@ export default function DeviceCard(props: Props) {
         <DiffIndicator change={props.device.change} showLabel={false} />
       </div>
       <Show when={!collapsed()}>
-        {paramFields().map((p) => (
+        {paramRows().map((p) => (
           <div class="param-change">
             <span class="param-name">{p.name}</span>
+            {p.meta && <span>{p.meta}</span>}
             {p.oldVal && <span class="old-value">{p.oldVal}</span>}
             {p.oldVal && p.newVal && <span class="arrow">&rarr;</span>}
             {p.newVal && <span class="new-value">{p.newVal}</span>}

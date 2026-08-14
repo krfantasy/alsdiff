@@ -10,7 +10,7 @@ test.describe("computeAutomationRange left padding", () => {
 		];
 		const r = computeAutomationRange(events);
 		expect(r.minTime).toBeLessThan(0);
-		// The 25%-of-span sanity: min value pads symmetrically.
+		// The 10%-of-span (min 1) time pad applies symmetrically.
 		expect(r.maxTime).toBeGreaterThan(0);
 	});
 
@@ -40,7 +40,7 @@ function countColorPixelsInColumns(page: import("@playwright/test").Page, cssVar
 		const canvas = document.querySelector('[data-testid="automation-canvas"]') as HTMLCanvasElement | null;
 		if (!canvas) return -1;
 		const ctx = canvas.getContext("2d");
-		if (!ctx) return 0;
+		if (!ctx) return -1;
 		const hex = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
 		if (!hex.startsWith("#")) return -1;
 		const s = hex.slice(1);
