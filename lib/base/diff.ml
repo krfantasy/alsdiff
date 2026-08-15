@@ -246,163 +246,186 @@ module type HASHER = sig
 end
 
 
-(** Generic Myers algorithm for ordered list diffing.
+(** Generic Myers algorithm for ordered list diffing (linear-space variant).
 
-    @param compare Function to compare elements for equality
-    @param on_match Function to generate change type for matching elements
+    Divide-and-conquer "middle snake" refinement (Myers 1986 §4; implementation
+    follows J. Coglan, "Myers diff in linear space"). Finds the middle snake of
+    each sub-region, recurses on the two halves, then reconstructs the edit
+    script by walking the resulting point path.
+
+    Time:  O((N+M) * D) where D is the edit distance.
+    Space: O(N+M) — two V vectors per recursion level, whose total along any
+           root-to-leaf path is O(N+M).
+
+    Multiple equally-minimal edit scripts may exist; this picks a deterministic
+    path that can differ from a quadratic backtracking variant.
+
+    @param compare Equality predicate over elements
+    @param on_match Produce the change for a matched (diagonal) element pair
     @param old_list Original list
     @param new_list Modified list
-    @return List of flat changes representing the minimal edit sequence
+    @return List of changes representing a minimal edit script
 *)
 let diff_list_generic (type a p k)
     ~(compare: a -> a -> bool)
     ~(on_match: a -> a -> (a, p, k) change)
     (old_list : a list) (new_list : a list) : (a, p, k) change list =
-  let old_arr = Array.of_list old_list in
-  let new_arr = Array.of_list new_list in
-  let n = Array.length old_arr in
-  let m = Array.length new_arr in
+  let a = Array.of_list old_list in
+  let b = Array.of_list new_list in
+  let n = Array.length a in
+  let m = Array.length b in
 
-  (* Handle edge cases *)
+  (* Trivial edge cases *)
   if n = 0 then List.map (fun x -> `Added x) new_list
   else if m = 0 then List.map (fun x -> `Removed x) old_list
   else
-    let fast_path_result =
-      if n <> m then
-        None
+
+    (* Find the middle snake of box [left, right) x [top, bottom).
+       Returns Some ((x1, y1), (x2, y2)) — the snake's start and end — or None
+       when the box is a single point. Coordinates are absolute indices into [a]
+       and [b]. Forward scan maximises x from (left, top); backward scan minimises
+       y from (right, bottom). vf is indexed by k, vb by c = k - delta. *)
+    let midpoint left top right bottom =
+      let width = right - left in
+      let height = bottom - top in
+      let size = width + height in
+      if size = 0 then None
       else
-        let all_match = ref true in
-        let i = ref 0 in
-        while !all_match && !i < n do
-          if compare old_arr.(!i) new_arr.(!i) then
-            incr i
-          else
-            all_match := false
-        done;
-        if !all_match then begin
-          let result = ref [] in
-          for idx = n - 1 downto 0 do
-            result := on_match old_arr.(idx) new_arr.(idx) :: !result
-          done;
-          Some !result
-        end else
-          None
-    in
-    match fast_path_result with
-    | Some result -> result
-    | None ->
-      (* Myers O(ND) algorithm implementation *)
-      let max_d = n + m in
-      let offset = max_d in (* Offset to handle negative k indices *)
-
-      (* V array stores the furthest x position for each k-line *)
-      let v = Array.make (2 * max_d + 1) 0 in
-      (* Trace array stores V states for backtracking *)
-      let traces = Array.init (max_d + 1) (fun _ -> Array.make (2 * max_d + 1) 0) in
-
-      (* Follow diagonal (matching elements) as far as possible *)
-      let follow_snake x y =
-        let x_ref = ref x in
-        let y_ref = ref y in
-        while !x_ref < n && !y_ref < m && compare old_arr.(!x_ref) new_arr.(!y_ref) do
-          incr x_ref;
-          incr y_ref
-        done;
-        (!x_ref, !y_ref)
-      in
-
-      (* Forward search to find the shortest edit distance *)
-      let search () =
+        let delta = width - height in
+        let max_d = (size + 1) / 2 in
+        let vf = Array.make (2 * max_d + 1) 0 in
+        let vb = Array.make (2 * max_d + 1) 0 in
+        vf.(1 + max_d) <- left;
+        vb.(1 + max_d) <- bottom;
         let found = ref None in
         let d = ref 0 in
         while !found = None && !d <= max_d do
-          traces.(!d) <- Array.copy v;
-
-          let found_at_d = ref false in
-          let k = ref (- !d) in
-          while not !found_at_d && !k <= !d do
-            let x =
-              if !k = - !d || (!k <> !d && v.(!k - 1 + offset) < v.(!k + 1 + offset)) then
-                v.(!k + 1 + offset)
+          let d0 = !d in
+          (* Forward pass: maximise x from (left, top). k descends so the
+             overlap fires on the uppermost diagonal, matching Git/Coglan. *)
+          let k = ref d0 in
+          while !found = None && !k >= -d0 do
+            let kf = !k in
+            let px, x =
+              if kf = -d0 || (kf <> d0 && vf.(kf - 1 + max_d) < vf.(kf + 1 + max_d)) then
+                let x = vf.(kf + 1 + max_d) in
+                (x, x)
               else
-                v.(!k - 1 + offset) + 1
+                let px = vf.(kf - 1 + max_d) in
+                (px, px + 1)
             in
-            let y = x - !k in
-            let x_end, y_end = follow_snake x y in
-            v.(!k + offset) <- x_end;
-            if x_end >= n && y_end >= m then
-              found_at_d := true
-            else
-              k := !k + 2
+            let y = top + (x - left) - kf in
+            let py = if d0 = 0 || x <> px then y else y - 1 in
+            let x2 = ref x in
+            let y2 = ref y in
+            while !x2 < right && !y2 < bottom && compare a.(!x2) b.(!y2) do
+              incr x2;
+              incr y2
+            done;
+            vf.(kf + max_d) <- !x2;
+            (* Overlap with the reverse scan is detected only when delta is odd. *)
+            let c = kf - delta in
+            if delta land 1 <> 0 && c >= -d0 + 1 && c <= d0 - 1 && !y2 >= vb.(c + max_d) then
+              found := Some ((px, py), (!x2, !y2));
+            k := !k - 2
           done;
-
-          if !found_at_d then
-            found := Some !d
-          else
-            incr d
+          (* Backward pass: minimise y from (right, bottom).
+             Explored largest c first so the overlap fires at the largest k,
+             matching the old quadratic algorithm's delete-first tie-breaking. *)
+          let c = ref d0 in
+          while !found = None && !c >= -d0 do
+            let cf = !c in
+            let k = cf + delta in
+            let py, y =
+              if cf = -d0 || (cf <> d0 && vb.(cf - 1 + max_d) > vb.(cf + 1 + max_d)) then
+                let y = vb.(cf + 1 + max_d) in
+                (y, y)
+              else
+                let py = vb.(cf - 1 + max_d) in
+                (py, py - 1)
+            in
+            let x = left + (y - top) + k in
+            let px = if d0 = 0 || y <> py then x else x + 1 in
+            let x2 = ref x in
+            let y2 = ref y in
+            while !x2 > left && !y2 > top && compare a.(!x2 - 1) b.(!y2 - 1) do
+              decr x2;
+              decr y2
+            done;
+            vb.(cf + max_d) <- !y2;
+            (* Overlap with the forward scan is detected only when delta is even. *)
+            if delta land 1 = 0 && k >= -d0 && k <= d0 && !x2 <= vf.(k + max_d) then
+              found := Some ((!x2, !y2), (px, py));
+            c := !c - 2
+          done;
+          incr d
         done;
-        match !found with
-        | Some d -> d
-        | None -> failwith "Myers algorithm: exceeded maximum edit distance"
+        !found
+    in
+
+    (* Recursively collect the snake endpoints along the optimal path. *)
+    let rec find_path left top right bottom =
+      match midpoint left top right bottom with
+      | None -> []
+      | Some (start, finish) ->
+        let sx, sy = start in
+        let fx, fy = finish in
+        let head = find_path left top sx sy in
+        let tail = find_path fx fy right bottom in
+        let head' = if head = [] then [start] else head in
+        let tail' = if tail = [] then [finish] else tail in
+        head' @ tail'
+    in
+
+    (* Emit diagonal matches between (x1, y1) and (x2, y2); returns where it
+       stopped. Results are prepended to [acc] and reversed once at the end. *)
+    let emit_diagonal x1 y1 x2 y2 acc =
+      let xx = ref x1 in
+      let yy = ref y1 in
+      while !xx < x2 && !yy < y2 && compare a.(!xx) b.(!yy) do
+        acc := on_match a.(!xx) b.(!yy) :: !acc;
+        incr xx;
+        incr yy
+      done;
+      (!xx, !yy)
+    in
+
+    (* Derive the single edit between two consecutive path points (a snake is one
+       right/down step bracketed by diagonals). *)
+    let walk_pair (x1, y1) (x2, y2) acc =
+      let x1, y1 = emit_diagonal x1 y1 x2 y2 acc in
+      let x1, y1 =
+        if x2 - x1 < y2 - y1 then begin
+          acc := `Added b.(y1) :: !acc;
+          (x1, y1 + 1)
+        end else if x2 - x1 > y2 - y1 then begin
+          acc := `Removed a.(x1) :: !acc;
+          (x1 + 1, y1)
+        end else
+          (x1, y1)
       in
+      ignore (emit_diagonal x1 y1 x2 y2 acc)
+    in
 
-      (* Find the edit distance *)
-      let edit_distance = search () in
-
-      (* Backtrack to reconstruct the edit script *)
-      let result = ref [] in
-
-      let d_ref = ref edit_distance in
-      let x_ref = ref n in
-      let y_ref = ref m in
-      while !d_ref > 0 do
-        let d = !d_ref in
-        let prev_v = traces.(d) in
-        let k = !x_ref - !y_ref in
-
-        let prev_k =
-          if k = -d || (k <> d && prev_v.(k - 1 + offset) < prev_v.(k + 1 + offset)) then
-            k + 1
-          else
-            k - 1
-        in
-
-        let prev_x = prev_v.(prev_k + offset) in
-        let prev_y = prev_x - prev_k in
-        let snake_start_x, snake_start_y =
-          if prev_k = k - 1 then (prev_x + 1, prev_y)
-          else (prev_x, prev_y + 1)
-        in
-
-        let curr_x = ref !x_ref in
-        let curr_y = ref !y_ref in
-        while !curr_x > snake_start_x && !curr_y > snake_start_y do
-          result := on_match old_arr.(!curr_x - 1) new_arr.(!curr_y - 1) :: !result;
-          decr curr_x;
-          decr curr_y
-        done;
-
-        if prev_k = k - 1 then
-          result := `Removed old_arr.(snake_start_x - 1) :: !result
-        else
-          result := `Added new_arr.(snake_start_y - 1) :: !result;
-
-        x_ref := prev_x;
-        y_ref := prev_y;
-        decr d_ref
-      done;
-
-      for i = !x_ref - 1 downto 0 do
-        result := on_match old_arr.(i) new_arr.(i) :: !result
-      done;
-
-      !result
+    let path = find_path 0 0 n m in
+    let acc = ref [] in
+    let rec walk = function
+      | [] | [_] -> ()
+      | p1 :: ((p2 :: _) as rest) ->
+        walk_pair p1 p2 acc;
+        walk rest
+    in
+    walk path;
+    List.rev !acc
 
 
-(** Myers' O(ND) diff algorithm - based on Eugene W. Myers' 1986 paper.
-    Returns a list of changes representing the shortest edit script.
+(** Myers' O(ND) diff algorithm with equality-based matching.
+
+    Delegates to [diff_list_generic], the linear-space middle-snake variant of
+    Myers' algorithm (1986 §4). Returns a list of changes representing the
+    shortest edit script.
     Time complexity: O((N+M)D) where D is the size of the edit script.
-    Space complexity: O((N+M)D) for trace storage.
+    Space complexity: O(N+M) working space, plus the output list.
 *)
 let diff_list (type k) (module EQ : DIFFABLE_EQ) (old_list : EQ.t list) (new_list : EQ.t list)
   : (EQ.t, EQ.Patch.t, k) change list =
@@ -484,6 +507,13 @@ let merge_adjacent_changes (type a p k)
 
     Note: This may produce different results than diff_list for the same input,
     as adjacent insert+delete pairs are collapsed into modifications.
+
+    Note: [diff_list_generic] may choose any equally-minimal alignment, so with
+    duplicate elements the exact pairs collapsed into a [`Modified] can vary
+    between equally-minimal paths. The guaranteed contract: every old element
+    appears exactly once in a [`Removed] or a [`Modified] oldval, every new
+    element appears exactly once in an [`Added] or a [`Modified] newval, and
+    the underlying edit distance is minimal.
 *)
 let diff_list_merged (type k)
     (module EQ : DIFFABLE_EQ)

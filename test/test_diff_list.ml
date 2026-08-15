@@ -268,6 +268,217 @@ let test_diff_list_merged () =
   ()
 
 
+(** Exhaustive validity/minimality checking *)
+
+(** A record with a numeric id and a value, for exercising the ID-based path. *)
+type id_int_item = { id : int; value : int }
+
+(** A DIFFABLE_ID module over [id_int_item]: identity is the [id] field. *)
+module IdIntDiffEq = struct
+  type t = id_int_item
+  let equal a b = a = b
+  let has_same_id a b = a.id = b.id
+  let id_hash a = Hashtbl.hash a.id
+
+  module Patch = struct
+    type t = id_int_item atomic_patch
+    let is_empty = function {oldval; newval} -> oldval = newval
+  end
+
+  let diff a b = { oldval = a; newval = b }
+end
+
+(** Independent minimal edit distance oracle (LCS dynamic program). Returns
+    the minimum number of Added+Removed operations needed to turn [old_list]
+    into [new_list] when elements satisfying [equal] can be matched. *)
+let min_edit_distance ~equal old_list new_list =
+  let old_arr = Array.of_list old_list in
+  let new_arr = Array.of_list new_list in
+  let n = Array.length old_arr and m = Array.length new_arr in
+  let dp = Array.init (n + 1) (fun _ -> Array.make (m + 1) 0) in
+  for i = n downto 0 do
+    for j = m downto 0 do
+      if i = n then dp.(i).(j) <- m - j
+      else if j = m then dp.(i).(j) <- n - i
+      else if equal old_arr.(i) new_arr.(j) then dp.(i).(j) <- dp.(i + 1).(j + 1)
+      else dp.(i).(j) <- min (1 + dp.(i + 1).(j)) (1 + dp.(i).(j + 1))
+    done
+  done;
+  dp.(0).(0)
+
+(** Apply a change script to [old_list] and verify it exactly produces
+    [new_list]: matched pairs must satisfy [equal] and match the outcome of
+    [classify] (the on_match rule), and each Added/Removed must consume the
+    expected element. Returns the number of Added+Removed operations, or None
+    if the script is invalid. *)
+let apply_check (type a p k)
+    ~(equal : a -> a -> bool)
+    ~(classify : a -> a -> (a, p, k) change)
+    (old_list : a list) (new_list : a list) (script : (a, p, k) change list) : int option =
+  let rec go old_list new_list ops = function
+    | [] -> if old_list = [] && new_list = [] then Some ops else None
+    | `Unchanged :: rest -> (
+        match (old_list, new_list) with
+        | o :: os, n :: ns when equal o n -> (
+            match classify o n with
+            | `Unchanged -> go os ns ops rest
+            | `Modified _ | `Added _ | `Removed _ -> None)
+        | _ -> None)
+    | `Modified p :: rest -> (
+        match (old_list, new_list) with
+        | o :: os, n :: ns when equal o n -> (
+            match classify o n with
+            | `Modified q when q = p -> go os ns ops rest
+            | `Unchanged | `Added _ | `Removed _ | `Modified _ -> None)
+        | _ -> None)
+    | `Added x :: rest -> (
+        match new_list with
+        | n :: ns when n = x -> go old_list ns (ops + 1) rest
+        | _ -> None)
+    | `Removed x :: rest -> (
+        match old_list with
+        | o :: os when o = x -> go os new_list (ops + 1) rest
+        | _ -> None)
+  in
+  go old_list new_list 0 script
+
+(** Enumerate all lists of length <= [max_len] over [alphabet]. *)
+let all_lists alphabet max_len =
+  let rec of_len len =
+    if len = 0 then [[]]
+    else List.concat_map (fun tail -> List.map (fun x -> x :: tail) alphabet) (of_len (len - 1))
+  in
+  List.concat_map of_len (List.init (max_len + 1) Fun.id)
+
+let show_ints xs = "[" ^ String.concat ";" (List.map string_of_int xs) ^ "]"
+
+let show_items xs =
+  "[" ^ String.concat ";" (List.map (fun {id; value} -> Printf.sprintf "(%d,%d)" id value) xs) ^ "]"
+
+(** Assert that [script] is a valid, minimal edit script for
+    [old_list] -> [new_list]. *)
+let check_valid_minimal ~equal ~classify ~show old_list new_list script =
+  match apply_check ~equal ~classify old_list new_list script with
+  | None ->
+    fail
+      (Printf.sprintf "invalid script for %s -> %s" (show old_list) (show new_list))
+  | Some ops ->
+    let expected = min_edit_distance ~equal old_list new_list in
+    if ops <> expected then
+      fail
+        (Printf.sprintf "non-minimal (%d ops, expected %d) for %s -> %s" ops expected
+           (show old_list) (show new_list))
+
+(** Exhaustive sweep of diff_list over all int lists of length <= 6 over
+    {0,1,2} (1,194,649 pairs, including duplicates). *)
+let test_diff_list_exhaustive () =
+  let equal = ( = ) in
+  let classify o n = if o = n then `Unchanged else `Modified (IntDiffEq.diff o n) in
+  let lists = all_lists [0; 1; 2] 6 in
+  List.iter
+    (fun old_list ->
+       List.iter
+         (fun new_list ->
+            let script = diff_list (module IntDiffEq) old_list new_list in
+            check_valid_minimal ~equal ~classify ~show:show_ints old_list new_list script)
+         lists)
+    lists
+
+(** Exhaustive sweep of diff_list_generic with a non-trivial equality (same
+    parity) that still produces [`Modified] matches. *)
+let test_diff_list_generic_exhaustive () =
+  let equal a b = a mod 2 = b mod 2 in
+  let classify o n = if o = n then `Unchanged else `Modified (IntDiffEq.diff o n) in
+  let lists = all_lists [0; 1; 2] 6 in
+  List.iter
+    (fun old_list ->
+       List.iter
+         (fun new_list ->
+            let script = diff_list_generic ~compare:equal ~on_match:classify old_list new_list in
+            check_valid_minimal ~equal ~classify ~show:show_ints old_list new_list script)
+         lists)
+    lists
+
+(** Exhaustive sweep of diff_list_id over id/value records (ids {0,1},
+    values {0,1}), lengths <= 5 — exercises ID matching and duplicates. *)
+let test_diff_list_id_exhaustive () =
+  let items =
+    List.concat_map (fun id -> List.map (fun value -> { id; value }) [0; 1]) [0; 1]
+  in
+  let classify o n =
+    let patch = IdIntDiffEq.diff o n in
+    if IdIntDiffEq.Patch.is_empty patch then `Unchanged else `Modified patch
+  in
+  let lists = all_lists items 5 in
+  List.iter
+    (fun old_list ->
+       List.iter
+         (fun new_list ->
+            let script = diff_list_id (module IdIntDiffEq) old_list new_list in
+            check_valid_minimal ~equal:IdIntDiffEq.has_same_id ~classify ~show:show_items
+              old_list new_list script)
+         lists)
+    lists
+
+(** Seeded random longer lists: validity and minimality on deeper inputs. *)
+let test_diff_list_random_large () =
+  let state = Random.State.make [| 42 |] in
+  let classify o n = if o = n then `Unchanged else `Modified (IntDiffEq.diff o n) in
+  for _ = 1 to 300 do
+    let old_list = List.init (Random.State.int state 41) (fun _ -> Random.State.int state 4) in
+    let new_list = List.init (Random.State.int state 41) (fun _ -> Random.State.int state 4) in
+    let script = diff_list (module IntDiffEq) old_list new_list in
+    check_valid_minimal ~equal:( = ) ~classify ~show:show_ints old_list new_list script
+  done
+
+(** Apply a merged change script (where [`Modified] consumes an arbitrary
+    old/new pair) and verify it exactly reproduces [new_list]. *)
+let apply_check_merged old_list new_list script =
+  let rec go old_list new_list = function
+    | [] -> old_list = [] && new_list = []
+    | `Unchanged :: rest -> (
+        match (old_list, new_list) with
+        | o :: os, n :: ns when o = n -> go os ns rest
+        | _ -> false)
+    | `Modified { oldval; newval } :: rest -> (
+        match (old_list, new_list) with
+        | o :: os, n :: ns when o = oldval && n = newval -> go os ns rest
+        | _ -> false)
+    | `Added x :: rest -> (
+        match new_list with
+        | n :: ns when n = x -> go old_list ns rest
+        | _ -> false)
+    | `Removed x :: rest -> (
+        match old_list with
+        | o :: os when o = x -> go os new_list rest
+        | _ -> false)
+  in
+  go old_list new_list script
+
+(** Semantic coverage of diff_list_merged on duplicate-heavy inputs: the
+    merged script must apply exactly, regardless of which equally-minimal
+    alignment was chosen. *)
+let test_diff_list_merged_semantic () =
+  let cases =
+    [
+      ([1; 1; 2], [1; 2; 2]);
+      ([0; 0; 0], [0]);
+      ([0], [0; 0; 0]);
+      ([1; 2; 3], [3; 2; 1]);
+      ([1; 2], [3; 4]);
+      ([1; 1; 1; 1], [1; 1; 2; 2]);
+      ([1; 2; 1; 2], [2; 1; 2; 1]);
+    ]
+  in
+  List.iter
+    (fun (old_list, new_list) ->
+       let script = diff_list_merged (module IntDiffEq) old_list new_list in
+       if not (apply_check_merged old_list new_list script) then
+         fail
+           (Printf.sprintf "merged script does not apply for %s -> %s"
+              (show_ints old_list) (show_ints new_list)))
+    cases
+
 (** Alcotest test suite setup. *)
 let () =
   run "Diff List Algorithms" [
@@ -282,5 +493,12 @@ let () =
     "Merge Adjacent Changes", [
       test_case "Test merge_adjacent_changes" `Quick test_merge_adjacent_changes;
       test_case "Test diff_list_merged" `Quick test_diff_list_merged;
+      test_case "Test diff_list_merged semantic coverage" `Quick test_diff_list_merged_semantic;
+    ];
+    "Exhaustive Validity", [
+      test_case "Exhaustive diff_list over {0,1,2} lengths <= 6" `Quick test_diff_list_exhaustive;
+      test_case "Exhaustive diff_list_generic with parity equality" `Quick test_diff_list_generic_exhaustive;
+      test_case "Exhaustive diff_list_id over id/value records" `Quick test_diff_list_id_exhaustive;
+      test_case "Seeded random large lists" `Quick test_diff_list_random_large;
     ]
   ]
