@@ -466,6 +466,40 @@ let test_create_automation_item_curve_modified_summary () =
      check (float 0.001) "c1x new" 0.2 n
    | _ -> fail "Expected Ffloat for Curve1 X")
 
+(* A curve-only Modified event must still carry Time/Value as Unchanged
+   context (from the reference event) so consumers can place it — the web's
+   structured parser needs a Time or Value field to render the event at all
+   (review I5). *)
+let test_curve_only_event_carries_time_value_context () =
+  let curve = {
+    Automation.CurveControls.curve1_x = 0.1;
+    curve1_y = 0.2;
+    curve2_x = 0.8;
+    curve2_y = 0.9;
+  } in
+  let old_curve = { curve with Automation.CurveControls.curve1_x = 0.0 } in
+  let old_event = {
+    Automation.EnvelopeEvent.id = 42;
+    time = 16.0;
+    value = Automation.FloatEvent 0.5;
+    curve = Some old_curve;
+  } in
+  let new_event = { old_event with curve = Some curve } in
+  let ev_patch = Automation.EnvelopeEvent.diff old_event new_event in
+  (* the patch's time/value are Unchanged; only curve moved *)
+  let item = create_events_item ~reference_event:old_event (`Modified ev_patch) in
+  let time_field = get_field (find_view_by_name "Time" item.children) in
+  check bool "Time context is Unchanged" true (time_field.change = Unchanged);
+  (match time_field.newval with
+   | Some (Ffloat 16.0) -> () | _ -> fail "Time context expected 16.0");
+  let value_field = get_field (find_view_by_name "Value" item.children) in
+  check bool "Value context is Unchanged" true (value_field.change = Unchanged);
+  (match value_field.newval with
+   | Some (Ffloat 0.5) -> () | _ -> fail "Value context expected 0.5");
+  (* Curve child still present and Modified *)
+  check bool "Curve child present" true
+    (List.exists (function Item { name = "Curve"; _ } -> true | _ -> false) item.children)
+
 (* Added/Removed automations must render their events, wrapped in an Events
    Collection (review_0614.org [#B], change_projector.ml:837). *)
 let build_automation_item_added () =
@@ -858,6 +892,10 @@ let () =
       test_case "Combined summary includes modified curve details" `Quick test_create_automation_item_curve_modified_summary;
       test_case "Added automation renders its events" `Quick test_create_automation_item_added_event_summary;
       test_case "Removed automation renders its events" `Quick test_create_automation_item_removed_event_summary;
+    ];
+    "create_events_item", [
+      test_case "Curve-only Modified event carries Time/Value context" `Quick
+        test_curve_only_event_carries_time_value_context;
     ];
     "create_locator_item", [
       test_case "Create locator item for Added" `Quick test_create_locator_item_added;

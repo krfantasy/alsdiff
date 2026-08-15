@@ -712,9 +712,14 @@ module CurveControlsVS = Automation.CurveControls.ViewSpec(DeviceViewSpecB)
 module VersionVS = Liveset.Version.ViewSpec(DeviceViewSpecB)
 
 
-(** [create_events_item] builds a [item] for an envelope event change (new type system). *)
+(** [create_events_item] builds a [item] for an envelope event change (new type system).
+    @param reference_event the old (reference) event for a `` `Modified `` change: unchanged
+    leaf fields carry no values in the patch, so they are re-attached from the reference
+    as Unchanged context (mirroring [create_note_item]). A curve-only edit otherwise emits
+    just the Curve child with no Time/Value to place the event by. *)
 let create_events_item
     ?(format_time : dual_time_formatter = default_dual_time_formatter)
+    ?(reference_event : Automation.EnvelopeEvent.t option)
     (c : (Automation.EnvelopeEvent.t, Automation.EnvelopeEvent.Patch.t) structured_change)
   : item =
   let open Automation in
@@ -733,7 +738,25 @@ let create_events_item
       ~domain_type:DTEvent
   in
   let base_section_spec = Spec.inline_fields ~specs:base_specs ~domain_type:DTEvent in
-  build_item_from_specs ~name:"EnvelopeEvent" ~domain_type:DTEvent ~specs:[base_section_spec; curve_section_spec] c
+  let item = build_item_from_specs ~name:"EnvelopeEvent" ~domain_type:DTEvent ~specs:[base_section_spec; curve_section_spec] c in
+  match c, reference_event with
+  | `Modified _, Some ref ->
+    (* Unchanged leaf fields carry no values in the patch: re-attach them from
+       the reference event as Unchanged context so consumers (the web's
+       structured parser) can place the event even when only the curve moved.
+       Fields the patch path emitted (Modified Time/Value) stay untouched. *)
+    let present name = List.exists (function
+        | Field f -> f.name = name
+        | _ -> false) item.children in
+    let ctx = build_value_field_views base_specs Added ref ~domain_type:DTEvent
+      |> List.filter_map (fun v ->
+          match v with
+          | Field ({ name; _ } as f) when not (present name) ->
+            Some (view_to_unchanged (Field f))
+          | _ -> None)
+    in
+    { item with children = ctx @ item.children }
+  | _ -> item
 
 
 (* ==================== Clip Item Builders (after VS instantiations) ==================== *)
@@ -785,11 +808,16 @@ let create_audio_clip_item
 
 (** [create_automation_item] builds a [item] for an automation change (new type system).
     @param get_pointee_name function to resolve pointee IDs to names
+    @param reference_automations the old track's automations: for a `` `Modified ``
+      automation, the old automation (matched by patch id) supplies per-event
+      references so unchanged event fields can be re-attached as context
+      (see [create_events_item]).
     @param c the automation structured change
 *)
 let create_automation_item
     ~(get_pointee_name : int -> string)
     ?(format_time : dual_time_formatter = default_dual_time_formatter)
+    ?(reference_automations : Automation.t list option)
     (c : (Automation.t, Automation.Patch.t) structured_change)
   : item =
   let open Automation in
@@ -816,10 +844,25 @@ let create_automation_item
         let event_item = create_events_item ~format_time (tag e) in
         Item { event_item with name = Printf.sprintf "Event[%d]" e.Automation.EnvelopeEvent.id })
   in
+  (* For a Modified automation, resolve the old automation's events (matched by
+     automation id) so Modified events can render their unchanged fields as
+     context. *)
+  let ref_events = match c, reference_automations with
+    | `Modified patch, Some autos ->
+      List.find_opt (fun (ra : Automation.t) -> ra.Automation.id = patch.Automation.Patch.id) autos
+      |> Option.map (fun (ra : Automation.t) -> ra.Automation.events)
+    | _ -> None
+  in
   let event_children : view list =
     match c with
     | `Modified patch ->
       let events = patch.events |> List.map (fun event_change ->
+          let reference_event = match event_change, ref_events with
+            | `Modified ep, Some events ->
+              List.find_opt (fun (re : EnvelopeEvent.t) ->
+                  re.EnvelopeEvent.id = ep.Automation.EnvelopeEvent.Patch.id) events
+            | _ -> None
+          in
           let event_id = match event_change with
             | `Added e -> e.Automation.EnvelopeEvent.id
             | `Removed e -> e.Automation.EnvelopeEvent.id
@@ -829,7 +872,7 @@ let create_automation_item
           match event_change with
           | `Unchanged -> None
           | _ ->
-            let event_item = create_events_item ~format_time event_change in
+            let event_item = create_events_item ~format_time ?reference_event event_change in
             Some (Item { event_item with name = Printf.sprintf "Event[%d]" event_id })
         ) |> List.filter_map Fun.id in
       wrap_events events
@@ -1000,7 +1043,8 @@ let create_midi_track_item
       ~format_time
       ~build_clips:(create_midi_clip_item ~note_name_style ~format_time
                       ?reference_clips:(Option.map (fun (rt : Track.MidiTrack.t) -> rt.Track.MidiTrack.clips) reference_track))
-      ~build_automations:(create_automation_item ~get_pointee_name ~format_time)
+      ~build_automations:(create_automation_item ~get_pointee_name ~format_time
+                            ?reference_automations:(Option.map (fun (rt : Track.MidiTrack.t) -> rt.Track.MidiTrack.automations) reference_track))
       ~build_devices:(create_device_item ~format_time)
       ~name:(MidiTrackVS.build_section_name c)
       ~domain_type:DTTrack c in
@@ -1033,7 +1077,8 @@ let create_audio_like_track_item
   let item = AudioTrackVS.build_item
       ~format_time
       ~build_clips:(create_audio_clip_item ~format_time)
-      ~build_automations:(create_automation_item ~get_pointee_name ~format_time)
+      ~build_automations:(create_automation_item ~get_pointee_name ~format_time
+                            ?reference_automations:(Option.map (fun (rt : Track.AudioTrack.t) -> rt.Track.AudioTrack.automations) reference_track))
       ~build_devices:(create_device_item ~format_time)
       ~name:(AudioTrackVS.build_section_name ~type_label:track_type_name c)
       ~domain_type:DTTrack c in
@@ -1100,7 +1145,8 @@ let create_main_track_item
     : item =
     MainTrackVS.build_item
       ~format_time
-      ~build_automations:(create_automation_item ~get_pointee_name ~format_time)
+      ~build_automations:(create_automation_item ~get_pointee_name ~format_time
+                            ?reference_automations:(Option.map (fun (rt : Track.MainTrack.t) -> rt.Track.MainTrack.automations) reference_track))
       ~build_devices:(create_device_item ~format_time)
       ~name:(MainTrackVS.build_section_name tag)
       ~domain_type:DTTrack tag
