@@ -1,12 +1,13 @@
 name: Deploy GitHub Pages
 
-# Deploys the web app when a commit on master modifies anything under web/.
+# Deploys the web app on every push to master and every v* tag push,
+# but only after the Build and Test workflow for the same commit succeeds.
 on:
   push:
     branches:
       - master
-    paths:
-      - 'web/**'
+    tags:
+      - 'v*'
 
 permissions:
   actions: read
@@ -32,9 +33,14 @@ jobs:
             const repo = context.repo.repo;
             const headSha = context.sha;
             const workflowId = "build.yml";
-            // build.yml runs on every branch; wait for the run of this same
-            // commit on the branch being deployed (not a hardcoded branch).
-            const branch = context.ref.replace("refs/heads/", "");
+            // build.yml runs on every branch and every tag; wait for the run
+            // of this same commit on the ref being deployed. The GitHub API
+            // accepts a branch name or a tag name, so strip the ref prefix
+            // for both refs/heads/* and refs/tags/*.
+            const ref = context.ref;
+            const refName = ref.startsWith("refs/tags/")
+              ? ref.slice("refs/tags/".length)
+              : ref.slice("refs/heads/".length);
             const maxWaitMs = 45 * 60 * 1000;
             const pollIntervalMs = 30 * 1000;
             const startedAt = Date.now();
@@ -44,7 +50,7 @@ jobs:
                 owner,
                 repo,
                 workflow_id: workflowId,
-                branch,
+                branch: refName,
                 event: "push",
                 per_page: 100
               });
