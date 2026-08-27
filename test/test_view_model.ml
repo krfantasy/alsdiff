@@ -726,6 +726,97 @@ let test_unchanged_section_placeholder_handling () =
   in
   check bool "json renderer includes unchanged Version node" true has_version_node
 
+(* The LiveSet item must carry the project's current tempo/time signature as
+   Unchanged context fields (mirroring the TrackId/GroupId identity fields) so
+   the web ruler reads them at EVERY detail level — including Summary/Compact
+   presets where the whole MainTrack item is level-dropped. With a reference
+   liveset, the values come from the reference main track. *)
+let test_liveset_carries_tempo_context_with_reference () =
+  let path = Utils.resolve_test_data_path "t4.xml" in
+  let xml = read_file path in
+  let ls1 = Liveset.create xml path in
+  (* Change only the first regular track's mixer volume; main stays untouched. *)
+  let ls2 = match ls1.Liveset.tracks with
+    | Track.Midi t :: rest ->
+      let mixer = t.Track.MidiTrack.mixer in
+      let vol = { mixer.Track.Mixer.volume with value = Device.Float 0.9 } in
+      { ls1 with Liveset.tracks =
+                   Track.Midi { t with Track.MidiTrack.mixer = { mixer with Track.Mixer.volume = vol } } :: rest }
+    | _ -> fail "expected MidiTrack first in t4.xml"
+  in
+  let patch = Liveset.diff ls1 ls2 in
+  let item = create_liveset_item ~reference_liveset:ls1 (`Modified patch) in
+  let tempo = get_field (find_view_by_name "Tempo" item.children) in
+  check bool "liveset Tempo context is Unchanged" true (tempo.change = Unchanged);
+  (match tempo.newval with
+   | Some (Ffloat 120.0) -> () | _ -> fail "liveset Tempo context expected 120.0");
+  let ts = get_field (find_view_by_name "Time Signature" item.children) in
+  check bool "liveset Time Signature context is Unchanged" true (ts.change = Unchanged);
+  (match ts.newval with
+   | Some (Fint 201) -> () | _ -> fail "liveset Time Signature context expected 201")
+
+(* When the master tempo changes, the LiveSet context field carries the NEW
+   value from the patch — no reference needed. *)
+let test_liveset_tempo_context_from_patch () =
+  let path = Utils.resolve_test_data_path "t4.xml" in
+  let xml = read_file path in
+  let liveset1 = Liveset.create xml path in
+  let liveset2 = Liveset.create xml path in
+  let updated_main =
+    match liveset2.Liveset.main with
+    | Track.Main main_track ->
+      let tempo = { main_track.Track.MainTrack.mixer.tempo with value = Device.Float 138.0 } in
+      Track.Main { main_track with mixer = { main_track.Track.MainTrack.mixer with tempo } }
+    | _ -> fail "Expected Track.Main type for main track"
+  in
+  let patch = Liveset.diff liveset1 { liveset2 with main = updated_main } in
+  let item = create_liveset_item (`Modified patch) in
+  let tempo = get_field (find_view_by_name "Tempo" item.children) in
+  (match tempo.newval with
+   | Some (Ffloat 138.0) -> ()
+   | _ -> fail "liveset Tempo context expected 138.0 from patch");
+  (* Time signature did not change and no reference is available -> absent. *)
+  check bool "no liveset Time Signature context without reference" true
+    (not (List.exists (function
+         | Field { name = "Time Signature"; _ } -> true | _ -> false) item.children))
+
+(* Without a reference and an untouched master there is nothing to read: no
+   context fields are emitted. *)
+let test_liveset_no_tempo_context_without_reference () =
+  let path = Utils.resolve_test_data_path "t4.xml" in
+  let xml = read_file path in
+  let ls1 = Liveset.create xml path in
+  let ls2 = match ls1.Liveset.tracks with
+    | Track.Midi t :: rest ->
+      let mixer = t.Track.MidiTrack.mixer in
+      let vol = { mixer.Track.Mixer.volume with value = Device.Float 0.9 } in
+      { ls1 with Liveset.tracks =
+                   Track.Midi { t with Track.MidiTrack.mixer = { mixer with Track.Mixer.volume = vol } } :: rest }
+    | _ -> fail "expected MidiTrack first in t4.xml"
+  in
+  let patch = Liveset.diff ls1 ls2 in
+  let item = create_liveset_item (`Modified patch) in
+  check bool "no liveset Tempo context without reference" true
+    (not (List.exists (function
+         | Field { name = "Tempo"; _ } -> true | _ -> false) item.children));
+  check bool "no liveset Time Signature context without reference" true
+    (not (List.exists (function
+         | Field { name = "Time Signature"; _ } -> true | _ -> false) item.children))
+
+(* A self-diff (`` `Unchanged `` liveset) carries no tempo context: the web
+   shows the no-differences result and never reads the ruler. *)
+let test_liveset_no_tempo_context_when_unchanged () =
+  let path = Utils.resolve_test_data_path "t4.xml" in
+  let xml = read_file path in
+  let ls1 = Liveset.create xml path in
+  let item = create_liveset_item ~reference_liveset:ls1 `Unchanged in
+  check bool "no liveset Tempo context on Unchanged" true
+    (not (List.exists (function
+         | Field { name = "Tempo"; _ } -> true | _ -> false) item.children));
+  check bool "no liveset Time Signature context on Unchanged" true
+    (not (List.exists (function
+         | Field { name = "Time Signature"; _ } -> true | _ -> false) item.children))
+
 (* When a track is Modified but its mixer is Unchanged, the projector emits an
    empty {change=Unchanged; children=[]} Mixer placeholder. With a reference
    track threaded in (the old value), the placeholder is populated from the
@@ -910,6 +1001,10 @@ let () =
       test_case "Reference populates unchanged main mixer params" `Quick test_reference_populates_unchanged_main_mixer_params;
       test_case "Unchanged main track emitted with reference" `Quick test_unchanged_main_track_emitted_with_reference;
       test_case "Unchanged section placeholder handling" `Quick test_unchanged_section_placeholder_handling;
+      test_case "LiveSet carries tempo context from reference" `Quick test_liveset_carries_tempo_context_with_reference;
+      test_case "LiveSet carries new tempo from patch" `Quick test_liveset_tempo_context_from_patch;
+      test_case "No tempo context without reference" `Quick test_liveset_no_tempo_context_without_reference;
+      test_case "No tempo context on Unchanged liveset" `Quick test_liveset_no_tempo_context_when_unchanged;
       test_case "Reference liveset populates unchanged mixer" `Quick test_reference_populates_unchanged_mixer;
       test_case "Modified track carries identity fields" `Quick test_modified_track_identity_fields;
       test_case "Changed group emits single Modified GroupId" `Quick test_modified_track_group_change_no_duplicate;

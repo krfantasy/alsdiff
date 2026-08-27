@@ -1399,6 +1399,63 @@ let liveset_field_specs : (Liveset.t, Liveset.Patch.t) unified_field_spec list =
     @param note_name_style the style to use for note names (Sharp or Flat)
     @param c the liveset structured change
 *)
+(** [param_value_to_field_value] converts a device parameter value to a
+    serializable field value (mirrors GenericParam.ViewSpec.pv_to_fv). *)
+let param_value_to_field_value (v : Device.param_value) : field_value =
+  match v with
+  | Device.Float f -> Ffloat f
+  | Device.Int i -> Fint i
+  | Device.Bool b -> Fbool b
+  | Device.Enum (e, _) -> Fint e
+
+(** [liveset_tempo_context c ~reference_main] extracts the current-side tempo
+    (BPM) and time-signature (Ableton encoded code) of the project from a
+    liveset change, for consumers that need them at every detail level (the
+    web app's realtime ruler). The value is read from the patch when the
+    master changed, else from the reference main track; an `` `Unchanged ``
+    liveset (self-diff) carries no context — the web shows the no-diff
+    result instead. *)
+let liveset_tempo_context
+    (c : (Liveset.t, Liveset.Patch.t) structured_change)
+    ~(reference_main : Track.MainTrack.t option)
+  : (field_value option * field_value option) =
+  let main_values (m : Track.MainTrack.t) =
+    (Some (param_value_to_field_value
+             m.Track.MainTrack.mixer.tempo.Device.GenericParam.value),
+     Some (param_value_to_field_value
+             m.Track.MainTrack.mixer.time_signature.Device.GenericParam.value))
+  in
+  let ref_values () =
+    match reference_main with
+    | Some m -> main_values m
+    | None -> (None, None)
+  in
+  let param_current ~(ref : field_value option)
+      (u : Device.GenericParam.Patch.t structured_update) : field_value option =
+    match u with
+    | `Modified p ->
+      (match p.Device.GenericParam.Patch.value with
+       | `Modified { newval; _ } -> Some (param_value_to_field_value newval)
+       | `Unchanged -> ref)
+    | `Unchanged -> ref
+  in
+  match c with
+  | `Added ls | `Removed ls ->
+    (match ls.Liveset.main with
+     | Track.Main m -> main_values m
+     | _ -> (None, None))
+  | `Modified p ->
+    (match p.Liveset.Patch.main with
+     | `Modified pt ->
+       (match pt.Track.MainTrack.Patch.mixer with
+        | `Modified mx ->
+          let ref_tempo, ref_ts = ref_values () in
+          (param_current ~ref:ref_tempo mx.Track.MainMixer.Patch.tempo,
+           param_current ~ref:ref_ts mx.Track.MainMixer.Patch.time_signature)
+        | `Unchanged -> ref_values ())
+     | `Unchanged -> ref_values ())
+  | `Unchanged -> (None, None)
+
 let create_liveset_item
     ?(note_name_style : note_display_style = default_note_name_style)
     ?(format_time : dual_time_formatter = default_dual_time_formatter)
@@ -1439,6 +1496,12 @@ let create_liveset_item
       ~domain_type:DTVersion
   in
 
+  (* Reference main track (old side), used to populate Unchanged context. *)
+  let ref_main = match reference_liveset with
+    | Some ls -> (match ls.Liveset.main with Track.Main m -> Some m | _ -> None)
+    | None -> None
+  in
+
   (* Build Main Track section - singleton, always present.
      Emit the inner item directly so it appears flat under the LiveSet
      instead of wrapped in a redundant "Main Track" envelope. The item is
@@ -1446,12 +1509,7 @@ let create_liveset_item
      main patch is `Unchanged (built from the reference and populated with
      Unchanged mixer context) so consumers can read the project's tempo/time
      signature when only regular tracks changed. *)
-  let main_track_item =
-    let ref_main = match reference_liveset with
-      | Some ls -> (match ls.Liveset.main with Track.Main m -> Some m | _ -> None)
-      | None -> None
-    in
-    match c with
+  let main_track_item = match c with
     | `Modified p ->
       (match p.Liveset.Patch.main with
        | `Modified pt ->
@@ -1478,8 +1536,25 @@ let create_liveset_item
      still applies to Events/Notes/Clips/Devices/Locators via their Collection
      wrappers. Order: atomic fields → Version → Main Track → regular tracks →
      returns → locators. *)
+  (* Tempo/Time Signature context: the current project tempo and time
+     signature ride on the LiveSet item at every detail level (mirroring the
+     TrackId/GroupId identity fields), so level-dropping renderers can never
+     hide them — the web app's realtime ruler needs them even when the whole
+     MainTrack item is dropped under Summary/Compact presets. *)
+  let tempo_context, ts_context = liveset_tempo_context c ~reference_main:ref_main in
+  let context_fields =
+    List.filter_map (fun (name, v) ->
+        match v with
+        | Some fv ->
+          Some (Field { name; change = Unchanged; domain_type = DTLiveset;
+                        oldval = None; newval = Some fv })
+        | None -> None)
+      [ ("Tempo", tempo_context); ("Time Signature", ts_context) ]
+  in
+
   let children =
     atomic_children
+    @ context_fields
     @ opt_view (fun i -> Item i) version_item
     @ opt_view (fun i -> Item i) main_track_item
     @ build_liveset_tracks_items ~get_pointee_name ~note_name_style ~format_time

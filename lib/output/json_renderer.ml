@@ -41,24 +41,33 @@ let rec item_to_yojson (cfg : detail_config) (item : item) : Yojson.Safe.t optio
   (* TrackId/GroupId are structural identity, not diff content: consumers (the
      web app) nest tracks under their group by these fields, so they ride along
      at every detail level — including counts-only Summary and Field-dropping
-     Compact — exactly once each, even where the normal path would render them. *)
-  let is_identity (f : field) =
-    item.domain_type = DTTrack && (f.name = "TrackId" || f.name = "GroupId") in
+     Compact — exactly once each, even where the normal path would render them.
+     The LiveSet-level Tempo/Time Signature context fields (the project's
+     current tempo/time signature, emitted by create_liveset_item) ride the
+     same channel: the web app's realtime ruler needs them even when the
+     whole MainTrack item is level-dropped under Summary/Compact presets. *)
+  let is_context_field (f : field) =
+    match item.domain_type with
+    | DTTrack -> f.name = "TrackId" || f.name = "GroupId"
+    | DTLiveset -> f.name = "Tempo" || f.name = "Time Signature"
+    | _ -> false
+  in
   let identity =
     List.filter_map (function
-        | Field f when is_identity f -> Some (field_to_yojson f)
+        | Field f when is_context_field f -> Some (field_to_yojson f)
         | _ -> None) item.children
   in
   let sub_views = List.filter (function
-      | Field f -> not (is_identity f)
+      | Field f -> not (is_context_field f)
       | _ -> true) item.children in
   match level with
   | Ignore -> None
   | Summary ->
     (* Summary mode: change counts, no children. LiveSet is the root container,
-       so it shows its sub-views even in Summary (mirrors text_renderer.ml:162-174). *)
+       so it shows its sub-views even in Summary (mirrors text_renderer.ml:162-174);
+       its context fields ride along like the track identity fields. *)
     if item.domain_type = DTLiveset then
-      Some (node (List.filter_map (view_to_yojson cfg) sub_views))
+      Some (node (identity @ List.filter_map (view_to_yojson cfg) sub_views))
     else begin
       let breakdown =
         if is_element_like_item cfg item then count_fields_breakdown item

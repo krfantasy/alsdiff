@@ -1,6 +1,7 @@
 import type {
 	ViewNode,
 	ItemView,
+	FieldView,
 	CollectionView,
 	TrackData,
 	TrackNode,
@@ -307,6 +308,38 @@ function findMasterMixer(children: ViewNode[]): ItemView | undefined {
 	return undefined;
 }
 
+/** The top-level LiveSet item (always emitted first in the diff array). */
+function findLivesetItem(diffChildren: ViewNode[]): ItemView | undefined {
+	return diffChildren.find(
+		(c): c is ItemView => isItem(c) && c.domain_type === "Liveset",
+	);
+}
+
+/**
+ * Read a context field riding on the LiveSet item — the backend emits the
+ * project's current Tempo / Time Signature there at EVERY detail level
+ * (mirroring the TrackId/GroupId identity fields), so the ruler can rely on
+ * them even under Summary/Compact presets where the whole MainTrack item
+ * (and its Mixer -> Tempo chain) is level-dropped.
+ *
+ * Accepts both call shapes: the diff's top-level array (the fields live
+ * inside the first LiveSet item) and the LiveSet item's own children (the
+ * fields ride directly there — this is what FileUpload passes).
+ */
+function extractLivesetNumberField(
+	diffChildren: ViewNode[],
+	name: string,
+): number | undefined {
+	const search = (nodes: ViewNode[] | undefined): number | undefined => {
+		const f = nodes?.find(
+			(c): c is FieldView => c.type === "field" && c.name === name,
+		);
+		if (!f) return undefined;
+		return ((f.new_value ?? f.old_value) as number) ?? undefined;
+	};
+	return search(diffChildren) ?? search(findLivesetItem(diffChildren)?.children);
+}
+
 /** Decode Ableton's time-signature code: numer = code%99 + 1, denom = 2^(code/99). */
 function decodeTimeSignatureCode(code: number): TimeSignature {
 	if (code < 0 || Math.floor(code / 99) > 5) return { numer: 4, denom: 4 };
@@ -314,6 +347,8 @@ function decodeTimeSignatureCode(code: number): TimeSignature {
 }
 
 export function extractTempo(diffChildren: ViewNode[]): number {
+	const livesetTempo = extractLivesetNumberField(diffChildren, "Tempo");
+	if (livesetTempo !== undefined) return livesetTempo;
 	const mixer = findMasterMixer(diffChildren);
 	if (!mixer) return 120;
 	const mchildren = mixer.children ?? [];
@@ -328,6 +363,10 @@ export function extractTempo(diffChildren: ViewNode[]): number {
 export function extractTimeSignature(
 	diffChildren: ViewNode[],
 ): TimeSignature {
+	const livesetTs = extractLivesetNumberField(diffChildren, "Time Signature");
+	if (livesetTs !== undefined) {
+		return decodeTimeSignatureCode(Math.round(livesetTs));
+	}
 	const mixer = findMasterMixer(diffChildren);
 	if (!mixer) return { numer: 4, denom: 4 };
 	const mchildren = mixer.children ?? [];

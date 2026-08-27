@@ -260,6 +260,113 @@ let test_non_track_item_no_identity_hoisting () =
   let item = one (render_one (cfg_of Summary) other) in
   Alcotest.(check bool) "no children key for non-track Summary item" true (not (has_key "children" item))
 
+(* LiveSet items carry the project's Tempo/Time Signature context fields at
+   EVERY detail level (mirroring the track identity fields): the backend
+   emits them as Unchanged fields on the LiveSet item so the web app's
+   realtime ruler works even when the whole MainTrack item is level-dropped
+   under Summary/Compact presets. They must ride the identity channel exactly
+   once each — including the counts-only Summary root special case, which
+   previously dropped identity. *)
+let liveset_tempo_item =
+  Item
+    {
+      name = "LiveSet: Demo";
+      change = Modified;
+      domain_type = DTLiveset;
+      children =
+        [
+          Field
+            {
+              name = "Tempo"; change = Unchanged; domain_type = DTLiveset;
+              oldval = None; newval = Some (Ffloat 138.0);
+            };
+          Field
+            {
+              name = "Time Signature"; change = Unchanged; domain_type = DTLiveset;
+              oldval = None; newval = Some (Fint 201);
+            };
+          Field
+            {
+              name = "Creator"; change = Unchanged; domain_type = DTLiveset;
+              oldval = None; newval = Some (Fstring "Ableton");
+            };
+          Item
+            {
+              name = "MidiTrack (#14): Lead";
+              change = Modified;
+              domain_type = DTTrack;
+              children = [];
+            };
+        ];
+    }
+
+(* Summary: LiveSet keeps its sub-views AND its context fields (this branch
+   previously dropped identity entirely). Normal Unchanged fields (Creator)
+   still ride nothing — they are not special. *)
+let test_liveset_tempo_context_at_summary () =
+  let item = one (render_one (cfg_of Summary) liveset_tempo_item) in
+  Alcotest.(check bool) "liveset Summary no counts" true (not (has_key "counts" item));
+  (match children_of item with
+   | `List fields ->
+     Alcotest.(check int) "Tempo exactly once" 1
+       (List.length (List.filter (is_field_named "Tempo") fields));
+     Alcotest.(check int) "Time Signature exactly once" 1
+       (List.length (List.filter (is_field_named "Time Signature") fields));
+     (* sub-view (the track item) still renders in Summary *)
+     Alcotest.(check int) "track child renders" 1
+       (List.length (List.filter (is_field_named "MidiTrack (#14): Lead") fields));
+     (* non-context Unchanged field does not ride along *)
+     Alcotest.(check int) "Creator stays dropped" 0
+       (List.length (List.filter (is_field_named "Creator") fields))
+   | other -> Alcotest.failf "expected children list, got %s" (Yojson.Safe.to_string other))
+
+(* Compact: normal Fields drop, context fields ride, Item children stay. *)
+let test_liveset_tempo_context_at_compact () =
+  let item = one (render_one (cfg_of Compact) liveset_tempo_item) in
+  (match children_of item with
+   | `List fields ->
+     Alcotest.(check int) "Tempo exactly once" 1
+       (List.length (List.filter (is_field_named "Tempo") fields));
+     Alcotest.(check int) "Time Signature exactly once" 1
+       (List.length (List.filter (is_field_named "Time Signature") fields));
+     Alcotest.(check int) "track child stays at Compact" 1
+       (List.length (List.filter (is_field_named "MidiTrack (#14): Lead") fields));
+     Alcotest.(check int) "Creator dropped at Compact" 0
+       (List.length (List.filter (is_field_named "Creator") fields))
+   | other -> Alcotest.failf "expected children list, got %s" (Yojson.Safe.to_string other))
+
+(* Full renders everything — context fields must not be duplicated even
+   though the normal path would also render these Unchanged fields. *)
+let test_liveset_tempo_context_at_full () =
+  let cfg = { (cfg_of Full) with unchanged = Full } in
+  let item = one (render_one cfg liveset_tempo_item) in
+  (match children_of item with
+   | `List fields ->
+     Alcotest.(check int) "Tempo exactly once" 1
+       (List.length (List.filter (is_field_named "Tempo") fields));
+     Alcotest.(check int) "Time Signature exactly once" 1
+       (List.length (List.filter (is_field_named "Time Signature") fields))
+   | other -> Alcotest.failf "expected children list, got %s" (Yojson.Safe.to_string other))
+
+(* A non-LiveSet item with same-named fields gets NO tempo hoisting. *)
+let test_non_liveset_item_no_tempo_hoisting () =
+  let other =
+    Item
+      {
+        name = "Mixer"; change = Modified; domain_type = DTMixer;
+        children =
+          [
+            Field
+              {
+                name = "Tempo"; change = Unchanged; domain_type = DTMixer;
+                oldval = None; newval = Some (Ffloat 138.0);
+              };
+          ];
+      }
+  in
+  let item = one (render_one (cfg_of Summary) other) in
+  Alcotest.(check bool) "no children key for non-LiveSet Summary item" true (not (has_key "children" item))
+
 (* Ffloat NaN/Inf must serialize to JSON null, not the raw NaN/Infinity tokens.
    RFC 8259 forbids NaN/Infinity, so emitting them makes the whole document
    unparseable by strict consumers (jq, Python json.loads). NaN/Inf is
@@ -326,6 +433,10 @@ let tests =
     "track identity at Compact no duplicate", `Quick, test_track_identity_at_compact_no_duplicate;
     "track identity at Full", `Quick, test_track_identity_at_full;
     "non-track item gets no identity hoisting", `Quick, test_non_track_item_no_identity_hoisting;
+    "liveset tempo context at Summary", `Quick, test_liveset_tempo_context_at_summary;
+    "liveset tempo context at Compact", `Quick, test_liveset_tempo_context_at_compact;
+    "liveset tempo context at Full", `Quick, test_liveset_tempo_context_at_full;
+    "non-LiveSet item gets no tempo hoisting", `Quick, test_non_liveset_item_no_tempo_hoisting;
     "NaN float serializes to null", `Quick, test_nan_float_is_null;
     "Infinity float serializes to null", `Quick, test_infinity_float_is_null;
     "finite float stays a number", `Quick, test_finite_float_is_number;
