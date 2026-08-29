@@ -880,14 +880,35 @@ let detail_config_json_schema () : Yojson.Basic.t =
     let fields_with_id = ("$id", `String schema_uri) :: fields in
     (match List.assoc_opt "properties" fields_with_id with
      | Some (`Assoc props) ->
-       (* Add $schema as an optional property for config files *)
-       let with_schema_prop = ("$schema", `Assoc [
-           ("type", `String "string");
-           ("description", `String "JSON Schema URI pointing to the schema for this config file.");
-         ]) :: props in
+       (* Metadata fields that config files may carry; alsdiff strips them
+          before PPX parsing (see filter_schema_metadata_fields) *)
+       let with_metadata_props =
+         ("$schema", `Assoc [
+             ("type", `String "string");
+             ("description", `String "JSON Schema URI pointing to the schema for this config file.");
+           ])
+         :: ("$id", `Assoc [
+             ("type", `String "string");
+             ("description", `String "URI identifier for this config file; ignored by alsdiff.");
+           ])
+         :: ("$defs", `Assoc [
+             ("type", `String "object");
+             ("description", `String "Embedded JSON Schema definitions for editor tooling; ignored by alsdiff.");
+           ])
+         :: props in
+       (* Point type_overrides items at the shared $defs entry instead of the
+          inline copy emitted by the PPX, which cannot express array-of-$ref
+          via [@ref] *)
+       let with_ref_items = List.map (fun (k, v) ->
+           if k = "type_overrides" then
+             (k, `Assoc [
+                 ("type", `String "array");
+                 ("items", `Assoc [("$ref", `String "#/$defs/type_override_entry")]);
+               ])
+           else (k, v)) with_metadata_props in
        (* Filter out defaulted fields from required array *)
        let updated_fields = List.map (fun (k, v) ->
-           if k = "properties" then ("properties", `Assoc with_schema_prop)
+           if k = "properties" then ("properties", `Assoc with_ref_items)
            else if k = "required" then (
              match v with
              | `List required_fields ->

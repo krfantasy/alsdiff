@@ -138,7 +138,31 @@ let test_json_schema_generation () =
          (List.mem_assoc "per_change_override" defs) true;
        Alcotest.(check bool) "has note_display_style def"
          (List.mem_assoc "note_display_style" defs) true
-     | _ -> Alcotest.failf "Expected $defs to be an object")
+     | _ -> Alcotest.failf "Expected $defs to be an object");
+    (* Root properties must allow the schema metadata fields that config
+       files may carry, and type_overrides items must reference the shared
+       definition instead of inlining a copy *)
+    (match List.assoc_opt "properties" fields with
+     | Some (`Assoc props) ->
+       Alcotest.(check bool) "properties allow $schema"
+         (List.mem_assoc "$schema" props) true;
+       Alcotest.(check bool) "properties allow $id"
+         (List.mem_assoc "$id" props) true;
+       Alcotest.(check bool) "properties allow $defs"
+         (List.mem_assoc "$defs" props) true;
+       (match List.assoc_opt "type_overrides" props with
+        | Some (`Assoc to_fields) ->
+          (match List.assoc_opt "items" to_fields with
+           | Some (`Assoc items) ->
+             let ref_value = match List.assoc_opt "$ref" items with
+               | Some (`String s) -> Some s
+               | _ -> None
+             in
+             Alcotest.(check (option string)) "type_overrides items use $ref"
+               (Some "#/$defs/type_override_entry") ref_value
+           | _ -> Alcotest.failf "Expected type_overrides to have items")
+        | _ -> Alcotest.failf "Expected type_overrides property")
+     | _ -> Alcotest.failf "Expected properties to be an object")
   | _ -> Alcotest.failf "Expected schema to be an object"
 
 let test_schema_to_string () =
@@ -233,6 +257,23 @@ let test_validate_unknown_field () =
   | Ok () -> Alcotest.failf "Unknown field should fail validation with additionalProperties: false"
   | Error _ -> ()  (* Expected *)
 
+let test_validate_config_with_metadata_fields () =
+  (* $schema/$id/$defs are valid in config files for schema validation;
+     filter_schema_metadata_fields strips them before PPX parsing *)
+  let valid_json = detail_config_to_yojson compact in
+  let json_basic = Yojson.Safe.to_basic valid_json in
+  let filtered_json = filter_nulls_recursive json_basic in
+  let with_metadata = match filtered_json with
+    | `Assoc fields ->
+      `Assoc (("$defs", `Assoc [])
+              :: ("$id", `String "https://example.com/my-config.json")
+              :: fields)
+    | _ -> Alcotest.failf "Expected object"
+  in
+  match validate_config_json with_metadata with
+  | Ok () -> ()
+  | Error err -> Alcotest.failf "Config with $id/$defs metadata should pass: %s" err.details
+
 let test_validate_config_string () =
   (* Test string validation.
      Note: We need to filter out null values since ppx_deriving_yojson serializes
@@ -300,6 +341,7 @@ let tests = [
   "validate invalid type", `Quick, test_validate_invalid_type;
   "validate missing required", `Quick, test_validate_missing_required;
   "validate unknown field", `Quick, test_validate_unknown_field;
+  "validate config with metadata fields", `Quick, test_validate_config_with_metadata_fields;
   "validate config string", `Quick, test_validate_config_string;
   "validate invalid json string", `Quick, test_validate_invalid_json_string;
   "validate business logic warnings", `Quick, test_validate_business_logic_warnings;

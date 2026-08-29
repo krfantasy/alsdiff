@@ -190,10 +190,10 @@
     "per_change_override": {
       "type": "object",
       "properties": {
-        "unchanged": { "$ref": "#/$defs/detail_level" },
-        "modified": { "$ref": "#/$defs/detail_level" },
-        "removed": { "$ref": "#/$defs/detail_level" },
-        "added": { "$ref": "#/$defs/detail_level" }
+        "unchanged": { "default": null, "$ref": "#/$defs/detail_level" },
+        "modified": { "default": null, "$ref": "#/$defs/detail_level" },
+        "removed": { "default": null, "$ref": "#/$defs/detail_level" },
+        "added": { "default": null, "$ref": "#/$defs/detail_level" }
       },
       "required": [],
       "additionalProperties": false
@@ -257,25 +257,34 @@
       "type": "string",
       "description": "JSON Schema URI pointing to the schema for this config file."
     },
-    "indent_width": { "type": "integer" },
-    "time_format": { "$ref": "#/$defs/time_format" },
-    "note_name_style": { "$ref": "#/$defs/note_display_style" },
-    "prefix_unchanged": { "type": "string" },
-    "prefix_modified": { "type": "string" },
-    "prefix_removed": { "type": "string" },
-    "prefix_added": { "type": "string" },
-    "max_collection_items": { "type": "integer" },
+    "$id": {
+      "type": "string",
+      "description": "URI identifier for this config file; ignored by alsdiff."
+    },
+    "$defs": {
+      "type": "object",
+      "description": "Embedded JSON Schema definitions for editor tooling; ignored by alsdiff."
+    },
+    "indent_width": { "default": 2, "type": "integer" },
+    "time_format": {
+      "default": [ "QuarterNotes" ],
+      "$ref": "#/$defs/time_format"
+    },
+    "note_name_style": {
+      "default": [ "Sharp" ],
+      "$ref": "#/$defs/note_display_style"
+    },
+    "prefix_unchanged": { "default": "=", "type": "string" },
+    "prefix_modified": { "default": "*", "type": "string" },
+    "prefix_removed": { "default": "-", "type": "string" },
+    "prefix_added": { "default": "+", "type": "string" },
+    "max_collection_items": {
+      "default": null,
+      "type": [ "integer", "null" ]
+    },
     "type_overrides": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "override": { "$ref": "#/$defs/per_change_override" },
-          "domain_type": { "$ref": "#/$defs/domain_type" }
-        },
-        "required": [ "override", "domain_type" ],
-        "additionalProperties": false
-      }
+      "items": { "$ref": "#/$defs/type_override_entry" }
     },
     "unchanged": { "$ref": "#/$defs/detail_level" },
     "modified": { "$ref": "#/$defs/detail_level" },
