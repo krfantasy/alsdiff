@@ -2,11 +2,7 @@ import { test, expect } from "@playwright/test";
 import { extractTempo, extractTimeSignature } from "../src/lib/diff-parser";
 import type { ViewNode } from "../src/types";
 
-function field(
-	name: string,
-	value: number,
-	change = "Modified",
-): ViewNode {
+function field(name: string, value: number, change = "Modified"): ViewNode {
 	return {
 		type: "field",
 		name,

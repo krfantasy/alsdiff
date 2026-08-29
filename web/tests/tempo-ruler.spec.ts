@@ -11,7 +11,10 @@ function toSeconds(t: string) {
  *  120 fallback cannot satisfy this: adjacent major markers are one major grid
  *  interval apart (minor*2 beats, minor from GRID_INTERVALS = 0.5..512), and
  *  no power-of-two interval ratio maps 120 to 138. */
-async function expectRulerConsistentWith(bpm: number, page: import("@playwright/test").Page) {
+async function expectRulerConsistentWith(
+	bpm: number,
+	page: import("@playwright/test").Page,
+) {
 	const labels = await page
 		.locator('[data-testid="timeline-ruler-bottom"] > div')
 		.evaluateAll((els) =>
@@ -44,14 +47,8 @@ test.describe("realtime ruler tempo", () => {
 		page.on("pageerror", (e) => pageErrors.push(e.message));
 
 		await page.goto("/", { waitUntil: "networkidle" });
-		await page.setInputFiles(
-			'[data-testid="file-input-a"]',
-			"../Middle v2.als",
-		);
-		await page.setInputFiles(
-			'[data-testid="file-input-b"]',
-			"../Middle v3.als",
-		);
+		await page.setInputFiles('[data-testid="file-input-a"]', "../Middle v2.als");
+		await page.setInputFiles('[data-testid="file-input-b"]', "../Middle v3.als");
 		await page.click('[data-testid="compare-btn"]');
 		await page.waitForSelector('[data-testid="compare-btn"]:not(:disabled)', {
 			timeout: 120_000,
@@ -79,14 +76,8 @@ test.describe("realtime ruler tempo", () => {
 		);
 
 		await page.goto("/", { waitUntil: "networkidle" });
-		await page.setInputFiles(
-			'[data-testid="file-input-a"]',
-			"../Middle v2.als",
-		);
-		await page.setInputFiles(
-			'[data-testid="file-input-b"]',
-			"../Middle v3.als",
-		);
+		await page.setInputFiles('[data-testid="file-input-a"]', "../Middle v2.als");
+		await page.setInputFiles('[data-testid="file-input-b"]', "../Middle v3.als");
 		await page.click('[data-testid="compare-btn"]');
 		await page.waitForSelector('[data-testid="compare-btn"]:not(:disabled)', {
 			timeout: 120_000,

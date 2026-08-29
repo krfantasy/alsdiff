@@ -1,12 +1,12 @@
 import type {
-	ViewNode,
-	ItemView,
-	FieldView,
-	CollectionView,
-	TrackData,
-	TrackNode,
-	ClipData,
-	TimelineRange,
+  ViewNode,
+  ItemView,
+  FieldView,
+  CollectionView,
+  TrackData,
+  TrackNode,
+  ClipData,
+  TimelineRange,
 } from "../types";
 import type { TimeSignature } from "./time-format";
 import { extractMidiNotes } from "./midi-notes";
@@ -41,9 +41,16 @@ function getNumericField(
   return undefined;
 }
 
-function getTrackIntField(children: ViewNode[], fieldName: string, defaultVal: number): number {
-  const field = children.find(c => c.type === "field" && c.name === fieldName);
-  if (field && field.type === "field") return ((field.new_value ?? field.old_value) as number) ?? defaultVal;
+function getTrackIntField(
+  children: ViewNode[],
+  fieldName: string,
+  defaultVal: number,
+): number {
+  const field = children.find(
+    (c) => c.type === "field" && c.name === fieldName,
+  );
+  if (field && field.type === "field")
+    return ((field.new_value ?? field.old_value) as number) ?? defaultVal;
   return defaultVal;
 }
 
@@ -185,7 +192,8 @@ export function extractDevices(track: TrackData): ItemView[] {
 
 export function extractMixer(track: TrackData): ItemView | undefined {
   return track.children.find(
-    (c): c is ItemView => isItem(c) && (c.name === "Mixer" || c.name === "Main Mixer"),
+    (c): c is ItemView =>
+      isItem(c) && (c.name === "Mixer" || c.name === "Main Mixer"),
   );
 }
 
@@ -213,35 +221,35 @@ export function extractCollectionCounts(
 }
 
 export function extractRoutings(track: TrackData): ItemView | undefined {
-	return track.children.find(
-		(c): c is ItemView => isItem(c) && c.name === "Routings",
-	);
+  return track.children.find(
+    (c): c is ItemView => isItem(c) && c.name === "Routings",
+  );
 }
 
 /** Total number of changes in a counts breakdown (0 for null/undefined). */
 export function sumCounts(
-	counts:
-		| { added: number; removed: number; modified: number }
-		| null
-		| undefined,
+  counts:
+    | { added: number; removed: number; modified: number }
+    | null
+    | undefined,
 ): number {
-	return counts ? counts.added + counts.removed + counts.modified : 0;
+  return counts ? counts.added + counts.removed + counts.modified : 0;
 }
 
 /** True when any node in the tree carries a real change. The JSON contract
  *  always emits the top-level LiveSet item (even Unchanged), so an empty
  *  change list must be detected recursively. */
 export function hasAnyChange(nodes: ViewNode[]): boolean {
-	for (const node of nodes) {
-		if (node.change !== "Unchanged") return true;
-		if (node.type === "item" && node.children && hasAnyChange(node.children)) {
-			return true;
-		}
-		if (node.type === "collection" && node.items && hasAnyChange(node.items)) {
-			return true;
-		}
-	}
-	return false;
+  for (const node of nodes) {
+    if (node.change !== "Unchanged") return true;
+    if (node.type === "item" && node.children && hasAnyChange(node.children)) {
+      return true;
+    }
+    if (node.type === "collection" && node.items && hasAnyChange(node.items)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export type DetailTabName = "devices" | "clip" | "pianoRoll" | "automation";
@@ -252,35 +260,34 @@ export type DetailTabName = "devices" | "clip" | "pianoRoll" | "automation";
  *  DetailView's tab visibility, including counts-only collections
  *  (Summary/Compact). Returns null when nothing renders. */
 export function firstAvailableDetailTab(
-	track: TrackData,
+  track: TrackData,
 ): { tab: DetailTabName; clipName?: string } | null {
-	const hasDevices =
-		extractDevices(track).length > 0 ||
-		extractCollectionCounts(track.children, "Devices") !== null;
-	if (hasDevices) return { tab: "devices" };
+  const hasDevices =
+    extractDevices(track).length > 0 ||
+    extractCollectionCounts(track.children, "Devices") !== null;
+  if (hasDevices) return { tab: "devices" };
 
-	const clips = extractClips(track);
-	const clipCounts = extractCollectionCounts(track.children, "Clips");
-	if (clips.length > 0 || clipCounts !== null) {
-		if (clips.length > 0) {
-			const withNotes = clips.find(
-				(c) =>
-					c.clipType === "midi" && extractMidiNotes(c.children).length > 0,
-			);
-			if (withNotes) return { tab: "pianoRoll", clipName: withNotes.name };
-			return { tab: "clip", clipName: clips[0].name };
-		}
-		// Counts-only Clips (Summary/Compact): nothing is selectable, so no
-		// clipName — DetailView shows the Clips counts tab in that state.
-		return { tab: "clip" };
-	}
+  const clips = extractClips(track);
+  const clipCounts = extractCollectionCounts(track.children, "Clips");
+  if (clips.length > 0 || clipCounts !== null) {
+    if (clips.length > 0) {
+      const withNotes = clips.find(
+        (c) => c.clipType === "midi" && extractMidiNotes(c.children).length > 0,
+      );
+      if (withNotes) return { tab: "pianoRoll", clipName: withNotes.name };
+      return { tab: "clip", clipName: clips[0].name };
+    }
+    // Counts-only Clips (Summary/Compact): nothing is selectable, so no
+    // clipName — DetailView shows the Clips counts tab in that state.
+    return { tab: "clip" };
+  }
 
-	const hasAutomations =
-		extractAutomations(track).length > 0 ||
-		extractCollectionCounts(track.children, "Automations") !== null;
-	if (hasAutomations) return { tab: "automation" };
+  const hasAutomations =
+    extractAutomations(track).length > 0 ||
+    extractCollectionCounts(track.children, "Automations") !== null;
+  if (hasAutomations) return { tab: "automation" };
 
-	return null;
+  return null;
 }
 
 /**
@@ -292,27 +299,27 @@ export function firstAvailableDetailTab(
  * (MainMixer.base label); keep the "Main Mixer" alias for compatibility.
  */
 function findMasterMixer(children: ViewNode[]): ItemView | undefined {
-	for (const child of children) {
-		if (
-			isItem(child) &&
-			child.domain_type === "Track" &&
-			child.name.startsWith("MainTrack")
-		) {
-			const mixer = child.children?.find(
-				(c): c is ItemView =>
-					isItem(c) && (c.name === "Mixer" || c.name === "Main Mixer"),
-			);
-			if (mixer?.children) return mixer;
-		}
-	}
-	return undefined;
+  for (const child of children) {
+    if (
+      isItem(child) &&
+      child.domain_type === "Track" &&
+      child.name.startsWith("MainTrack")
+    ) {
+      const mixer = child.children?.find(
+        (c): c is ItemView =>
+          isItem(c) && (c.name === "Mixer" || c.name === "Main Mixer"),
+      );
+      if (mixer?.children) return mixer;
+    }
+  }
+  return undefined;
 }
 
 /** The top-level LiveSet item (always emitted first in the diff array). */
 function findLivesetItem(diffChildren: ViewNode[]): ItemView | undefined {
-	return diffChildren.find(
-		(c): c is ItemView => isItem(c) && c.domain_type === "Liveset",
-	);
+  return diffChildren.find(
+    (c): c is ItemView => isItem(c) && c.domain_type === "Liveset",
+  );
 }
 
 /**
@@ -327,56 +334,56 @@ function findLivesetItem(diffChildren: ViewNode[]): ItemView | undefined {
  * fields ride directly there — this is what FileUpload passes).
  */
 function extractLivesetNumberField(
-	diffChildren: ViewNode[],
-	name: string,
+  diffChildren: ViewNode[],
+  name: string,
 ): number | undefined {
-	const search = (nodes: ViewNode[] | undefined): number | undefined => {
-		const f = nodes?.find(
-			(c): c is FieldView => c.type === "field" && c.name === name,
-		);
-		if (!f) return undefined;
-		return ((f.new_value ?? f.old_value) as number) ?? undefined;
-	};
-	return search(diffChildren) ?? search(findLivesetItem(diffChildren)?.children);
+  const search = (nodes: ViewNode[] | undefined): number | undefined => {
+    const f = nodes?.find(
+      (c): c is FieldView => c.type === "field" && c.name === name,
+    );
+    if (!f) return undefined;
+    return ((f.new_value ?? f.old_value) as number) ?? undefined;
+  };
+  return (
+    search(diffChildren) ?? search(findLivesetItem(diffChildren)?.children)
+  );
 }
 
 /** Decode Ableton's time-signature code: numer = code%99 + 1, denom = 2^(code/99). */
 function decodeTimeSignatureCode(code: number): TimeSignature {
-	if (code < 0 || Math.floor(code / 99) > 5) return { numer: 4, denom: 4 };
-	return { numer: (code % 99) + 1, denom: 1 << Math.floor(code / 99) };
+  if (code < 0 || Math.floor(code / 99) > 5) return { numer: 4, denom: 4 };
+  return { numer: (code % 99) + 1, denom: 1 << Math.floor(code / 99) };
 }
 
 export function extractTempo(diffChildren: ViewNode[]): number {
-	const livesetTempo = extractLivesetNumberField(diffChildren, "Tempo");
-	if (livesetTempo !== undefined) return livesetTempo;
-	const mixer = findMasterMixer(diffChildren);
-	if (!mixer) return 120;
-	const mchildren = mixer.children ?? [];
-	const tempo = mchildren.find(
-		(c): c is ItemView => isItem(c) && c.name === "Tempo",
-	);
-	if (!tempo?.children) return 120;
-	const value = getNumericField(tempo.children, "Value");
-	return value ?? 120;
+  const livesetTempo = extractLivesetNumberField(diffChildren, "Tempo");
+  if (livesetTempo !== undefined) return livesetTempo;
+  const mixer = findMasterMixer(diffChildren);
+  if (!mixer) return 120;
+  const mchildren = mixer.children ?? [];
+  const tempo = mchildren.find(
+    (c): c is ItemView => isItem(c) && c.name === "Tempo",
+  );
+  if (!tempo?.children) return 120;
+  const value = getNumericField(tempo.children, "Value");
+  return value ?? 120;
 }
 
-export function extractTimeSignature(
-	diffChildren: ViewNode[],
-): TimeSignature {
-	const livesetTs = extractLivesetNumberField(diffChildren, "Time Signature");
-	if (livesetTs !== undefined) {
-		return decodeTimeSignatureCode(Math.round(livesetTs));
-	}
-	const mixer = findMasterMixer(diffChildren);
-	if (!mixer) return { numer: 4, denom: 4 };
-	const mchildren = mixer.children ?? [];
-	const ts = mchildren.find(
-		(c): c is ItemView => isItem(c) && c.name === "Time Signature",
-	);
-	if (!ts?.children) return { numer: 4, denom: 4 };
-	const code = getNumericField(ts.children, "Value");
-	if (code === undefined) return { numer: 4, denom: 4 };
-	return decodeTimeSignatureCode(Math.round(code));
+export function extractTimeSignature(diffChildren: ViewNode[]): TimeSignature {
+  const livesetTs = extractLivesetNumberField(diffChildren, "Time Signature");
+  if (livesetTs !== undefined) {
+    return decodeTimeSignatureCode(Math.round(livesetTs));
+  }
+  const mixer = findMasterMixer(diffChildren);
+  if (!mixer) return { numer: 4, denom: 4 };
+  const mchildren = mixer.children ?? [];
+  const ts = mchildren.find(
+    (c): c is ItemView => isItem(c) && c.name === "Time Signature",
+  );
+  if (!ts?.children) return { numer: 4, denom: 4 };
+  const code = getNumericField(ts.children, "Value");
+  if (code === undefined) return { numer: 4, denom: 4 };
+  return decodeTimeSignatureCode(Math.round(code));
 }
 
 export function computeTimelineRange(tracks: TrackData[]): TimelineRange {
@@ -407,7 +414,7 @@ export function computeTimelineRange(tracks: TrackData[]): TimelineRange {
   return {
     minStart: Math.max(0, minStart - padding),
     maxEnd: maxEnd + padding,
-    totalBeats: Math.max(1, (maxEnd + padding) - Math.max(0, minStart - padding)),
+    totalBeats: Math.max(1, maxEnd + padding - Math.max(0, minStart - padding)),
   };
 }
 
