@@ -185,7 +185,10 @@ module GenericParam = struct
       | Bool b -> B.bool_value b
       | Enum (e, _) -> B.int_value e
 
-    let field_specs = [
+    (* ~format_time accepted for uniform threading: PPX-generated ViewSpecs
+       always expose field_specs as a function of it, and [@view.inline_child]
+       splices rely on that convention. *)
+    let field_specs ~format_time = [
       B.make_spec pv_to_fv "Value"
         (fun (v : t) -> v.value) (fun (p : Patch.t) -> p.value);
       B.make_int "Automation"
@@ -194,18 +197,18 @@ module GenericParam = struct
         (fun (v : t) -> v.modulation) (fun (p : Patch.t) -> p.modulation);
     ]
 
-    let section_specs = [
-      B.Spec.inline_fields ~specs:field_specs
+    let section_specs ~format_time = [
+      B.Spec.inline_fields ~specs:(field_specs ~format_time)
         ~domain_type:(B.domain_type_of_name "DTParam")
     ]
 
     (* ~format_time accepted for uniform parent->child threading; unused on
        this leaf type (no time fields). *)
     let build_value_fields ~format_time ?(domain_type = B.domain_type_of_name "DTParam") ct v =
-      B.build_value_field_views field_specs ct v ~domain_type
+      B.build_value_field_views (field_specs ~format_time) ct v ~domain_type
 
     let build_patch_fields ~format_time ?(domain_type = B.domain_type_of_name "DTParam") p =
-      B.build_patch_field_views field_specs p ~domain_type
+      B.build_patch_field_views (field_specs ~format_time) p ~domain_type
 
     let build_value_children ~format_time ?(domain_type = B.domain_type_of_name "DTParam") ct v =
       build_value_fields ~format_time ~domain_type ct v
@@ -431,23 +434,23 @@ module PluginParam = struct
 
   module ViewSpec(B : Alsdiff_view_spec_types.View_spec_types.S) = struct
     [@@@warning "-27"]
-    let __inline_base =
+    let __inline_base ~format_time =
       let module Vs = (GenericParam.ViewSpec)(B) in
-      B.map_specs (fun (v : t) -> v.base) (fun (p : Patch.t) -> p.base) Vs.field_specs
-    let field_specs = List.append [] __inline_base
+      B.map_specs (fun (v : t) -> v.base) (fun (p : Patch.t) -> p.base) (Vs.field_specs ~format_time)
+    let field_specs ~format_time = List.append [] (__inline_base ~format_time)
     (* PluginParam is a device parameter → DTParam (see DTParam usages and
        [@view.child "DTParam"] annotations on param fields). ~format_time is
        accepted for uniform parent->child threading but unused here (leaf
        type with no time fields). *)
-    let section_specs = [
-      B.Spec.inline_fields ~specs:field_specs ~domain_type:(B.domain_type_of_name "DTParam")
+    let section_specs ~format_time = [
+      B.Spec.inline_fields ~specs:(field_specs ~format_time) ~domain_type:(B.domain_type_of_name "DTParam")
     ]
     let build_value_fields ~format_time ?(domain_type = B.domain_type_of_name "DTParam") ct v =
-      B.build_value_field_views field_specs ct v ~domain_type
+      B.build_value_field_views (field_specs ~format_time) ct v ~domain_type
     let build_patch_fields ~format_time ?(domain_type = B.domain_type_of_name "DTParam") p =
-      B.build_patch_field_views field_specs p ~domain_type
+      B.build_patch_field_views (field_specs ~format_time) p ~domain_type
     let build_item ~format_time ?(name = "") ?(domain_type = B.domain_type_of_name "DTParam") c =
-      B.build_item_from_specs ~name ~domain_type ~specs:section_specs c
+      B.build_item_from_specs ~name ~domain_type ~specs:(section_specs ~format_time) c
 
     let build_value_children ~format_time ?(domain_type = B.domain_type_of_name "DTParam") ct v =
       let c = match ct with
@@ -591,7 +594,12 @@ module PluginDesc = struct
 
   let create (xml : Xml.t) : t =
     (* Extract plugin type based on the element name *)
-    let plugin_info_xml = Xml.get_childs xml |> List.hd in
+    let plugin_info_xml =
+      match Xml.get_childs xml with
+      | plugin_info_xml :: _ -> plugin_info_xml
+      | [] ->
+        raise (Xml.Xml_error (xml, "PluginDesc has no PluginInfo child (expected Vst3PluginInfo, VstPluginInfo or AuPluginInfo)"))
+    in
 
     let plugin_type =
       match Xml.get_name plugin_info_xml with
@@ -829,14 +837,25 @@ module Snapshot = struct
       failwith "cannot diff two Snapshots with different Ids"
     else
       let name_change = diff_atomic_value (module String) old_snapshot.name new_snapshot.name in
-      let values_changes =
-        if List.length old_snapshot.values <> List.length new_snapshot.values then
-          failwith "diff_atomic_list requires lists of same length"
-        else
-          List.map2 (fun old_elem new_elem ->
-              (diff_atomic_value (module Stdlib.Float) old_elem new_elem :> float atomic_change)
-            ) old_snapshot.values new_snapshot.values
+      (* MacroValues are positional (one value per macro), so they can only be
+         zipped while both snapshots have the same macro count. When a macro was
+         added or removed the Id stays stable but the count changes; pair the
+         common prefix and report the tail as Added/Removed instead of failing
+         the whole Liveset diff.
+         Limitation: no macro-id exists, so a middle insert shifts later
+         indices (e.g. [a,b,c] -> [x,a,b,c] reports Modified+Added rather
+         than Added+Unchanged). Still reports a change, values may attribute
+         to wrong macros. *)
+      let rec diff_values old_vals new_vals =
+        match old_vals, new_vals with
+        | [], [] -> []
+        | [], v :: rest -> `Added v :: diff_values [] rest
+        | v :: rest, [] -> `Removed v :: diff_values rest []
+        | o :: orest, n :: nrest ->
+          (diff_atomic_value (module Stdlib.Float) o n :> float atomic_change)
+          :: diff_values orest nrest
       in
+      let values_changes = diff_values old_snapshot.values new_snapshot.values in
       { name = name_change; values = values_changes }
 end
 

@@ -4,6 +4,7 @@ import {
   getCSSColor,
   getChangeColor,
   computeGridInterval,
+  computeVisibleSlice,
   drawRuler,
   type RulerMarker,
 } from "../canvas-utils";
@@ -68,7 +69,12 @@ export function renderAutomation(
   const { events, range, ppb, gridWidth, timeSignature } = params;
   const totalHeight = RULER_HEIGHT + GRID_HEIGHT;
 
-  ctx.clearRect(0, 0, gridWidth, totalHeight);
+  // Only the visible slice is cleared/painted: the canvas spans
+  // gridWidth = content width × zoom, and full-content clears/paints per
+  // frame rasterize huge offscreen areas at high zoom.
+  const { vx, vw } = computeVisibleSlice(vp, gridWidth);
+
+  ctx.clearRect(vx, 0, vw, totalHeight);
 
   const hitCircles: HitCircle[] = [];
   const gridLineColor = getCSSColor("--piano-grid-line");
@@ -90,7 +96,13 @@ export function renderAutomation(
     }
     topMarkers.push({ pos: (b - range.minTime) * ppb, label, isMajor: isBar });
   }
+  // drawRuler fills its full width argument; clip to the visible slice.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(vx, 0, vw, RULER_HEIGHT);
+  ctx.clip();
   drawRuler(ctx, topMarkers, gridWidth, RULER_HEIGHT, false);
+  ctx.restore();
 
   // Grid area
   const gridTop = RULER_HEIGHT;
@@ -103,8 +115,8 @@ export function renderAutomation(
     ctx.strokeStyle = gridLineColor;
     ctx.lineWidth = 0.5;
     ctx.beginPath();
-    ctx.moveTo(0, y + 0.5);
-    ctx.lineTo(gridWidth, y + 0.5);
+    ctx.moveTo(vx, y + 0.5);
+    ctx.lineTo(vx + vw, y + 0.5);
     ctx.stroke();
   }
 

@@ -3,10 +3,12 @@ open Presentation_model
 open Config
 (* Config types and functions are re-exported at the end of this file for backward compatibility *)
 
-(* Field value formatting *)
+(* %.6g (6 significant digits) instead of %.2f: small mixer/automation values
+   (e.g. send levels ~0.0003) and fine beat offsets must not all collapse to
+   "0.00" while the change symbol still claims a modification. *)
 let pp_field_value fmt = function
   | Fint i -> Fmt.pf fmt "%d" i
-  | Ffloat f -> Fmt.pf fmt "%.2f" f
+  | Ffloat f -> Fmt.pf fmt "%.6g" f
   | Fbool b -> Fmt.pf fmt "%b" b
   | Fstring s -> Fmt.pf fmt "%s" s
 
@@ -50,7 +52,7 @@ let rec pp_item cfg fmt (elem : item) =
   if not (should_render_level level) then ()
   else if level = Summary then
     (* Summary mode: name + change symbol + counts *)
-    render_summary_breakdown cfg fmt (count_fields_breakdown elem) elem.name elem.change
+    render_summary_breakdown cfg fmt (count_fields_breakdown cfg elem) elem.name elem.change
   else if level = Compact then
     (* Compact mode: name + change symbol only *)
     Fmt.(box (fun fmt () -> pf fmt "%a %s" (pp_change_type cfg) elem.change elem.name)) fmt ()

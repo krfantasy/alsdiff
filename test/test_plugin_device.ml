@@ -184,6 +184,15 @@ let test_plugin_desc_au_parsing () =
    | PluginDesc.Auv2 -> ()
    | _ -> Alcotest.fail "Expected Auv2 plugin type")
 
+(* Regression: an empty PluginDesc must raise a descriptive Xml_error, not a
+   bare Failure "hd" from List.hd. *)
+let test_plugin_desc_empty_raises_xml_error () =
+  let desc_xml = Element { name = "PluginDesc"; attrs = []; childs = [] } in
+  (try ignore (PluginDesc.create desc_xml); false
+   with Alsdiff_base.Xml.Xml_error _ -> true
+      | _ -> false)
+  |> Alcotest.(check bool) "empty PluginDesc raises Xml_error" true
+
 let test_plugin_desc_diff () =
   let desc1 = PluginDesc.{
       name = "TestPlugin";
@@ -220,6 +229,7 @@ let () =
       Alcotest.test_case "PluginDesc VST3 parsing" `Quick test_plugin_desc_vst3_parsing;
       Alcotest.test_case "PluginDesc VST2 parsing" `Quick test_plugin_desc_vst2_parsing;
       Alcotest.test_case "PluginDesc AU parsing" `Quick test_plugin_desc_au_parsing;
+      Alcotest.test_case "PluginDesc empty raises Xml_error" `Quick test_plugin_desc_empty_raises_xml_error;
     ];
     "plugin_desc_diff", [
       Alcotest.test_case "PluginDesc.diff with state change" `Quick test_plugin_desc_diff;

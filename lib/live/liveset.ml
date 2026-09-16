@@ -118,6 +118,7 @@ and process_group_branches (pointees : pointee IntHashtbl.t) (branches : Device.
     ) branches
 
 and process_mixer_automation (pointees : pointee IntHashtbl.t)
+    ~(send_dest_name : int -> string option)
     (mixer : Track.Mixer.t) (track_name : string) : unit =
   let mixer_params = [
     (mixer.Track.Mixer.volume.automation, "Volume");
@@ -133,15 +134,37 @@ and process_mixer_automation (pointees : pointee IntHashtbl.t)
       IntHashtbl.add pointees param_id (TrackParamPointee (track_name, param_name))
     ) mixer_params;
   List.iter (fun send ->
+      (* Resolve the send's destination track so the pointee names the target
+         ("Send to Reverb"), not the amount param's element name ("Send").
+         Falls back to the element name when no TrackDestination is present. *)
+      let dest_name =
+        match send_dest_name send.Track.Send.destination with
+        | Some name -> name
+        | None -> send.Track.Send.amount.name
+      in
       IntHashtbl.add pointees send.Track.Send.amount.automation
-        (TrackParamPointee (track_name, "Send to " ^ send.Track.Send.amount.name));
+        (TrackParamPointee (track_name, "Send to " ^ dest_name));
       IntHashtbl.add pointees send.Track.Send.amount.modulation
-        (TrackParamPointee (track_name, "Send to " ^ send.Track.Send.amount.name ^ " Modulation"))
+        (TrackParamPointee (track_name, "Send to " ^ dest_name ^ " Modulation"))
     ) mixer.Track.Mixer.sends
 
 let build_pointees_table (liveset : t) : unit =
   (* Clear the existing hashtable *)
   IntHashtbl.clear liveset.pointees;
+
+  (* Track id -> name map so send automations can name their destination. *)
+  let dest_names : (int, string) Hashtbl.t = Hashtbl.create 16 in
+  List.iter (fun track ->
+      let (id, name) = match track with
+        | Track.Midi t -> (t.Track.MidiTrack.id, t.Track.MidiTrack.name)
+        | Track.Audio t -> (t.Track.AudioTrack.id, t.Track.AudioTrack.name)
+        | Track.Group t -> (t.Track.AudioTrack.id, t.Track.AudioTrack.name)
+        | Track.Return t -> (t.Track.AudioTrack.id, t.Track.AudioTrack.name)
+        | Track.Main t -> (0, t.Track.MainTrack.name)
+      in
+      Hashtbl.replace dest_names id name
+    ) (liveset.main :: liveset.tracks @ liveset.returns);
+  let send_dest_name id = Hashtbl.find_opt dest_names id in
 
   (* Process each track *)
   List.iter (fun track ->
@@ -161,18 +184,18 @@ let build_pointees_table (liveset : t) : unit =
       (* Add track mixer automation IDs to pointees *)
       (match track with
        | Track.Midi t ->
-         process_mixer_automation liveset.pointees t.Track.MidiTrack.mixer track_name
+         process_mixer_automation liveset.pointees ~send_dest_name t.Track.MidiTrack.mixer track_name
        | Track.Audio t ->
-         process_mixer_automation liveset.pointees t.Track.AudioTrack.mixer track_name
+         process_mixer_automation liveset.pointees ~send_dest_name t.Track.AudioTrack.mixer track_name
        | Track.Group t ->
-         process_mixer_automation liveset.pointees t.Track.AudioTrack.mixer track_name
+         process_mixer_automation liveset.pointees ~send_dest_name t.Track.AudioTrack.mixer track_name
        | Track.Return t ->
-         process_mixer_automation liveset.pointees t.Track.AudioTrack.mixer track_name
+         process_mixer_automation liveset.pointees ~send_dest_name t.Track.AudioTrack.mixer track_name
        | Track.Main t ->
          let mixer = t.Track.MainTrack.mixer in
          let mixer_base = mixer.Track.MainMixer.base in
          (* Process base mixer parameters *)
-         process_mixer_automation liveset.pointees mixer_base track_name;
+         process_mixer_automation liveset.pointees ~send_dest_name mixer_base track_name;
          (* Process MainMixer-specific parameters *)
          let main_mixer_params = [
            (mixer.Track.MainMixer.tempo.automation, "Tempo");
@@ -212,7 +235,9 @@ let create (xml : Xml.t) (file_path : string) : t =
       let minor = Xml.get_attr "MinorVersion" xml in
       let revision = Xml.get_attr_opt "Revision" xml |> Option.value ~default:"" in
       { Version.major; minor; revision }
-    with Not_found ->
+    (* Xml.get_attr raises Xml.Xml_error for a missing attribute, so that is
+       what the fallback must catch (a bare Not_found can never escape). *)
+    with Xml.Xml_error _ ->
       (* Handle edge case where version info might be structured differently *)
       { Version.major = "Unknown"; minor = "Unknown"; revision = "Unknown" }
   in

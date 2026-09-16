@@ -368,6 +368,41 @@ let parser_invalid_empty_regex_cases = [
   "/''";
 ]
 
+(* Regression: the `..` step must follow node-set semantics — siblings that
+   share one parent yield that parent once, not once per child. *)
+let sample_xml_shared_parent =
+  Element {
+    name = "root";
+    attrs = [];
+    childs = [
+      Element {
+        name = "a";
+        attrs = [];
+        childs = [
+          Element { name = "b"; attrs = []; childs = [Data "1"] };
+          Element { name = "b"; attrs = []; childs = [Data "2"] };
+        ];
+      };
+    ];
+  }
+
+let test_parent_step_dedups_shared_parent () =
+  let results = find_all "/root/a/b/.." sample_xml_shared_parent in
+  Alcotest.(check int) "shared parent yielded once" 1 (List.length results);
+  (match results with
+   | [ ("/root/a", _) ] -> ()
+   | _ -> Alcotest.fail "unexpected .. result paths")
+
+(* Seq's contract allows a returned Seq.t to be traversed more than once.
+   The `..` step's dedup table used to be captured by the Seq closure, making
+   the result one-shot: a second traversal saw the table pre-populated and
+   silently yielded nothing. *)
+let test_parent_step_seq_reusable () =
+  let seq = find_all_seq "/root/a/b/.." sample_xml in
+  let count () = seq |> List.of_seq |> List.length in
+  Alcotest.(check int) "first traversal yields both parents" 2 (count ());
+  Alcotest.(check int) "second traversal yields the same nodes" 2 (count ())
+
 let () =
   Alcotest.run "Upath" [
     "find_path",
@@ -390,6 +425,9 @@ let () =
         Alcotest.test_case path `Quick (test_find_all_nested path expected)
       )
       nested_filter_test_cases;
+    "parent_step_dedup",
+    [ Alcotest.test_case "shared parent yielded once" `Quick test_parent_step_dedups_shared_parent;
+      Alcotest.test_case "seq result traversable more than once" `Quick test_parent_step_seq_reusable ];
     "find_attr_opt",
     List.map (fun (path, attr, expected) ->
         let test_func = test_find_attr_opt path attr expected sample_xml in

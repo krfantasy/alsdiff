@@ -11,8 +11,13 @@ let decompress_als_to_string filename =
                  const decompressed = zlib.gunzipSync(compressed); \
                  return decompressed.toString('utf8'); \
                  })" in
-  let js_result = Js_of_ocaml.Js.Unsafe.fun_call
-      (Js_of_ocaml.Js.Unsafe.js_expr js_code)
-      [| (Js_of_ocaml.Js.string filename |> Js_of_ocaml.Js.Unsafe.inject) |]
-  in
-  Js_of_ocaml.Js.to_string js_result
+  try
+    let js_result = Js_of_ocaml.Js.Unsafe.fun_call
+        (Js_of_ocaml.Js.Unsafe.js_expr js_code)
+        [| (Js_of_ocaml.Js.string filename |> Js_of_ocaml.Js.Unsafe.inject) |]
+    in
+    Js_of_ocaml.Js.to_string js_result
+  with e ->
+    (* Translate to the documented File_error contract; raw Node.js failures
+       (ENOENT, non-gzip data) would otherwise escape as opaque JS errors. *)
+    raise (File_error (filename, Printexc.to_string e))

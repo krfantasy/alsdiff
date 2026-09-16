@@ -8,6 +8,10 @@ module IntSet = Set.Make (Int)
 let sanitize_label (s : string) : string =
   let s = String.map (fun ch -> if ch = '\n' || ch = '\r' then ' ' else ch) s in
   let s = String.concat "/" (String.split_on_char '|' s) in
+  (* Escape backslashes first so the quote escaping below cannot itself be
+     escaped by a trailing backslash, e.g. a device named after a Windows
+     path would otherwise end the label early and break the diagram. *)
+  let s = String.concat "\\\\" (String.split_on_char '\\' s) in
   let s = String.concat "\\\"" (String.split_on_char '"' s) in
   s
 

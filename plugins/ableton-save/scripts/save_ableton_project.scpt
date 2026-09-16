@@ -113,8 +113,11 @@ on run argv
 
 				-- Find the most recently created .als file in the target directory
 				if dialogClosed and dirPath is not "" then
-					-- Use python -c to get absolute path since realpath is not available on macOS
-					set recentFile to (do shell script "python3 -c \"import os, glob, time; files = glob.glob('" & dirPath & "' + '/**/*.als', recursive=True); files = [(os.path.getmtime(f), f) for f in files]; print(max(files)[1]) if files else ''\"")
+					-- dirPath is passed as a quoted shell argument (never interpolated
+					-- into the script text), so names with quotes, apostrophes or ';'
+					-- cannot break out of the command; the glob reads it from argv.
+					set pyCode to "import os, glob, sys, time; d = sys.argv[1]; files = glob.glob(os.path.join(d, '**', '*.als'), recursive=True); files = [(os.path.getmtime(f), f) for f in files]; print(max(files)[1]) if files else ''"
+					set recentFile to (do shell script "python3 -c " & quoted form of pyCode & " " & quoted form of dirPath)
 
 					if recentFile is not "" then
 						return "Saved to: " & recentFile

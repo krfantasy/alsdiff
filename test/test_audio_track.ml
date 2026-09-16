@@ -184,6 +184,60 @@ let test_audio_track_edge_case_empty_clips () =
   Alcotest.(check int) "empty track automation count" 0 (List.length audio_track.automations);
   Alcotest.(check int) "empty track device count" 0 (List.length audio_track.devices)
 
+(* Regression: TrackSendHolder's Id is a holder-element id, not a track id.
+   Send.create must parse the TrackDestination element so consumers (pointee
+   names, flowchart send edges) can identify the target track. *)
+let test_send_destination_parsing () =
+  let xml = read_file test_audio_track_xml_path in
+  let audio_track = AudioTrack.create xml in
+  (match audio_track.mixer.sends with
+   | send :: _ ->
+     (* audio_track.xml has no TrackDestination element *)
+     Alcotest.(check int) "missing TrackDestination yields -1" (-1) send.destination
+   | [] -> Alcotest.fail "expected a send in audio_track.xml");
+  let holder_xml = read_string {|
+    <TrackSendHolder Id="5">
+      <Send>
+        <LomId Value="0"/>
+        <Manual Value="0.25"/>
+        <MidiControllerRange>
+          <Min Value="0.0003162277571"/>
+          <Max Value="1"/>
+        </MidiControllerRange>
+        <AutomationTarget Id="1"><LockEnvelope Value="0"/></AutomationTarget>
+        <ModulationTarget Id="2"><LockEnvelope Value="0"/></ModulationTarget>
+      </Send>
+      <TrackDestination Id="80"/>
+    </TrackSendHolder>
+  |} in
+  let send = Send.create holder_xml in
+  Alcotest.(check int) "holder id parsed" 5 send.id;
+  Alcotest.(check int) "destination parsed from TrackDestination" 80 send.destination
+
+(* Regression: retargeting a send (same holder Id, same amount, different
+   TrackDestination) must diff as non-empty. Previously destination was
+   [@patch.skip], so retargets were invisible. *)
+let test_send_destination_retarget () =
+  let holder dest = read_string (Printf.sprintf {|
+    <TrackSendHolder Id="5">
+      <Send>
+        <LomId Value="0"/>
+        <Manual Value="0.25"/>
+        <MidiControllerRange>
+          <Min Value="0.0003162277571"/>
+          <Max Value="1"/>
+        </MidiControllerRange>
+        <AutomationTarget Id="1"><LockEnvelope Value="0"/></AutomationTarget>
+        <ModulationTarget Id="2"><LockEnvelope Value="0"/></ModulationTarget>
+      </Send>
+      <TrackDestination Id="%d"/>
+    </TrackSendHolder>
+  |} dest) in
+  let a = Send.create (holder 80) in
+  let b = Send.create (holder 81) in
+  let patch = Send.diff a b in
+  Alcotest.(check bool) "retarget is non-empty" false (Send.Patch.is_empty patch)
+
 let () =
   Alcotest.run "AudioTrack" [
     "track_creation", [
@@ -194,5 +248,7 @@ let () =
       Alcotest.test_case "parse AudioTrack mixer properties" `Quick test_audio_track_mixer;
       Alcotest.test_case "comprehensive AudioTrack parsing" `Quick test_audio_track_comprehensive;
       Alcotest.test_case "handle empty track edge case" `Quick test_audio_track_edge_case_empty_clips;
+      Alcotest.test_case "send destination parsing" `Quick test_send_destination_parsing;
+      Alcotest.test_case "send retarget diff non-empty" `Quick test_send_destination_retarget;
     ]
   ]

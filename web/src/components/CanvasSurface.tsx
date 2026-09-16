@@ -95,8 +95,11 @@ export default function CanvasSurface(props: CanvasSurfaceProps) {
       if (!tooltipRef) return;
       tooltipRef.textContent = text;
       tooltipRef.style.display = text ? "block" : "none";
-      tooltipRef.style.left = `${e.clientX - (scrollRef?.getBoundingClientRect().left ?? 0) + 12}px`;
-      tooltipRef.style.top = `${e.clientY - (scrollRef?.getBoundingClientRect().top ?? 0) - 20}px`;
+      // The tooltip is absolutely positioned inside the scrolling container,
+      // so its coordinates are content coordinates: add the scroll offset,
+      // otherwise tooltips drift (offscreen) once the view is scrolled.
+      tooltipRef.style.left = `${e.clientX - (scrollRef?.getBoundingClientRect().left ?? 0) + (scrollRef?.scrollLeft ?? 0) + 12}px`;
+      tooltipRef.style.top = `${e.clientY - (scrollRef?.getBoundingClientRect().top ?? 0) + (scrollRef?.scrollTop ?? 0) - 20}px`;
     });
   };
 

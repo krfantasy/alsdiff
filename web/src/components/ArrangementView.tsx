@@ -21,9 +21,9 @@ import {
 	selectedClipName,
 	setSelectedAutomationIdx,
 	collapsedGroups,
+	timelineRangeMemo,
 } from "../stores/diff-store";
 import {
-	computeTimelineRange,
 	extractClips,
 	extractAutomations,
 	buildTrackHierarchy,
@@ -66,7 +66,7 @@ export default function ArrangementView() {
 	let hitRects: HitRect[] = [];
 	let rafId = 0;
 
-	const range = () => computeTimelineRange(tracks());
+	const range = timelineRangeMemo;
 	const totalWidth = () => {
 		const ppb = pixelsPerBeat();
 		return range().totalBeats * ppb;
@@ -116,14 +116,12 @@ export default function ArrangementView() {
 	});
 
 	onMount(() => {
-		window.addEventListener("resize", () => {
+		const handleResize = () => {
 			measureWidth();
 			measureBottomSpacer();
-		});
-	});
-
-	onCleanup(() => {
-		window.removeEventListener("resize", measureWidth);
+		};
+		window.addEventListener("resize", handleResize);
+		onCleanup(() => window.removeEventListener("resize", handleResize));
 	});
 
 	const selectTrack = (idx: number) => {

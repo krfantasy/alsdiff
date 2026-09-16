@@ -464,18 +464,25 @@ let build_graph ~(xml : Xml.t) ~(liveset : Liveset.t) ~(options : options)
       in
       let sends = sends_for_track track in
       List.iter (fun (send : Track.Send.t) ->
-          let target_id =
-            match IntMap.find_opt send.id track_id_map with
-            | Some id -> id
-            | None ->
-              if options.include_external then
-                let label = Printf.sprintf "Send Target %d" send.id in
-                get_external_node_id ~label
-              else "external"
-          in
-          if IntSet.mem send.id return_id_set || options.include_external then
-            let label = send_label send |> sanitize_label in
-            edges := { from_id; to_id = target_id; label; style = Send } :: !edges
+          (* Missing TrackDestination (-1, old .als) has no target; skip
+             rather than collapsing all such sends into "Send Target -1". *)
+          if send.Track.Send.destination = -1 then ()
+          else begin
+            (* The TrackSendHolder Id is a holder-element id, not a track id;
+               the destination track is the parsed TrackDestination. *)
+            let target_id =
+              match IntMap.find_opt send.Track.Send.destination track_id_map with
+              | Some id -> id
+              | None ->
+                if options.include_external then
+                  let label = Printf.sprintf "Send Target %d" send.Track.Send.destination in
+                  get_external_node_id ~label
+                else "external"
+            in
+            if IntSet.mem send.Track.Send.destination return_id_set || options.include_external then
+              let label = send_label send |> sanitize_label in
+              edges := { from_id; to_id = target_id; label; style = Send } :: !edges
+          end
         ) sends
   in
 

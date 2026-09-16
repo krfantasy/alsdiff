@@ -4,6 +4,7 @@ import {
   getCSSColor,
   getChangeColor,
   computeGridInterval,
+  computeVisibleSlice,
   drawRuler,
   type RulerMarker,
 } from "../canvas-utils";
@@ -37,7 +38,12 @@ export function renderPianoRoll(
   const { notes, noteRange, ppb, gridWidth, gridHeight, timeSignature } = params;
   const totalHeight = RULER_HEIGHT + gridHeight + VELOCITY_LANE_HEIGHT;
 
-  ctx.clearRect(0, 0, gridWidth, totalHeight);
+  // Only the visible slice is cleared/painted: the canvas spans
+  // gridWidth = content width × zoom, and full-content clears/fills per frame
+  // rasterize hundreds of millions of offscreen pixels at high zoom.
+  const { vx, vw } = computeVisibleSlice(vp, gridWidth);
+
+  ctx.clearRect(vx, 0, vw, totalHeight);
 
   const hitRects: HitRect[] = [];
 
@@ -75,7 +81,13 @@ export function renderPianoRoll(
     }
     topMarkers.push({ pos: (b - noteRange.minTime) * ppb, label, isMajor: isBar });
   }
+  // drawRuler fills its full width argument; clip to the visible slice.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(vx, 0, vw, RULER_HEIGHT);
+  ctx.clip();
   drawRuler(ctx, topMarkers, gridWidth, RULER_HEIGHT, false);
+  ctx.restore();
 
   // Grid rows
   const rowCount = noteRange.maxPitch - noteRange.minPitch + 1;
@@ -86,14 +98,14 @@ export function renderPianoRoll(
 
     // Row background
     ctx.fillStyle = isBlackKey(pitch) ? blackKeyColor : whiteKeyColor;
-    ctx.fillRect(0, y, gridWidth, ROW_HEIGHT);
+    ctx.fillRect(vx, y, vw, ROW_HEIGHT);
 
     // Row border
     ctx.strokeStyle = gridLineColor;
     ctx.lineWidth = 0.5;
     ctx.beginPath();
-    ctx.moveTo(0, y + ROW_HEIGHT - 0.5);
-    ctx.lineTo(gridWidth, y + ROW_HEIGHT - 0.5);
+    ctx.moveTo(vx, y + ROW_HEIGHT - 0.5);
+    ctx.lineTo(vx + vw, y + ROW_HEIGHT - 0.5);
     ctx.stroke();
 
     // Beat lines within row
@@ -156,14 +168,14 @@ export function renderPianoRoll(
   // Velocity lane
   const velY = RULER_HEIGHT + gridHeight;
   ctx.fillStyle = bgColor;
-  ctx.fillRect(0, velY, gridWidth, VELOCITY_LANE_HEIGHT);
+  ctx.fillRect(vx, velY, vw, VELOCITY_LANE_HEIGHT);
 
   // Velocity lane border
   ctx.strokeStyle = borderColor;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(0, velY + 0.5);
-  ctx.lineTo(gridWidth, velY + 0.5);
+  ctx.moveTo(vx, velY + 0.5);
+  ctx.lineTo(vx + vw, velY + 0.5);
   ctx.stroke();
 
   for (const note of notes) {

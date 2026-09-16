@@ -190,9 +190,13 @@ let diff_cmd ~config ~domain_mgr : int =
         `Unchanged
     in
 
+    (* Fall back to the resolved detail config (config file / preset), not a
+       hard-coded Sharp — mirrors the time_format handling below. *)
     let note_name_style = match config.note_name_style with
       | Some style -> style
-      | None -> View_model.Sharp
+      | None ->
+        (build_base_renderer_config
+           ~default_config:Text_renderer.quiet ~reference_path config).note_name_style
     in
     let time_format_val = match config.time_format with
       | Some f -> f

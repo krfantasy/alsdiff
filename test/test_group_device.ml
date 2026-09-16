@@ -144,6 +144,33 @@ let test_snapshot_diff_with_changes () =
   let patch = Device.Snapshot.diff old_snapshot new_snapshot in
   Alcotest.(check bool) "snapshot patch is not empty" false (Device.Snapshot.Patch.is_empty patch)
 
+(* Regression: adding/removing a macro changes the MacroValues count while the
+   snapshot Id stays stable; Snapshot.diff must report the tail instead of
+   failing the whole Liveset diff. *)
+let test_snapshot_diff_macro_count_changed () =
+  let old_snapshot =
+    Device.Snapshot.{ id = 1; name = "Basic"; values = [0.0; 0.5; 1.0] } in
+  let new_snapshot =
+    Device.Snapshot.{ id = 1; name = "Basic"; values = [0.0; 0.6; 1.0; 0.25] } in
+  let patch = Device.Snapshot.diff old_snapshot new_snapshot in
+  Alcotest.(check bool) "macro count change yields a patch" false
+    (Device.Snapshot.Patch.is_empty patch);
+  (match patch.Device.Snapshot.Patch.values with
+   | [ `Unchanged; `Modified _; `Unchanged; `Added 0.25 ] -> ()
+   | other ->
+     Alcotest.fail (Printf.sprintf "unexpected values patch: %d entries"
+                      (List.length other)));
+  let removed_snapshot =
+    Device.Snapshot.{ id = 1; name = "Basic"; values = [0.0; 0.5] } in
+  let patch_removed = Device.Snapshot.diff old_snapshot removed_snapshot in
+  Alcotest.(check bool) "shrunk values yield a patch" false
+    (Device.Snapshot.Patch.is_empty patch_removed);
+  (match patch_removed.Device.Snapshot.Patch.values with
+   | [ `Unchanged; `Unchanged; `Removed 1.0 ] -> ()
+   | other ->
+     Alcotest.fail (Printf.sprintf "unexpected shrunk values patch: %d entries"
+                      (List.length other)))
+
 let () =
   Alcotest.run "GroupDevice" [
     "macros", [
@@ -158,5 +185,6 @@ let () =
     "snapshot_diff", [
       Alcotest.test_case "Snapshot.diff identical" `Quick test_snapshot_diff_identical;
       Alcotest.test_case "Snapshot.diff with changes" `Quick test_snapshot_diff_with_changes;
+      Alcotest.test_case "Snapshot.diff macro count changed" `Quick test_snapshot_diff_macro_count_changed;
     ];
   ]

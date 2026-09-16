@@ -81,8 +81,11 @@ def main() -> int:
     result = save_ableton_project(path)
     print(result)
 
-    # Return non-zero exit code on error
-    return 0 if not result.startswith("Error") else 1
+    # Return non-zero exit code on error. A cancelled/timed-out save is a
+    # failure too: the AppleScript reports it without an "Error" prefix, and
+    # exiting 0 made wrappers diff a stale .als.
+    failure_prefixes = ("Error", "Save operation timed out or was cancelled")
+    return 0 if not result.startswith(failure_prefixes) else 1
 
 
 if __name__ == "__main__":

@@ -48,6 +48,20 @@ def extract_tag_name(element_tag):
     return None
 
 
+def escape_attr_value(value):
+    """Re-escape an attribute value the way ElementTree serializes it.
+
+    ElementTree decodes entities when parsing, so reconstructing an opening
+    tag from element.attrib without re-escaping produces tags like
+    Name="My "Special" Mix" for source text Name="My &quot;Special&quot; Mix"
+    — which then can never match the user's (source-escaped) tag string.
+    """
+    return (value.replace('&', '&amp;')
+                 .replace('<', '&lt;')
+                 .replace('>', '&gt;')
+                 .replace('"', '&quot;'))
+
+
 def find_element_by_tag_string(tree_root, element_tag):
     """Find the first element matching the exact tag string including attributes."""
     tag_name = extract_tag_name(element_tag)
@@ -58,7 +72,7 @@ def find_element_by_tag_string(tree_root, element_tag):
     for element in tree_root.iter(tag_name):
         # Reconstruct the opening tag string with attributes
         if element.attrib:
-            attrs = ' '.join(f'{k}="{v}"' for k, v in sorted(element.attrib.items()))
+            attrs = ' '.join(f'{k}="{escape_attr_value(v)}"' for k, v in sorted(element.attrib.items()))
             constructed_tag = f'<{tag_name} {attrs}>'
         else:
             constructed_tag = f'<{tag_name}>'
@@ -83,9 +97,9 @@ def normalize_tag(tag):
     if not attrs_str:
         return f'<{tag_name}>'
 
-    # Parse attributes
+    # Parse attributes ([^\s=]+ also matches names containing - : .)
     attrs = {}
-    for attr_match in re.finditer(r'(\w+)\s*=\s*"([^"]*)"', attrs_str):
+    for attr_match in re.finditer(r'([^\s=]+)\s*=\s*"([^"]*)"', attrs_str):
         attr_name = attr_match.group(1)
         attr_value = attr_match.group(2)
         attrs[attr_name] = attr_value

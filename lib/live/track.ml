@@ -67,15 +67,23 @@ module NameIdGenericParam = Device.NameIdGenericParam
 module Send = struct
   type t = {
     id : int;                   [@id.id] [@patch.skip] [@view.const]
+    (* TrackDestination Id: which track this send feeds (a return track).
+       -1 when the .als carries no TrackDestination. Part of the patch so
+       retargeting a send is a visible change; sends are still matched by
+       holder Id. *)
+    destination : int;          [@view.label "Destination"]
     amount : GenericParam.t;    [@view.child "DTParam"]
   } [@@deriving eq, id, patch, view_spec] [@@patch.generate_diff]
 
   (** Create [Send.t] from XML element.
-      @param xml XML element [<TrackHolder Id="N">...</TrackHolder>] *)
+      @param xml XML element [<TrackSendHolder Id="N">...</TrackSendHolder>] *)
   let create (xml : Xml.t) : t =
     let id = Xml.get_int_attr "Id" xml in
     let amount = Upath.find "/Send" xml |> snd |> GenericParam.create_float_manual in
-    { id; amount }
+    let destination =
+      Upath.get_int_attr_opt "/TrackDestination" "Id" xml |> Option.value ~default:(-1)
+    in
+    { id; destination; amount }
 
 end
 

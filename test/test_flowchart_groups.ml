@@ -436,6 +436,140 @@ let test_input_routing_edge_direction_and_style () =
   check bool "input edge preserves route label" true
     (contains_substring ~haystack:rendered ~needle:"3/4-Opal")
 
+let test_mermaid_label_escapes_backslashes () =
+  let open Flowchart in
+  let edge = {
+    from_id = "track_1";
+    to_id = "track_2";
+    label = "C:\\set\\";
+    style = Routing;
+  } in
+  let rendered = Mermaid_renderer.render_edge edge in
+  (* Backslashes must be escaped first so a trailing '\' cannot swallow the
+     following quote/syntax and break the whole diagram. *)
+  check bool "backslash escaped" true
+    (contains_substring ~haystack:rendered ~needle:"C:\\\\set\\\\");
+  check bool "edge structure intact" true
+    (contains_substring ~haystack:rendered ~needle:"track_1 -->|")
+
+(* Regression: send edges must follow the parsed TrackDestination (the target
+   track id), not the TrackSendHolder element id, which matches no track and
+   silently dropped the edge (or collapsed all sends into one external node). *)
+let build_send_graph ~(destination : int) ~(include_external : bool)
+  : Flowchart.edge list * Flowchart.node list =
+  let open Flowchart in
+  let open Alsdiff_base in
+  let open Alsdiff_live in
+  let make_routings (out_target : string) : Track.RoutingSet.t = {
+    audio_in = { route_type = Track.Routing.AudioIn; target = "AudioIn/None"; upper_string = "None"; lower_string = "" };
+    audio_out = { route_type = Track.Routing.AudioOut; target = out_target; upper_string = out_target; lower_string = "" };
+    midi_in = { route_type = Track.Routing.MidiIn; target = "MidiIn/None"; upper_string = "None"; lower_string = "" };
+    midi_out = { route_type = Track.Routing.MidiOut; target = "MidiOut/None"; upper_string = "None"; lower_string = "" };
+  } in
+  let make_mixer (sends : Track.Send.t list) : Track.Mixer.t = {
+    volume = { name = "Volume"; value = Device.Float 1.0; automation = 0; modulation = 0; mapping = None };
+    pan = { name = "Pan"; value = Device.Float 0.0; automation = 0; modulation = 0; mapping = None };
+    mute = { name = "Mute"; value = Device.Bool false; automation = 0; modulation = 0; mapping = None };
+    solo = { name = "Solo"; value = Device.Bool false; automation = 0; modulation = 0; mapping = None };
+    sends;
+  } in
+  let make_param (name : string) (v : float) : Device.GenericParam.t =
+    { name; value = Device.Float v; automation = 0; modulation = 0; mapping = None } in
+  let send : Track.Send.t = {
+    id = 0;
+    destination;
+    amount = make_param "Send" 0.5;
+  } in
+  let audio_track = Track.Audio {
+      id = 20;
+      name = "Synth";
+      current_name = "Synth";
+      group_id = -1;
+      routings = make_routings "Main";
+      mixer = make_mixer [send];
+      devices = [];
+      clips = [];
+      automations = [];
+    } in
+  let return_track = Track.Return {
+      id = 7;
+      name = "Reverb";
+      current_name = "Reverb";
+      group_id = -1;
+      routings = make_routings "Main";
+      mixer = make_mixer [];
+      devices = [];
+      clips = [];
+      automations = [];
+    } in
+  let main_track = Track.Main {
+      name = "Main";
+      current_name = "Main";
+      routings = make_routings "Main";
+      mixer = {
+        base = make_mixer [];
+        tempo = make_param "Tempo" 120.0;
+        time_signature = { name = "Time Signature"; value = Device.Int 4; automation = 0; modulation = 0; mapping = None };
+        crossfade = make_param "Crossfade" 1.0;
+        global_groove = make_param "Global Groove" 0.0;
+      };
+      devices = [];
+      automations = [];
+    } in
+  let liveset = {
+    Liveset.name = "Test";
+    version = { major = "12"; minor = "0"; revision = "0" };
+    creator = "Test";
+    tracks = [audio_track];
+    returns = [return_track];
+    main = main_track;
+    locators = [];
+    pointees = Liveset.IntHashtbl.create 0;
+  } in
+  let xml = Xml.Element { name = "Ableton"; attrs = []; childs = [
+      Xml.Element { name = "LiveSet"; attrs = []; childs = [
+          Xml.Element { name = "Tracks"; attrs = []; childs = [
+              Xml.Element { name = "AudioTrack"; attrs = [("Id", "20")]; childs = [
+                  Xml.Element { name = "TrackGroupId"; attrs = [("Value", "-1")]; childs = [] }
+                ] };
+              Xml.Element { name = "ReturnTrack"; attrs = [("Id", "7")]; childs = [
+                  Xml.Element { name = "TrackGroupId"; attrs = [("Value", "-1")]; childs = [] }
+                ] }
+            ] }
+        ] }
+    ] } in
+  let options = {
+    direction = "LR";
+    include_external;
+    include_routing = false;
+    include_sends = true;
+    use_subgraph_id_for_groups = false;
+  } in
+  let _track_info_map, _main_node, external_nodes, edges, _group_info =
+    build_graph ~xml ~liveset ~options
+  in
+  edges, external_nodes
+
+let test_send_edge_targets_destination_track () =
+  let open Flowchart in
+  let edges, _ = build_send_graph ~destination:7 ~include_external:false in
+  let has_send_edge = List.exists (fun (e : edge) ->
+      e.style = Send && e.from_id = "track_20" && e.to_id = "track_7"
+    ) edges in
+  check bool "send edge targets the TrackDestination track" true has_send_edge
+
+(* Regression: a send without a parsed TrackDestination (-1, old .als files)
+   must be skipped instead of collapsing into a misleading "Send Target -1"
+   external node — even with include_external on, which is the mode that used
+   to mint that node. *)
+let test_send_edge_without_destination_skipped () =
+  let open Flowchart in
+  let edges, external_nodes = build_send_graph ~destination:(-1) ~include_external:true in
+  check bool "no send edge for missing destination" true
+    (not (List.exists (fun (e : edge) -> e.style = Send) edges));
+  check bool "no bogus Send Target -1 external node" true
+    (not (List.exists (fun (n : Flowchart.node) -> n.label = "Send Target -1") external_nodes))
+
 let test_is_no_route_none_variants () =
   let open Flowchart in
   (* Output-side none variants *)
@@ -488,6 +622,12 @@ let () =
           `Quick test_resolve_track_node_id_from_target;
         test_case "input routing edge direction and style"
           `Quick test_input_routing_edge_direction_and_style;
+        test_case "mermaid label escapes backslashes"
+          `Quick test_mermaid_label_escapes_backslashes;
+        test_case "send edge targets destination track"
+          `Quick test_send_edge_targets_destination_track;
+        test_case "send edge without destination skipped"
+          `Quick test_send_edge_without_destination_skipped;
         test_case "none variants classify as no-route" `Quick test_is_no_route_none_variants;
         test_case "routing to no-output is skipped"
           `Quick test_should_skip_routing_for_no_output_destination;

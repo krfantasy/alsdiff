@@ -861,6 +861,96 @@ let test_reference_populates_unchanged_mixer () =
    | _ -> check bool "with reference: mixer present" true false)
 
 
+(* When a track's mixer is Modified in only one parameter, the patch path
+   emits the other params (Pan/Mute/Solo) as empty Unchanged placeholders.
+   With a reference track threaded in, those placeholders are filled from the
+   reference mixer (restamped Unchanged) so the strip stays fully renderable —
+   the per-param counterpart of the whole-mixer population above. *)
+let test_reference_fills_modified_mixer_params () =
+  let mk_track volume pan =
+    {
+      Track.MidiTrack.id = 1; name = "Same"; current_name = "Same"; group_id = -1;
+      clips = []; automations = []; devices = [];
+      mixer = Track_helpers.make_mixer volume pan;
+      routings = Track_helpers.make_empty_routing_set ();
+    }
+  in
+  (* Same id and name, only mixer volume differs -> Modified mixer patch with
+     Modified Volume and empty Unchanged Pan/Mute/Solo placeholders. *)
+  let t1 = mk_track 0.70 (-0.30) in
+  let t2 = mk_track 0.80 (-0.30) in
+  let patch = Track.MidiTrack.diff t1 t2 in
+  let get_mixer it = get_item (find_view_by_name "Mixer" it.children) in
+  let get_param name mixer = get_item (find_view_by_name name mixer.children) in
+  let get_value param = get_field (find_view_by_name "Value" param.children) in
+  (* WITHOUT reference: the unchanged params stay empty placeholders. *)
+  let mixer_no_ref = get_mixer (create_midi_track_item ~get_pointee_name:(fun _ -> "?") (`Modified patch)) in
+  check bool "without reference: mixer is Modified" true (mixer_no_ref.change = Modified);
+  check bool "without reference: Pan is empty placeholder" true
+    ((get_param "Pan" mixer_no_ref).children = []);
+  (* WITH reference: changed param keeps its old/new, others are populated. *)
+  let mixer = get_mixer
+      (create_midi_track_item ~get_pointee_name:(fun _ -> "?") ~reference_track:t1 (`Modified patch)) in
+  check bool "with reference: mixer is Modified" true (mixer.change = Modified);
+  let volume = get_param "Volume" mixer in
+  let vol_value = get_value volume in
+  check bool "with reference: Volume Value is Modified" true (vol_value.change = Modified);
+  (match vol_value.oldval, vol_value.newval with
+   | Some (Ffloat 0.70), Some (Ffloat 0.80) -> ()
+   | _ -> check bool "with reference: Volume old/new are 0.70/0.80" true false);
+  let pan = get_param "Pan" mixer in
+  check bool "with reference: Pan is Unchanged" true (pan.change = Unchanged);
+  (match find_view_by_name "Value" pan.children with
+   | Field { change = Unchanged; newval = Some (Ffloat (-0.30)); _ } -> ()
+   | _ -> check bool "with reference: Pan Value populated as Unchanged -0.30" true false);
+  check bool "with reference: Mute populated from reference" true
+    ((get_param "Mute" mixer).children <> []);
+  check bool "with reference: Solo populated from reference" true
+    ((get_param "Solo" mixer).children <> [])
+
+(* When a MidiClip is Modified in an inline field, the patch path emits the
+   unchanged Loop/TimeSignature sections as empty Unchanged placeholders.
+   With reference clips threaded in (matched by clip id), the placeholders are
+   filled from the reference clip so verbose/web consumers show the loop and
+   signature context instead of bare headers. *)
+let test_reference_fills_modified_clip_sections () =
+  let mk_clip name =
+    {
+      Clip.MidiClip.id = 7; name;
+      start_time = 0.0; end_time = 4.0;
+      loop = { Clip.Loop.start_time = 0.0; end_time = 4.0; on = true };
+      signature = { Clip.TimeSignature.numer = 3; denom = 8 };
+      notes = [];
+    }
+  in
+  (* Same id, only name differs -> Modified clip with empty Unchanged
+     Loop/TimeSignature placeholders. *)
+  let c1 = mk_clip "Old" in
+  let c2 = mk_clip "New" in
+  let patch = Clip.MidiClip.diff c1 c2 in
+  (* WITHOUT reference: the unchanged sections stay empty placeholders. *)
+  let item_no_ref = create_midi_clip_item (`Modified patch) in
+  check bool "without reference: clip is Modified" true (item_no_ref.change = Modified);
+  check bool "without reference: Loop is empty placeholder" true
+    ((get_item (find_view_by_name "Loop" item_no_ref.children)).children = []);
+  (* WITH reference: sections populated from the reference clip, restamped
+     Unchanged, carrying the reference values (3/8 signature, loop on). *)
+  let item = create_midi_clip_item ~reference_clips:[ c1 ] (`Modified patch) in
+  check bool "with reference: clip is Modified" true (item.change = Modified);
+  let loop = get_item (find_view_by_name "Loop" item.children) in
+  check bool "with reference: Loop is Unchanged" true (loop.change = Unchanged);
+  check bool "with reference: Loop children populated" true (loop.children <> []);
+  let loop_fields = List.filter_map (function Field f -> Some f | _ -> None) loop.children in
+  check bool "with reference: Loop carries LoopOn=true from reference" true
+    (List.exists (function { change = Unchanged; newval = Some (Fbool true); _ } -> true | _ -> false)
+         loop_fields);
+  let ts = get_item (find_view_by_name "TimeSignature" item.children) in
+  check bool "with reference: TimeSignature is Unchanged" true (ts.change = Unchanged);
+  let ts_fields = List.filter_map (function Field f -> Some f | _ -> None) ts.children in
+  check bool "with reference: TimeSignature carries 3/8 from reference" true
+    (List.exists (function { newval = Some (Fint 3); _ } -> true | _ -> false) ts_fields
+     && List.exists (function { newval = Some (Fint 8); _ } -> true | _ -> false) ts_fields)
+
 (* Modified tracks must carry TrackId/GroupId as Unchanged context fields so
    consumers (the web app) can nest them under their group track: grouping is
    by these fields and the item name only encodes the track id, never the
@@ -951,6 +1041,61 @@ let test_build_liveset_track_sections_added () =
   check int "renders 0 returns" 0 (List.length returns)
 
 
+(* Regression: a whole-liveset Added/Removed must also project the master
+   track (its tempo/time signature/devices belong to the set), symmetric with
+   the other value-side sections. *)
+let test_main_track_emitted_for_added_liveset () =
+  let path = Utils.resolve_test_data_path "t4.xml" in
+  let xml = read_file path in
+  let ls = Liveset.create xml path in
+  let item = create_liveset_item (`Added ls) in
+  let main_item =
+    List.find_opt (function
+        | Item i -> String.starts_with ~prefix:"MainTrack" i.name
+        | _ -> false) item.children
+  in
+  check bool "main track emitted for Added liveset" true (main_item <> None);
+  (match main_item with
+   | Some (Item mi) ->
+     check bool "main item is Added" true (mi.change = Added)
+   | Some _ -> fail "expected Item view"
+   | None -> ())
+
+(* Regression: return-track changes must be labeled "ReturnTrack", not
+   "AudioTrack" — the item name is the only carrier of the track kind for
+   consumers (the web app classifies tracks from it). t4.xml has no return
+   tracks, so one is spliced into both livesets (return_track.xml, Id 80). *)
+let test_return_track_change_labeled_returntrack () =
+  let path = Utils.resolve_test_data_path "t4.xml" in
+  let xml = read_file path in
+  let ls0 = Liveset.create xml path in
+  let return_xml = read_file (Utils.resolve_test_data_path "return_track.xml") in
+  let return_track = match Track.create return_xml with
+    | Track.Return t -> Track.Return t
+    | _ -> fail "expected Return variant from return_track.xml"
+  in
+  let ls1 = { ls0 with Liveset.returns = [return_track] } in
+  let bumped = match return_track with
+    | Track.Return t ->
+      let mixer = t.Track.AudioTrack.mixer in
+      let vol = { mixer.Track.Mixer.volume with value = Device.Float 0.75 } in
+      Track.Return { t with Track.AudioTrack.mixer = { mixer with Track.Mixer.volume = vol } }
+    | _ -> assert false
+  in
+  let ls2 = { ls1 with Liveset.returns = [bumped] } in
+  let patch = Liveset.diff ls1 ls2 in
+  let item = create_liveset_item ~reference_liveset:ls1 (`Modified patch) in
+  let return_item =
+    List.find_opt (function
+        | Item i -> String.starts_with ~prefix:"ReturnTrack" i.name
+        | _ -> false) item.children
+  in
+  check bool "return track change labeled ReturnTrack" true (return_item <> None);
+  check bool "no AudioTrack-labeled misattribution" true
+    (not (List.exists (function
+         | Item i -> String.starts_with ~prefix:"AudioTrack" i.name
+         | _ -> false) item.children))
+
 let () =
   run "ViewModel" [
     "ViewBuilder.change_type_of", [
@@ -995,6 +1140,8 @@ let () =
     "build_liveset_sections", [
       test_case "Added liveset renders regular tracks and returns" `Quick
         test_build_liveset_track_sections_added;
+      test_case "Added liveset emits main track item" `Quick
+        test_main_track_emitted_for_added_liveset;
     ];
     "create_liveset_item", [
       test_case "Renders main track when it is the only change" `Quick test_create_liveset_item_with_main_only_change;
@@ -1006,7 +1153,10 @@ let () =
       test_case "No tempo context without reference" `Quick test_liveset_no_tempo_context_without_reference;
       test_case "No tempo context on Unchanged liveset" `Quick test_liveset_no_tempo_context_when_unchanged;
       test_case "Reference liveset populates unchanged mixer" `Quick test_reference_populates_unchanged_mixer;
+      test_case "Reference fills modified mixer params" `Quick test_reference_fills_modified_mixer_params;
+      test_case "Reference fills modified clip sections" `Quick test_reference_fills_modified_clip_sections;
       test_case "Modified track carries identity fields" `Quick test_modified_track_identity_fields;
       test_case "Changed group emits single Modified GroupId" `Quick test_modified_track_group_change_no_duplicate;
+      test_case "Return track change labeled ReturnTrack" `Quick test_return_track_change_labeled_returntrack;
     ];
   ]

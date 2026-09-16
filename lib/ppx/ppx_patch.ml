@@ -818,9 +818,49 @@ let generate_patch_module ~ctxt type_decl =
 
 let generate_impl ~ctxt (_rec_flag, type_declarations) =
   let loc = Expansion_context.Deriver.derived_item_loc ctxt in
+  (* The variant patch generator diffs constructor args positionally and does
+     not consult any attributes: [@patch.skip]/[@id.id]/[@id.ref] etc. on an
+     inline-record constructor arg (or on the constructor itself) would be
+     silently ignored, producing patches that contradict the record path's
+     semantics. Reject that combination loudly instead. *)
+  (* Only patch/id/view attributes affect patch semantics; other attributes
+     (e.g. [@deprecated], [@warning], other derivers) are harmless and must
+     not hard-error. ocaml.* is always irrelevant. *)
+  let is_relevant_attribute (a : attribute) =
+    let name = a.attr_name.txt in
+    name = "patch.skip" || name = "patch.identity"
+    || name = "id.id" || name = "id.ref"
+    || (String.length name >= 6 && String.sub name 0 6 = "patch.")
+    || (String.length name >= 3 && String.sub name 0 3 = "id.")
+    || (String.length name >= 5 && String.sub name 0 5 = "view.")
+  in
+  let is_real_attribute = is_relevant_attribute in
+  let find_ignored_attribute (cd : constructor_declaration) : string option =
+    if List.exists ~f:is_real_attribute cd.pcd_attributes then
+      Some (Printf.sprintf "constructor %s" cd.pcd_name.txt)
+    else
+      match cd.pcd_args with
+      | Pcstr_tuple _ -> None
+      | Pcstr_record fields ->
+        List.find_map fields ~f:(fun ld ->
+            if List.exists ~f:is_real_attribute ld.pld_attributes then
+              Some (Printf.sprintf "field %s of constructor %s"
+                      ld.pld_name.txt cd.pcd_name.txt)
+            else None)
+  in
   List.map type_declarations ~f:(fun td ->
       match td.ptype_kind with
-      | Ptype_record _ | Ptype_variant _ -> generate_patch_module ~ctxt td
+      | Ptype_record _ -> generate_patch_module ~ctxt td
+      | Ptype_variant constructors ->
+        (match List.find_map ~f:find_ignored_attribute constructors with
+         | Some what ->
+           let ext = Location.error_extensionf ~loc:td.ptype_loc
+               "Cannot derive patch for variant type with attributes on %s: the \
+                variant patch generator ignores field attributes (patch.skip, \
+                id.id, id.ref); diff such types via a record wrapper or remove \
+                the attributes" what in
+           [Ast_builder.Default.pstr_extension ~loc ext []]
+         | None -> generate_patch_module ~ctxt td)
       | _ ->
         let ext = Location.error_extensionf ~loc:td.ptype_loc
             "Cannot derive patch for non-record types" in

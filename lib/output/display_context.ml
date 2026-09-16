@@ -32,8 +32,9 @@ let default_format_time (time : float) : Output_types.field_value = Output_types
 let format_time_str (format_time : float -> Output_types.field_value) time =
   match format_time time with
   | Output_types.Fstring s -> s
-  | Output_types.Ffloat f -> Printf.sprintf "%.2f" f
-  | _ -> Printf.sprintf "%.2f" time
+  (* %.6g: fine beat offsets (1/960 beat ≈ 0.001) must stay distinguishable. *)
+  | Output_types.Ffloat f -> Printf.sprintf "%.6g" f
+  | _ -> Printf.sprintf "%.6g" time
 
 type dual_time_formatter = {
   format_old : float -> Output_types.field_value;

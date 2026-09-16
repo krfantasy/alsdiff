@@ -6,13 +6,6 @@ export default function CountsBanner(props: {
   label: string;
   counts: { added: number; removed: number; modified: number } | null;
 }) {
-  const parts: string[] = [];
-  if (props.counts) {
-    if (props.counts.added) parts.push(`${props.counts.added} added`);
-    if (props.counts.removed) parts.push(`${props.counts.removed} removed`);
-    if (props.counts.modified) parts.push(`${props.counts.modified} modified`);
-  }
-  const summary = parts.length > 0 ? parts.join(", ") : "no changes";
   return (
     <div
       data-testid="counts-banner"
@@ -26,7 +19,21 @@ export default function CountsBanner(props: {
         padding: "16px",
       }}
     >
-      {props.label}: {summary} — switch to Verbose/Full to view.
+      {/* Computed inside the JSX so `props.counts` stays tracked — <Show>
+          caches children across truthy→truthy switches, and a one-shot
+          copy at setup showed the previous track's counts. */}
+      {props.label}:{" "}
+      {(() => {
+        const counts = props.counts;
+        const parts: string[] = [];
+        if (counts) {
+          if (counts.added) parts.push(`${counts.added} added`);
+          if (counts.removed) parts.push(`${counts.removed} removed`);
+          if (counts.modified) parts.push(`${counts.modified} modified`);
+        }
+        return parts.length > 0 ? parts.join(", ") : "no changes";
+      })()}{" "}
+      — switch to Verbose/Full to view.
     </div>
   );
 }

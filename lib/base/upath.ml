@@ -427,7 +427,32 @@ let find_all_seq_0 (path : path_component list) (tree : Xml.t) : (string * Xml.t
       | ParentNode ->
         (* OPTIMIZATION: Use XML parent pointer + Stack Pop.
            No string manipulation required. *)
-        let parents = Seq.filter_map (fun s -> s.parent) states in
+        (* Node-set semantics: several sibling states can share one parent;
+           emit each distinct parent element once (physical identity, since
+           structurally-equal siblings must stay distinct), not once per child.
+           Hashtbl with physical equality for O(1) dedup; intentional
+           node-set collapse means alternative ** paths reaching the same
+           parent yield one result. *)
+        let module Phys = Hashtbl.Make (struct
+            type t = Xml.t
+            let equal = ( == )
+            let hash = Hashtbl.hash
+          end) in
+        let seen = Phys.create 16 in
+        let parents =
+          states
+          |> Seq.filter_map (fun s -> s.parent)
+          |> Seq.filter (fun (s : traverse_state) ->
+              if Phys.mem seen s.node then false
+              else begin
+                Phys.add seen s.node ();
+                true
+              end)
+          (* The dedup table is consumed by the first traversal, which would
+             make a second traversal of the returned Seq silently empty;
+             memoize caches the first pass so the Seq stays re-traversable. *)
+          |> Seq.memoize
+        in
         find_path_in_children rest parents
   in
 

@@ -107,7 +107,7 @@ class ChangelogGenerator:
     def get_previous_tag(self, from_ref: str) -> Optional[str]:
         """Get the tag immediately preceding the given ref."""
         try:
-            # Get all tags, sorted by version, find the one before from_ref
+            # Get all tags, sorted by version (newest first)
             tags = self.run_git([
                 'tag', '--sort=-v:refname'
             ]).split('\n')
@@ -115,16 +115,20 @@ class ChangelogGenerator:
             if not tags:
                 return None
 
-            # Get the commit date of from_ref
-            from_date = self.run_git(['log', '-1', '--format=%ci', from_ref])
+            # Get the commit date of from_ref as a timezone-aware datetime
+            # (%cI is strict ISO 8601, so offsets compare correctly; a plain
+            # string compare of %ci misorders commits across timezones).
+            from_date = datetime.fromisoformat(
+                self.run_git(['log', '-1', '--format=%cI', from_ref]))
 
-            # Find the most recent tag before from_ref
-            for tag in reversed(tags):
+            # tags are newest first: the first older tag is the previous one
+            for tag in tags:
                 try:
-                    tag_date = self.run_git(['log', '-1', '--format=%ci', tag])
+                    tag_date = datetime.fromisoformat(
+                        self.run_git(['log', '-1', '--format=%cI', tag]))
                     if tag_date < from_date:
                         return tag
-                except RuntimeError:
+                except (RuntimeError, ValueError):
                     continue
 
             return None
@@ -142,8 +146,11 @@ class ChangelogGenerator:
         Returns:
             List of Commit objects
         """
-        # Use git log with format: SHA|subject|body
-        format_str = "%H|%s|%b"
+        # Use git log with record/field separators (%x1e/%x1f) instead of
+        # pipes and newlines: commit bodies are multi-line, so a line-based
+        # split truncated bodies (losing BREAKING CHANGE footers) and turned
+        # body lines containing '|' into bogus commits.
+        format_str = "%x1e%H%x1f%s%x1f%b"
         try:
             output = self.run_git([
                 'log',
@@ -153,7 +160,8 @@ class ChangelogGenerator:
                 '--reverse'
             ])
         except RuntimeError as e:
-            if "bad revision" in str(e):
+            msg = str(e)
+            if "unknown revision" in msg or "bad revision" in msg:
                 raise ValueError(f"Invalid commit range: {from_ref}..{to_ref}") from e
             raise
 
@@ -161,10 +169,11 @@ class ChangelogGenerator:
             return []
 
         commits = []
-        for line in output.split('\n'):
-            if not line:
+        for record in output.split('\x1e'):
+            record = record.strip('\n')
+            if not record.strip():
                 continue
-            parts = line.split('|', 2)
+            parts = record.split('\x1f', 2)
             if len(parts) == 3:
                 sha, subject, body = parts
                 commits.append(Commit(sha, subject, body))
@@ -190,10 +199,12 @@ class ChangelogGenerator:
     def get_release_date(self, ref: str) -> Optional[str]:
         """Get the date of a tag/ref in ISO 8601 format."""
         try:
-            date_str = self.run_git(['log', '-1', '--format=%ci', ref])
-            # Convert from "2026-04-01 12:34:56 +0000" to "2026-04-01"
+            # %cI is strict ISO 8601 and parses directly on Python >= 3.7;
+            # the old %ci + replace(' ', 'T') also rewrote the space before
+            # the timezone offset, raising ValueError on Python <= 3.10.
+            date_str = self.run_git(['log', '-1', '--format=%cI', ref])
             if date_str:
-                dt = datetime.fromisoformat(date_str.replace(' ', 'T'))
+                dt = datetime.fromisoformat(date_str)
                 return dt.strftime('%Y-%m-%d')
         except RuntimeError:
             pass
@@ -230,11 +241,11 @@ class ChangelogGenerator:
                     description = self._format_commit_description(commit)
                     sections[section].append(description)
 
-                # Handle breaking changes separately
-                if commit.breaking:
+                # Handle breaking changes separately, unless the commit's own
+                # section is already Changed (otherwise change!/perf! commits
+                # appear twice in the same section).
+                if commit.breaking and section != 'Changed':
                     description = self._format_breaking_change(commit)
-                    if 'Changed' not in sections:
-                        sections['Changed'] = []
                     sections['Changed'].append(description)
             else:
                 # Non-conventional commit - try to infer or skip
@@ -345,7 +356,7 @@ class ChangelogGenerator:
         output_file = Path(output_path)
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
-        output_file.write_text(changelog)
+        output_file.write_text(changelog, encoding='utf-8')
         print(f"Changelog written to {output_file}")
 
 

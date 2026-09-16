@@ -102,21 +102,26 @@ let move_cursor (model : Model.t) (direction : Msg.t) : Model.t =
     | Some node -> Some node.path
   in
   let new_model = { model with cursor_index = new_index } in
-  match direction with
+  (* No-op moves (clamped at ends) must not pollute nav_back; otherwise
+     NavBack appears to do nothing after repeated edge presses. *)
+  if new_index = model.cursor_index then model
+  else match direction with
   | Msg.MoveUp | Msg.MoveDown | Msg.PageUp | Msg.PageDown | Msg.MoveToStart | Msg.MoveToEnd ->
+    (* Standard history semantics: every manual move pushes the pre-move
+       position onto nav_back and clears nav_forward, so a later NavBack can
+       always return here. The old push-only-when-forward-is-empty rule lost
+       positions after a NavBack followed by manual moves. *)
     (match get_current_path model with
      | None -> new_model
      | Some path ->
-       if model.nav_forward = [] then
-         let max_nav_history = 100 in
-         let new_back = path :: model.nav_back in
-         let trimmed_back =
-           if List.length new_back > max_nav_history
-           then List.(rev (tl (rev new_back)))
-           else new_back
-         in
-         { new_model with nav_back = trimmed_back; nav_forward = [] }
-       else new_model)
+       let max_nav_history = 100 in
+       let new_back = path :: model.nav_back in
+       let trimmed_back =
+         if List.length new_back > max_nav_history
+         then List.(rev (tl (rev new_back)))
+         else new_back
+       in
+       { new_model with nav_back = trimmed_back; nav_forward = [] })
   | _ -> new_model
 
 let toggle_expand (model : Model.t) : Model.t =
@@ -156,8 +161,16 @@ let update_search (model : Model.t) (char : string) : Model.t =
     | Some q -> q
     | None -> ""
   in
+  (* Drop the last UTF-8 character (walk back over continuation bytes), not
+     just one byte — backspacing after a multi-byte char used to corrupt the
+     query with invalid UTF-8. *)
+  let rec prev_char_start s i =
+    if i <= 0 then 0
+    else if Char.code s.[i] land 0xC0 = 0x80 then prev_char_start s (i - 1)
+    else i
+  in
   let new_query = if char = "\127" then
-      String.sub current_query 0 (max 0 (String.length current_query - 1))
+      String.sub current_query 0 (prev_char_start current_query (String.length current_query - 1))
     else
       current_query ^ char
   in
@@ -354,7 +367,14 @@ let browser_activate (model : Model.t) : Model.t * Msg.t Mosaic.Cmd.t =
          with
          | (Alsdiff_base.File.File_error (_, msg)
            | Alsdiff_base.Xml.Xml_error (_, msg)) ->
-           ({ model with last_error = Some msg }, Mosaic.Cmd.none))
+           ({ model with last_error = Some msg }, Mosaic.Cmd.none)
+         (* Any other failure (Upath.Path_not_found on malformed routing
+            elements, Failure from Liveset.diff, ...) must surface as
+            last_error instead of escaping the update loop and tearing down
+            the TUI. Fatal/async exceptions must still propagate. *)
+         | (Sys.Break | Out_of_memory | Stack_overflow) as e -> raise e
+         | e ->
+           ({ model with last_error = Some (Printexc.to_string e) }, Mosaic.Cmd.none))
       end else
         ({ model with browser_selected = new_selected; last_error = None }, Mosaic.Cmd.none)
     end

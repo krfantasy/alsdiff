@@ -17,16 +17,18 @@ let decompress_als_to_string filename =
     let compressed_size = Unix.stat filename |> (fun st -> st.st_size) in
     let buffer = Buffer.create (estimate_buffer_size compressed_size) in
     let gz_in = Gzip.open_in filename in
-    let chunk = Bytes.create 8192 in
-    let rec copy_loop () =
-      let bytes_read = Gzip.input gz_in chunk 0 (Bytes.length chunk) in
-      if bytes_read > 0 then (
-        Buffer.add_subbytes buffer chunk 0 bytes_read;
-        copy_loop ()
-      )
-    in
-    (try copy_loop () with End_of_file -> ());
-    Gzip.close_in gz_in;
+    (* Close the channel on every exit path: a mid-stream Gzip.Error used to
+       skip the close and leak the fd until the GC finalizer ran. *)
+    Fun.protect ~finally:(fun () -> Gzip.close_in gz_in) (fun () ->
+        let chunk = Bytes.create 8192 in
+        let rec copy_loop () =
+          let bytes_read = Gzip.input gz_in chunk 0 (Bytes.length chunk) in
+          if bytes_read > 0 then (
+            Buffer.add_subbytes buffer chunk 0 bytes_read;
+            copy_loop ()
+          )
+        in
+        (try copy_loop () with End_of_file -> ()));
     Buffer.contents buffer
   with
   | Unix.Unix_error (err, func, _) ->

@@ -26,6 +26,13 @@ function findCollection(
   );
 }
 
+// A section only renders when it has field rows to show: detail presets that
+// keep an item but drop its (unchanged) fields would otherwise render a bare
+// heading box.
+function sectionFields(node: ItemView | undefined): FieldView[] {
+  return node ? getFields(node.children ?? []) : [];
+}
+
 export default function ClipDetail(props: Props) {
   const fields = () => getFields(props.clipChildren);
   const loop = () => findChild(props.clipChildren, "Loop");
@@ -36,55 +43,49 @@ export default function ClipDetail(props: Props) {
 
   return (
     <div class="clip-detail" data-testid="clip-detail">
-      <div class="clip-detail-section">
-        <h4>Properties</h4>
-        <For each={fields()}>
-          {(f) => <FieldChange field={f} />}
-        </For>
-      </div>
-
-      <Show when={loop()}>
-        {(l) => (
-          <div class="clip-detail-section">
-            <h4>Loop</h4>
-            <For each={getFields(l().children ?? [])}>
-              {(f) => <FieldChange field={f} />}
-            </For>
-          </div>
-        )}
+      <Show when={fields().length > 0}>
+        <div class="clip-detail-section">
+          <h4>Properties</h4>
+          <For each={fields()}>
+            {(f) => <FieldChange field={f} />}
+          </For>
+        </div>
       </Show>
 
-      <Show when={sig()}>
-        {(s) => (
-          <div class="clip-detail-section">
-            <h4>Time Signature</h4>
-            <For each={getFields(s().children ?? [])}>
-              {(f) => <FieldChange field={f} />}
-            </For>
-          </div>
-        )}
+      <Show when={sectionFields(loop()).length > 0}>
+        <div class="clip-detail-section">
+          <h4>Loop</h4>
+          <For each={sectionFields(loop())}>
+            {(f) => <FieldChange field={f} />}
+          </For>
+        </div>
       </Show>
 
-      <Show when={sampleRef()}>
-        {(sr) => (
-          <div class="clip-detail-section">
-            <h4>Sample Reference</h4>
-            <For each={getFields(sr().children ?? [])}>
-              {(f) => <FieldChange field={f} />}
-            </For>
-          </div>
-        )}
+      <Show when={sectionFields(sig()).length > 0}>
+        <div class="clip-detail-section">
+          <h4>Time Signature</h4>
+          <For each={sectionFields(sig())}>
+            {(f) => <FieldChange field={f} />}
+          </For>
+        </div>
       </Show>
 
-      <Show when={fade()}>
-        {(f) => (
-          <div class="clip-detail-section">
-            <h4>Fade</h4>
-            <For each={getFields(f().children ?? [])}>
-              {(field) => <FieldChange field={field} />}
-            </For>
-          </div>
-        )}
+      <Show when={sectionFields(sampleRef()).length > 0}>
+        <div class="clip-detail-section">
+          <h4>Sample Reference</h4>
+          <For each={sectionFields(sampleRef())}>
+            {(f) => <FieldChange field={f} />}
+          </For>
+        </div>
+      </Show>
+
+      <Show when={sectionFields(fade()).length > 0}>
+        <div class="clip-detail-section">
+          <h4>Fade</h4>
+          <For each={sectionFields(fade())}>
+            {(field) => <FieldChange field={field} />}
+          </For>
+        </div>
       </Show>
 
       <Show when={notes()}>

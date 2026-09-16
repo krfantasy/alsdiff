@@ -34,8 +34,14 @@ function loadSettings(): SettingsState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<SettingsState>;
+      const presets: readonly string[] = PRESET_OPTIONS.map((p) => p.value);
       return {
-        preset: parsed.preset ?? "verbose",
+        // localStorage outlives deploys: a preset name from an older build
+        // (renamed/removed) would make every compare fail against the OCaml
+        // option parser with no way to recover in the UI.
+        preset: presets.includes(parsed.preset as string)
+          ? (parsed.preset as PresetName)
+          : "verbose",
         customConfig: parsed.customConfig ?? null,
         customConfigName: parsed.customConfigName ?? null,
       };

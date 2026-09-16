@@ -120,8 +120,31 @@ export function buildTrackHierarchy(tracks: TrackData[]): TrackNode[] {
 
   const topNodes: TrackNode[] = [];
   for (const node of nodes) {
-    if (node.track.groupId !== -1 && idToNode.has(node.track.groupId)) {
-      idToNode.get(node.track.groupId)!.children.push(node);
+    const groupId = node.track.groupId;
+    if (groupId !== -1 && groupId !== node.track.trackId && idToNode.has(groupId)) {
+      // Cycle guard: a hand-edited/corrupt .als can reference a group cycle.
+      // Walk the ancestor chain (bounded by the track count — a chain longer
+      // than that is necessarily cyclic); if the node is its own ancestor,
+      // keep it at top level instead of wiring it into its own descendant
+      // tree, which would recurse forever in setDepth/flattenVisibleTracks.
+      let cyclic = false;
+      let hops = 0;
+      let ancestor = idToNode.get(groupId)!;
+      while (hops < nodes.length) {
+        if (ancestor === node) {
+          cyclic = true;
+          break;
+        }
+        const pid = ancestor.track.groupId;
+        if (pid === -1 || !idToNode.has(pid)) break;
+        ancestor = idToNode.get(pid)!;
+        hops++;
+      }
+      if (!cyclic && hops < nodes.length) {
+        idToNode.get(groupId)!.children.push(node);
+      } else {
+        topNodes.push(node);
+      }
     } else {
       topNodes.push(node);
     }

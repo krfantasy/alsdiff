@@ -90,10 +90,11 @@ let compute_stats (nodes : tree_node list) : change_stats * domain_stats list =
       count_nodes (count_nodes new_acc node.children) rest
   in
   let total_stats = count_nodes { added = 0; removed = 0; modified = 0; unchanged = 0; total = 0 } nodes in
-  (* Group by top-level domain (first path element) *)
+  (* Group by top-level domain (first path element); like [count_nodes], the
+     whole subtree under each node belongs to that domain. *)
   let group_by_domain nodes =
-    let group_helper acc nodes =
-      List.fold_left (fun acc' node ->
+    let rec group_helper acc nodes =
+      List.fold_left (fun (acc' : (string * change_stats) list) node ->
           let domain = match node.path with | [] -> "Root" | d :: _ -> d in
           let stats = try List.assoc domain acc' with Not_found -> { added = 0; removed = 0; modified = 0; unchanged = 0; total = 0 } in
           let node_stats = match node.change with
@@ -102,7 +103,8 @@ let compute_stats (nodes : tree_node list) : change_stats * domain_stats list =
             | View_model.Modified -> { stats with modified = stats.modified + 1; total = stats.total + 1 }
             | View_model.Unchanged -> { stats with unchanged = stats.unchanged + 1; total = stats.total + 1 }
           in
-          List.remove_assoc domain acc' @ [(domain, node_stats)]
+          let acc'' = List.remove_assoc domain acc' @ [(domain, node_stats)] in
+          group_helper acc'' node.children
         ) acc nodes
     in
     group_helper [] nodes
@@ -113,7 +115,8 @@ let compute_stats (nodes : tree_node list) : change_stats * domain_stats list =
 (* Format field value for display *)
 let format_field_value = function
   | View_model.Fint i -> Fmt.str "%d" i
-  | View_model.Ffloat f -> Fmt.str "%.2f" f
+  (* %.6g mirrors the text renderer: keep small values distinguishable. *)
+  | View_model.Ffloat f -> Fmt.str "%.6g" f
   | View_model.Fbool b -> Fmt.str "%b" b
   | View_model.Fstring s -> s
 

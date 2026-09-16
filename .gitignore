@@ -30,3 +30,5 @@ gha-creds-*.json
 !test/data/git_modified.als
 !test/data/not_an_als.als
 .pi-subagents/
+__pycache__/
+*.pyc

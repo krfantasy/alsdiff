@@ -27,8 +27,27 @@ export const [selectedClipName, setSelectedClipName] = createSignal<
 export const [zoomFactor, setZoomFactor] = createSignal(1.0);
 export const [timelineWidth, setTimelineWidth] = createSignal(800);
 
+// Cached by tracks() identity: avoids O(tracks×clips) recompute per read
+// (pixelsPerBeat, totalWidth, rulers read this several times per frame)
+// without a module-level createMemo, which has no reactive owner here and
+// may not re-track tracks() after setTracks.
+let cachedTracks: TrackData[] | null = null;
+let cachedRange: ReturnType<typeof computeTimelineRange> | null = null;
+function getTimelineRange(): ReturnType<typeof computeTimelineRange> {
+  const t = tracks();
+  if (cachedRange === null || t !== cachedTracks) {
+    cachedTracks = t;
+    cachedRange = computeTimelineRange(t);
+  }
+  return cachedRange;
+}
+
+const timelineRange = getTimelineRange;
+
+export const timelineRangeMemo = timelineRange;
+
 export const pixelsPerBeat = (): number => {
-  const range = computeTimelineRange(tracks());
+  const range = timelineRange();
   if (range.totalBeats <= 0) return 1;
   return (timelineWidth() / range.totalBeats) * zoomFactor();
 };

@@ -53,6 +53,12 @@ if [ -f "$GITATTR_FILE" ]; then
     if grep -Fqx "*.als diff=alsdiff" "$GITATTR_FILE"; then
         echo "✅ .gitattributes already configured"
     else
+        # POSIX text files must end with a newline; appending to a file whose
+        # last line lacks one would concatenate onto the existing pattern and
+        # corrupt it (registering neither attribute).
+        if [ -n "$(tail -c 1 "$GITATTR_FILE")" ]; then
+            printf '\n' >> "$GITATTR_FILE"
+        fi
         echo "*.als diff=alsdiff" >> "$GITATTR_FILE"
         echo "✅ Added to .gitattributes"
     fi

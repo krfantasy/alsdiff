@@ -123,11 +123,34 @@ let test_partial_config_validation_message () =
     check bool "suggests dump-preset" true (contains "--dump-preset" msg)
   | Ok _ -> fail "partial config must fail validation"
 
+(* BUG-25 (002bef3): the CLI's note_name_style falls back to the *resolved*
+   config (config file / preset), not a hard-coded Sharp — so a note style
+   set in a config file must survive the write→discover→resolve round-trip.
+   A serialization or resolution regression here silently reverts note naming
+   to Sharp in every consumer. *)
+let test_note_name_style_resolved_from_config_file () =
+  let root = make_temp_dir "alsdiff-config-notes-" in
+  let config_path = Filename.concat root "notes.json" in
+  write_config config_path { quiet with note_name_style = Flat };
+  (match resolve_detail_config
+           ~cwd:root
+           ~default_config:quiet
+           ~reference_path:(Filename.concat root "song.als")
+           ~config_file:(Some config_path)
+           ~preset_config:None
+           ()
+   with
+   | Error msg -> fail msg
+   | Ok cfg ->
+     check string "config-file note_name_style survives resolution" "Flat"
+       (match cfg.note_name_style with Sharp -> "Sharp" | Flat -> "Flat"))
+
 let () =
   run "Config resolution" [
     "precedence", [
       test_case "preset beats explicit config and auto-discovery" `Quick test_preset_beats_explicit_config_and_auto;
       test_case "preset beats auto-discovery" `Quick test_preset_beats_auto_discovery;
+      test_case "note_name_style resolved from config file" `Quick test_note_name_style_resolved_from_config_file;
     ];
     "discovery", [
       test_case "search order stays unchanged" `Quick test_discover_config_file_search_order;

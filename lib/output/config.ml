@@ -277,11 +277,15 @@ let increment_breakdown (acc : change_breakdown) (ct : change_type) : change_bre
   | Modified -> { acc with modified = acc.modified + 1 }
   | Unchanged -> acc
 
-(* Count fields by change type *)
-let count_fields_breakdown (elem : item) : change_breakdown =
+(* Count fields by change type. Fields configured to Ignore are excluded so
+   the count matches what renders (same rule as [count_elements_breakdown]
+   and [renderable_sub_views]). *)
+let count_fields_breakdown (cfg : detail_config) (elem : item) : change_breakdown =
   List.fold_left (fun (acc : change_breakdown) (v : view) ->
       match v with
-      | Field f -> increment_breakdown acc f.change
+      | Field f ->
+        if should_render_level (get_effective_detail cfg f.change f.domain_type)
+        then increment_breakdown acc f.change else acc
       | _ -> acc
     ) ({ added = 0; removed = 0; modified = 0 } : change_breakdown) elem.children
 

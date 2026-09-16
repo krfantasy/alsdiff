@@ -708,6 +708,10 @@ module GenericParamVS = Device.GenericParam.ViewSpec(DeviceViewSpecB)
 module RoutingSetVS = Track.RoutingSet.ViewSpec(DeviceViewSpecB)
 module MidiClipVS = Clip.MidiClip.ViewSpec(DeviceViewSpecB)
 module AudioClipVS = Clip.AudioClip.ViewSpec(DeviceViewSpecB)
+module ClipLoopVS = Clip.Loop.ViewSpec(DeviceViewSpecB)
+module ClipTimeSignatureVS = Clip.TimeSignature.ViewSpec(DeviceViewSpecB)
+module ClipSampleRefVS = Clip.SampleRef.ViewSpec(DeviceViewSpecB)
+module ClipFadeVS = Clip.Fade.ViewSpec(DeviceViewSpecB)
 module CurveControlsVS = Automation.CurveControls.ViewSpec(DeviceViewSpecB)
 module VersionVS = Liveset.Version.ViewSpec(DeviceViewSpecB)
 
@@ -761,6 +765,26 @@ let create_events_item
 
 (* ==================== Clip Item Builders (after VS instantiations) ==================== *)
 
+(** [fill_clip_section_placeholders ~fills item] fills empty Unchanged section
+    placeholders (e.g. "Loop", "TimeSignature") of a Modified clip with the
+    reference clip's values, restamped Unchanged via [view_to_unchanged] so
+    verbose/web consumers show unchanged context instead of bare headers (same
+    rationale as [populate_unchanged_mixer_item]). [fills] maps a placeholder
+    name to its value-side children; sections without an entry (e.g. "Fade"
+    when the reference clip has no fade) stay as emitted. *)
+let fill_clip_section_placeholders
+    ~(fills : (string * view list) list)
+    (item : item)
+  : item =
+  { item with
+    children =
+      List.map (function
+          | Item ({ name; change = Unchanged; children = []; _ } as pi) ->
+            (match List.assoc_opt name fills with
+             | Some children -> Item { pi with children }
+             | None -> Item pi)
+          | v -> v) item.children }
+
 (** [create_midi_clip_item] creates a [item] from a MidiClip structured change.
     The PPX generates inline fields (name, start/end time), the Loop child,
     the TimeSignature child, and the Notes collection, threading format_time
@@ -772,23 +796,48 @@ let create_midi_clip_item
     (c : (Clip.MidiClip.t, Clip.MidiClip.Patch.t) structured_change)
   : item =
   let name = build_midi_clip_section_name c in
-  (* For a Modified clip, resolve the old clip's notes (matched by clip id) so
-     Modified notes can render their unchanged fields as context. *)
-  let ref_notes = match c, reference_clips with
+  (* For a Modified clip, resolve the old clip (matched by clip id) once: its
+     notes back Modified notes' unchanged fields as context, and its
+     Loop/TimeSignature values fill the empty Unchanged section placeholders
+     the patch path emits for unchanged sub-structures. The note table is
+     indexed once per clip: the per-note lookup below runs for every changed
+     note, and a linear scan there would make projection quadratic in the
+     clip's note count (realistic clips hold thousands of notes). *)
+  let ref_clip = match c, reference_clips with
     | `Modified cp, Some clips ->
       List.find_opt (fun (rc : Clip.MidiClip.t) -> rc.Clip.MidiClip.id = cp.Clip.MidiClip.Patch.id) clips
-      |> Option.map (fun (rc : Clip.MidiClip.t) -> rc.Clip.MidiClip.notes)
     | _ -> None
+  in
+  let ref_notes = match ref_clip with
+    | None -> None
+    | Some rc ->
+      let tbl = Hashtbl.create 64 in
+      List.iter (fun (rn : Clip.MidiNote.t) ->
+          Hashtbl.replace tbl rn.Clip.MidiNote.id rn) rc.Clip.MidiClip.notes;
+      Some tbl
   in
   let specs = MidiClipVS.section_specs ~format_time
       ~build_notes:(fun nc ->
           create_note_item ~note_name_style ~format_time
             ?reference_note:(match nc, ref_notes with
                 | `Modified np, Some notes ->
-                  List.find_opt (fun (rn : Clip.MidiNote.t) -> rn.Clip.MidiNote.id = np.Clip.MidiNote.Patch.id) notes
+                  Hashtbl.find_opt notes np.Clip.MidiNote.Patch.id
                 | _ -> None)
             nc) in
-  build_item_from_specs ~name ~domain_type:DTClip ~specs c
+  let item = build_item_from_specs ~name ~domain_type:DTClip ~specs c in
+  match c, ref_clip with
+  | `Modified _, Some ref ->
+    fill_clip_section_placeholders
+      ~fills:[
+        ("Loop",
+         List.map view_to_unchanged
+           (ClipLoopVS.build_value_children ~format_time Added ref.Clip.MidiClip.loop));
+        ("TimeSignature",
+         List.map view_to_unchanged
+           (ClipTimeSignatureVS.build_value_children ~format_time Added ref.Clip.MidiClip.signature));
+      ]
+      item
+  | _ -> item
 
 (** [create_audio_clip_item] creates a [item] from an AudioClip structured change.
     The PPX generates inline fields (name, start/end time), the Loop child,
@@ -796,11 +845,38 @@ let create_midi_clip_item
     format_time parent->child so Loop's time fields render correctly. *)
 let create_audio_clip_item
     ?(format_time : dual_time_formatter = default_dual_time_formatter)
+    ?(reference_clips : Clip.AudioClip.t list option)
     (c : (Clip.AudioClip.t, Clip.AudioClip.Patch.t) structured_change)
   : item =
   let name = build_audio_clip_section_name c in
   let specs = AudioClipVS.section_specs ~format_time in
-  build_item_from_specs ~name ~domain_type:DTClip ~specs c
+  let item = build_item_from_specs ~name ~domain_type:DTClip ~specs c in
+  match c, reference_clips with
+  | `Modified cp, Some clips ->
+    (match List.find_opt (fun (rc : Clip.AudioClip.t) ->
+         rc.Clip.AudioClip.id = cp.Clip.AudioClip.Patch.id) clips with
+     | None -> item
+     | Some ref ->
+       let fade_children = match ref.Clip.AudioClip.fade with
+         | None -> []
+         | Some f ->
+           List.map view_to_unchanged (ClipFadeVS.build_value_children ~format_time Added f)
+       in
+       fill_clip_section_placeholders
+         ~fills:[
+           ("Loop",
+            List.map view_to_unchanged
+              (ClipLoopVS.build_value_children ~format_time Added ref.Clip.AudioClip.loop));
+           ("TimeSignature",
+            List.map view_to_unchanged
+              (ClipTimeSignatureVS.build_value_children ~format_time Added ref.Clip.AudioClip.signature));
+           ("SampleRef",
+            List.map view_to_unchanged
+              (ClipSampleRefVS.build_value_children ~format_time Added ref.Clip.AudioClip.sample_ref));
+           ("Fade", fade_children);
+         ]
+         item)
+  | _ -> item
 
 
 (* ==================== Track Element Views ==================== *)
@@ -846,11 +922,16 @@ let create_automation_item
   in
   (* For a Modified automation, resolve the old automation's events (matched by
      automation id) so Modified events can render their unchanged fields as
-     context. *)
+     context. Indexed once per automation: the per-event lookup below runs for
+     every changed event (same quadratic-scan hazard as the notes path). *)
   let ref_events = match c, reference_automations with
     | `Modified patch, Some autos ->
       List.find_opt (fun (ra : Automation.t) -> ra.Automation.id = patch.Automation.Patch.id) autos
-      |> Option.map (fun (ra : Automation.t) -> ra.Automation.events)
+      |> Option.map (fun (ra : Automation.t) ->
+          let tbl = Hashtbl.create 64 in
+          List.iter (fun (re : EnvelopeEvent.t) ->
+              Hashtbl.replace tbl re.EnvelopeEvent.id re) ra.Automation.events;
+          tbl)
     | _ -> None
   in
   let event_children : view list =
@@ -859,8 +940,7 @@ let create_automation_item
       let events = patch.events |> List.map (fun event_change ->
           let reference_event = match event_change, ref_events with
             | `Modified ep, Some events ->
-              List.find_opt (fun (re : EnvelopeEvent.t) ->
-                  re.EnvelopeEvent.id = ep.Automation.EnvelopeEvent.Patch.id) events
+              Hashtbl.find_opt events ep.Automation.EnvelopeEvent.Patch.id
             | _ -> None
           in
           let event_id = match event_change with
@@ -937,13 +1017,51 @@ let create_device_item
 (* ==================== Full Track Views ==================== *)
 
 
+(** [fill_mixer_param_placeholders ~format_time mixer_item mixer_val] fills any
+    empty Unchanged Volume/Pan/Mute/Solo placeholders inside a partially
+    changed Mixer item with the reference mixer's values, restamped Unchanged
+    via [view_to_unchanged] — the per-param counterpart of the whole-Mixer
+    placeholder fill, so a track whose mixer changed in only one parameter
+    still renders its other strip controls (web) instead of dropping them.
+    Reference children are rebuilt through the same [MixerVS] value path as the
+    whole-Mixer fill, keeping field/domain types identical. *)
+let fill_mixer_param_placeholders
+    ~(format_time : dual_time_formatter)
+    (mixer_item : item)
+    (mixer_val : Track.Mixer.t)
+  : item =
+  let has_empty_placeholder = List.exists (function
+      | Item ({ name = ("Volume" | "Pan" | "Mute" | "Solo");
+                change = Unchanged; children = []; _ }) -> true
+      | _ -> false) mixer_item.children in
+  if not has_empty_placeholder then mixer_item
+  else begin
+    let ref_children =
+      List.map view_to_unchanged (MixerVS.build_value_children ~format_time Added mixer_val) in
+    let fill = function
+      | Item ({ name = ("Volume" | "Pan" | "Mute" | "Solo");
+                change = Unchanged; children = []; _ } as pi) ->
+        (match List.find_opt (fun (rv : view) ->
+             match rv with
+             | Item { name; change = Unchanged; _ } -> name = pi.name
+             | _ -> false) ref_children with
+         | Some filled -> filled
+         | None -> Item pi)
+      | v -> v
+    in
+    { mixer_item with children = List.map fill mixer_item.children }
+  end
+
 (** [populate_unchanged_mixer_item ~format_time item mixer_val] walks an item's
     children and, for any empty Unchanged "Mixer" placeholder (a Modified track
     whose mixer patch is Unchanged), rebuilds the mixer's children from the
     reference [mixer_val] (the old track's mixer value) and restamps them
-    Unchanged via [view_to_unchanged]. This restores the lost 044a9a7 feature:
-    Unchanged mixer strips now show volume/pan/mute/solo values (as context,
-    not as changes) so the web app can render mixer strips for every track. *)
+    Unchanged via [view_to_unchanged]. For a Modified Mixer item, the per-param
+    empty Unchanged placeholders (Volume/Pan/Mute/Solo) are filled the same way
+    (see [fill_mixer_param_placeholders]). This restores the lost 044a9a7
+    feature: Unchanged mixer strips now show volume/pan/mute/solo values (as
+    context, not as changes) so the web app can render mixer strips for every
+    track. *)
 let populate_unchanged_mixer_item
     ~(format_time : dual_time_formatter)
     (item : item)
@@ -954,6 +1072,8 @@ let populate_unchanged_mixer_item
       | Item ({ name = "Mixer"; change = Unchanged; children = []; _ } as mi) ->
         let mc = MixerVS.build_value_children ~format_time Added mixer_val in
         Item { mi with children = List.map view_to_unchanged mc }
+      | Item ({ name = "Mixer"; _ } as mi) ->
+        Item (fill_mixer_param_placeholders ~format_time mi mixer_val)
       | _ -> child) item.children in
   { item with children }
 
@@ -1013,6 +1133,10 @@ let populate_unchanged_main_mixer_item
     | Item ({ name = "Mixer"; change = Unchanged; children = []; _ } as mi) ->
       let mc = MixerVS.build_value_children ~format_time Added ref.Track.MainTrack.mixer.base in
       Item { mi with children = List.map view_to_unchanged mc }
+    | Item ({ name = "Mixer"; _ } as mi) ->
+      (* base Mixer partially changed (e.g. master volume only): fill its empty
+         unchanged param placeholders so the whole strip stays renderable. *)
+      Item (fill_mixer_param_placeholders ~format_time mi ref.Track.MainTrack.mixer.base)
     | v -> v
   in
   let children = List.map (function
@@ -1076,7 +1200,9 @@ let create_audio_like_track_item
   : item =
   let item = AudioTrackVS.build_item
       ~format_time
-      ~build_clips:(create_audio_clip_item ~format_time)
+      ~build_clips:(create_audio_clip_item ~format_time
+                      ?reference_clips:(Option.map (fun (rt : Track.AudioTrack.t) ->
+                          rt.Track.AudioTrack.clips) reference_track))
       ~build_automations:(create_automation_item ~get_pointee_name ~format_time
                             ?reference_automations:(Option.map (fun (rt : Track.AudioTrack.t) -> rt.Track.AudioTrack.automations) reference_track))
       ~build_devices:(create_device_item ~format_time)
@@ -1105,6 +1231,20 @@ let create_audio_track_item
   : item =
   ignore (note_name_style : note_display_style);
   create_audio_like_track_item ~get_pointee_name ~format_time ~track_type_name:"AudioTrack" ?reference_track c
+
+
+(* Return tracks share the AudioTrack representation, but the item name is the
+   only carrier of the track kind for consumers (web/CLI), so they must not be
+   labeled "AudioTrack" (group tracks already get their own "Group" label). *)
+let create_return_track_item
+    ~(get_pointee_name : int -> string)
+    ?(note_name_style : note_display_style = default_note_name_style)
+    ?(format_time : dual_time_formatter = default_dual_time_formatter)
+    ?(reference_track : Track.AudioTrack.t option)
+    (c : (Track.AudioTrack.t, Track.AudioTrack.Patch.t) structured_change)
+  : item =
+  ignore (note_name_style : note_display_style);
+  create_audio_like_track_item ~get_pointee_name ~format_time ~track_type_name:"ReturnTrack" ?reference_track c
 
 
 let create_group_track_item
@@ -1266,7 +1406,13 @@ let dispatch_track_change
   | `Modified (Track.Patch.AudioPatch pt) ->
     let audio_ref = match reference_track with
       | Some (Track.Audio t | Track.Group t | Track.Return t) -> Some t | _ -> None in
-    Some (Item (create_audio_track_item ~get_pointee_name ~note_name_style ~format_time ?reference_track:audio_ref (`Modified pt)))
+    (* A modified return track surfaces as an AudioPatch (Return has no patch
+       variant); the reference track is what tells us to label it ReturnTrack. *)
+    let is_return = match reference_track with Some (Track.Return _) -> true | _ -> false in
+    if is_return then
+      Some (Item (create_return_track_item ~get_pointee_name ~note_name_style ~format_time ?reference_track:audio_ref (`Modified pt)))
+    else
+      Some (Item (create_audio_track_item ~get_pointee_name ~note_name_style ~format_time ?reference_track:audio_ref (`Modified pt)))
   (* Group tracks *)
   | `Added (Track.Group t) -> Some (Item (create_group_track_item ~get_pointee_name ~note_name_style ~format_time (`Added t)))
   | `Removed (Track.Group t) -> Some (Item (create_group_track_item ~get_pointee_name ~note_name_style ~format_time (`Removed t)))
@@ -1274,9 +1420,9 @@ let dispatch_track_change
     let group_ref = match reference_track with
       | Some (Track.Group t) -> Some t | _ -> None in
     Some (Item (create_group_track_item ~get_pointee_name ~note_name_style ~format_time ?reference_track:group_ref (`Modified pt)))
-  (* Return tracks - use audio track builder since ReturnTrack = AudioTrack *)
-  | `Added (Track.Return t) -> Some (Item (create_audio_track_item ~get_pointee_name ~note_name_style ~format_time (`Added t)))
-  | `Removed (Track.Return t) -> Some (Item (create_audio_track_item ~get_pointee_name ~note_name_style ~format_time (`Removed t)))
+  (* Return tracks - dedicated builder so the item name carries the kind *)
+  | `Added (Track.Return t) -> Some (Item (create_return_track_item ~get_pointee_name ~note_name_style ~format_time (`Added t)))
+  | `Removed (Track.Return t) -> Some (Item (create_return_track_item ~get_pointee_name ~note_name_style ~format_time (`Removed t)))
   (* Main tracks - handled separately in create_liveset_item *)
   | `Added (Track.Main _) | `Removed (Track.Main _) | `Modified (Track.Patch.MainPatch _) -> None
   | `Unchanged -> None
@@ -1518,7 +1664,16 @@ let create_liveset_item
          (match ref_main with
           | Some m -> Some (create_main_track_item ~get_pointee_name ~note_name_style ~format_time ~reference_track:m (`Unchanged))
           | None -> None))
-    | _ -> None
+    | `Added ls | `Removed ls ->
+      (* The master must render for whole-liveset Added/Removed too (its
+         tempo/time signature/devices are part of the set), symmetric with the
+         other value-side sections. *)
+      (match ls.Liveset.main with
+       | Track.Main m ->
+         let tag = match c with `Added _ -> `Added m | _ -> `Removed m in
+         Some (create_main_track_item ~get_pointee_name ~note_name_style ~format_time tag)
+       | _ -> None)
+    | `Unchanged -> None
   in
 
   (* Build Locators collection *)

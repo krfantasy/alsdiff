@@ -230,11 +230,74 @@ let test_fixture_pointee_names_do_not_duplicate_track_prefix () =
         end
       | None -> ())
 
+(* Regression: Xml.get_attr raises Xml.Xml_error (never Not_found), so a set
+   missing MajorVersion/MinorVersion must fall back to "Unknown" versions
+   instead of aborting the parse. *)
+let test_liveset_version_fallback_when_attrs_missing () =
+  let strip_version_attrs = function
+    | Element { name = "Ableton"; attrs; childs } ->
+      let attrs' =
+        List.filter (fun (k, _) ->
+            k <> "MajorVersion" && k <> "MinorVersion" && k <> "Revision") attrs
+      in
+      Element { name = "Ableton"; attrs = attrs'; childs }
+    | xml -> xml
+  in
+  let xml = read_file test_liveset_xml_path |> strip_version_attrs in
+  let liveset = Liveset.create xml test_liveset_xml_path in
+  Alcotest.(check string) "major version falls back" "Unknown" liveset.version.major;
+  Alcotest.(check string) "minor version falls back" "Unknown" liveset.version.minor;
+  Alcotest.(check string) "revision falls back" "Unknown" liveset.version.revision
+
+(* Regression: send automations must name their destination track ("Send to
+   Reverb"), not the amount param's element name ("Send to Send"). *)
+let test_send_pointee_names_destination_track () =
+  let path = Utils.resolve_test_data_path "t4.xml" in
+  let xml = read_file path in
+  let ls0 = Liveset.create xml path in
+  match ls0.Liveset.tracks with
+  | src :: dest :: rest ->
+    let track_id = function
+      | Track.Midi t -> t.Track.MidiTrack.id
+      | Track.Audio t | Track.Group t | Track.Return t -> t.Track.AudioTrack.id
+      | Track.Main _ -> 0
+    in
+    let dest_id = track_id dest in
+    let dest_name = Track.get_name dest in
+    let src_name = Track.get_name src in
+    let send : Track.Send.t = {
+      Track.Send.id = 0;
+      destination = dest_id;
+      amount = { Device.GenericParam.name = "Send";
+                 value = Device.Float 0.5;
+                 automation = 9001;
+                 modulation = 9002;
+                 mapping = None };
+    } in
+    let src_track = match src with
+      | Track.Midi t ->
+        Track.Midi { t with Track.MidiTrack.mixer =
+                              { t.Track.MidiTrack.mixer with Track.Mixer.sends = [send] } }
+      | Track.Audio t ->
+        Track.Audio { t with Track.AudioTrack.mixer =
+                               { t.Track.AudioTrack.mixer with Track.Mixer.sends = [send] } }
+      | _ -> Alcotest.fail "expected Midi or Audio first track in t4.xml"
+    in
+    let ls = { ls0 with Liveset.tracks = src_track :: dest :: rest } in
+    Liveset.build_pointees_table ls;
+    (match Liveset.get_pointee_name_from_table_opt ls.Liveset.pointees 9001 with
+     | Some name ->
+       Alcotest.(check string) "send pointee names destination track"
+         (Printf.sprintf "%s: Send to %s" src_name dest_name) name
+     | None -> Alcotest.fail "send automation pointee not registered")
+  | _ -> Alcotest.fail "expected at least two tracks in t4.xml"
+
 let () =
   Alcotest.run "Liveset" [
     "create", [
       Alcotest.test_case "basic liveset creation" `Quick test_liveset_create;
       Alcotest.test_case "version extraction" `Quick test_liveset_version_extraction;
+      Alcotest.test_case "version fallback when attrs missing" `Quick test_liveset_version_fallback_when_attrs_missing;
       Alcotest.test_case "creator extraction" `Quick test_liveset_creator_extraction;
       Alcotest.test_case "track parsing" `Quick test_liveset_track_parsing;
       Alcotest.test_case "pointees table initialization" `Quick test_liveset_pointees_table;
@@ -244,5 +307,6 @@ let () =
       Alcotest.test_case "pointee name fallback in patch" `Quick test_pointee_name_fallback_in_patch;
       Alcotest.test_case "track param pointee formatting" `Quick test_track_param_pointee_name_formatting;
       Alcotest.test_case "fixture pointee names do not duplicate track prefix" `Quick test_fixture_pointee_names_do_not_duplicate_track_prefix;
+      Alcotest.test_case "send pointee names destination track" `Quick test_send_pointee_names_destination_track;
     ];
   ]

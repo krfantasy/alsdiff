@@ -1,19 +1,23 @@
 // Guarded so the module can be imported in Node (Playwright spec runner);
 // in the browser this is exactly `window.devicePixelRatio || 1`.
-const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+// Read per call (not at module load): browser zoom and moving the window
+// between displays change the ratio at runtime.
+const dpr = () =>
+  typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
 
 export function setupCanvas(
   canvas: HTMLCanvasElement,
   width: number,
   height: number,
 ): CanvasRenderingContext2D {
-  canvas.width = width * dpr;
-  canvas.height = height * dpr;
+  const ratio = dpr();
+  canvas.width = width * ratio;
+  canvas.height = height * ratio;
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Failed to get 2D rendering context");
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   return ctx;
 }
 
@@ -46,6 +50,26 @@ export function computeGridInterval(
     }
   }
   return minor;
+}
+
+export interface ViewportSlice {
+  /** Left edge of the visible slice in content coordinates, never negative. */
+  vx: number;
+  /** Visible width, never negative and never reaching past the content end. */
+  vw: number;
+}
+
+/** Visible slice of a zoomed canvas: [vx, vx + vw) is the on-screen portion
+ *  of [0, totalWidth). Overscroll (negative scrollLeft, or scrolled past the
+ *  end) clamps so clearRect never receives a negative origin or width —
+ *  shared by the arrangement, piano-roll, and automation renderers. */
+export function computeVisibleSlice(
+  vp: { scrollLeft: number; visibleWidth: number },
+  totalWidth: number,
+): ViewportSlice {
+  const vx = Math.max(0, vp.scrollLeft);
+  const vw = Math.min(vp.visibleWidth, Math.max(0, totalWidth - vx));
+  return { vx, vw };
 }
 
 export interface RulerMarker {

@@ -3,6 +3,7 @@ import {
   getCSSColor,
   getChangeColor,
   computeGridInterval,
+  computeVisibleSlice,
 } from "../canvas-utils";
 import { buildRectIndex, type HitRect } from "../hit-testing";
 
@@ -30,7 +31,12 @@ export function renderArrangement(
   const trackCount = tracks.length;
   const tracksHeight = trackCount * TRACK_HEIGHT;
 
-  ctx.clearRect(0, 0, totalWidth, tracksHeight);
+  // Only the visible slice needs clearing/painting: the canvas spans
+  // totalWidth = timelineWidth × zoom (huge at high zoom), and full-content
+  // clears/fills per frame painted hundreds of millions of offscreen pixels.
+  const { vx, vw } = computeVisibleSlice(vp, totalWidth);
+
+  ctx.clearRect(vx, 0, vw, tracksHeight);
 
   const hitRects: HitRect[] = [];
 
@@ -44,19 +50,19 @@ export function renderArrangement(
       : i % 2 === 0
         ? getCSSColor("--bg-secondary")
         : getCSSColor("--bg-primary");
-    ctx.fillRect(0, y, totalWidth, TRACK_HEIGHT);
+    ctx.fillRect(vx, y, vw, TRACK_HEIGHT);
 
 
     if (isGroup) {
       ctx.fillStyle = "rgba(255, 255, 255, 0.02)";
-      ctx.fillRect(0, y, totalWidth, TRACK_HEIGHT);
+      ctx.fillRect(vx, y, vw, TRACK_HEIGHT);
     }
 
     ctx.strokeStyle = getCSSColor("--border");
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(0, y + TRACK_HEIGHT - 0.5);
-    ctx.lineTo(totalWidth, y + TRACK_HEIGHT - 0.5);
+    ctx.moveTo(vx, y + TRACK_HEIGHT - 0.5);
+    ctx.lineTo(vx + vw, y + TRACK_HEIGHT - 0.5);
     ctx.stroke();
 
     const clips = extractClips(tracks[i]);

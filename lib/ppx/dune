@@ -1,6 +1,15 @@
+;; The deriver modules live in the plain library [ppx_impl] so a standalone
+;; driver executable (test/ppx_negative) can link them for rejection tests;
+;; [(kind ppx_rewriter)] libraries are empty stubs when linked as ordinary
+;; dependencies. [ppx_patch] stays the (pps ...) entry point for consumers.
 (library
  (name ppx_patch)
- (modules ppx_shared ppx_patch ppx_id ppx_view_spec)
  (kind ppx_rewriter)
+ (modules link)
+ (libraries ppx_impl))
+
+(library
+ (name ppx_impl)
+ (modules ppx_shared ppx_patch ppx_id ppx_view_spec)
  (libraries ppxlib)
  (preprocess (pps ppxlib.metaquot)))

@@ -18,7 +18,7 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
+  build:
     strategy:
       fail-fast: false
       matrix:
@@ -39,6 +39,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       OPAMVAR_with_js: "false"
+    outputs:
+      # All matrix jobs compute the same version; surface it once for the
+      # release job so the tag always matches the built zips.
+      version: ${{ steps.version_info.outputs.version }}
 
     steps:
       - name: Checkout code
@@ -59,19 +63,29 @@ jobs:
       - name: Get version info
         id: version_info
         shell: bash
+        env:
+          # GitHub inputs must reach the script via env vars, never template
+          # interpolation: "${{ inputs.branch }}" inside run: is shell
+          # injection territory for a workflow with contents: write.
+          INPUT_BRANCH: ${{ inputs.branch }}
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
         run: |
-          # Get the branch name from input
-          BRANCH_OR_TAG="${{ inputs.branch }}"
+          BRANCH_OR_TAG="${INPUT_BRANCH}"
 
           # Get commit SHA (use input if provided, otherwise get from HEAD)
-          if [ -n "${{ inputs.commit_sha }}" ]; then
-            COMMIT_SHA="${{ inputs.commit_sha }}"
+          if [ -n "${INPUT_COMMIT_SHA}" ]; then
+            COMMIT_SHA="${INPUT_COMMIT_SHA}"
           else
             COMMIT_SHA=$(git rev-parse HEAD)
           fi
 
+          # Sanitize the branch/tag for use in file and tag names: '/' (and
+          # friends) in branch names would otherwise turn the zip path into a
+          # subdirectory and fail the asset upload.
+          SANITIZED=$(printf '%s' "${BRANCH_OR_TAG}" | tr -cs 'A-Za-z0-9._-' '-' | sed -e 's/^-*//' -e 's/-*$//')
+
           # Short SHA (7 chars) for version format
-          VERSION="${BRANCH_OR_TAG}-${COMMIT_SHA:0:7}"
+          VERSION="${SANITIZED}-${COMMIT_SHA:0:7}"
 
           echo "branch_or_tag=${BRANCH_OR_TAG}" >> $GITHUB_OUTPUT
           echo "commit_sha=${COMMIT_SHA}" >> $GITHUB_OUTPUT
@@ -117,16 +131,31 @@ jobs:
           cd install/bin
           7z a ../../alsdiff-${{ matrix.os_name }}-${{ matrix.arch }}-${{ steps.version_info.outputs.version }}.zip alsdiff.exe
 
-      - name: Upload release assets
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alsdiff-${{ matrix.os_name }}-${{ matrix.arch }}-${{ steps.version_info.outputs.version }}
+          path: alsdiff-${{ matrix.os_name }}-${{ matrix.arch }}-*.zip
+          if-no-files-found: error
+
+  create-release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: Create release with all platform assets
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            alsdiff-${{ matrix.os_name }}-${{ matrix.arch }}-${{ steps.version_info.outputs.version }}.zip
+          files: assets/*.zip
           generate_release_notes: true
-          tag_name: ${{ steps.version_info.outputs.version }}
-          name: Build ${{ steps.version_info.outputs.version }}
+          tag_name: ${{ needs.build.outputs.version }}
+          name: Build ${{ needs.build.outputs.version }}
           body: |
             Custom build from branch/commit: `${{ inputs.branch }}`
-            Commit SHA: `${{ steps.version_info.outputs.commit_sha }}`
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

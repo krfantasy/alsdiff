@@ -633,6 +633,7 @@ module Liveset_diff = struct
       [View_model.Item
          (View_model.create_liveset_item
             ~reference_liveset:liveset1
+            ~note_name_style:config.renderer_config.note_name_style
             (if Liveset.Patch.is_empty patch then `Unchanged else `Modified patch))]
     in
     let output =
@@ -672,6 +673,7 @@ module Liveset_diff_id = struct
       [View_model.Item
          (View_model.create_liveset_item
             ~reference_liveset:liveset1
+            ~note_name_style:config.renderer_config.note_name_style
             (if Liveset.Patch.is_empty patch then `Unchanged else `Modified patch))]
     in
     let output =
@@ -740,10 +742,16 @@ let lwt_to_js_promise (lwt : string Lwt.t) : Js.Unsafe.any =
   let request_id = next_request_id () in
   debug_log (Printf.sprintf "[alsdiff] lwt_to_js_promise called id=%d" request_id);
   let js_promise = create_js_promise_for_request request_id in
+  let exn_message = function
+    (* Printexc.to_string (Failure m) is Failure("m"); the UI wants the bare
+       message since rejected_promise wraps strings in Failure itself. *)
+    | Failure msg -> msg
+    | e -> Printexc.to_string e
+  in
   Lwt.on_success lwt (fun result ->
       settle_js_promise ~request_id ~method_name:"resolve" result);
   Lwt.on_failure lwt (fun exn ->
-      settle_js_promise ~request_id ~method_name:"reject" (Printexc.to_string exn));
+      settle_js_promise ~request_id ~method_name:"reject" (exn_message exn));
   js_promise
 
 let rejected_promise (message : string) : Js.Unsafe.any =

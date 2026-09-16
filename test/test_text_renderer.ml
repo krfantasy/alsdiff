@@ -214,6 +214,33 @@ let test_uniform_override () =
   Alcotest.(check bool) "removed clip" true (get_effective_detail cfg Removed DTClip = Summary);
   Alcotest.(check bool) "modified clip" true (get_effective_detail cfg Modified DTClip = Summary)
 
+(* 11e. Regression: Summary field counts must exclude fields configured to
+   Ignore so the reported count matches what renders. *)
+let test_summary_count_excludes_ignored_fields () =
+  let cfg = {
+    compact with
+    type_overrides = [
+      { domain_type = DTEvent; override = uniform_override Ignore; };
+    ];
+  } in
+  let item = Item {
+      name = "Automation (id=1)";
+      change = Modified;
+      domain_type = DTAutomation;
+      children = [
+        Field { name = "Value"; change = Modified; domain_type = DTEvent;
+                oldval = Some (Fint 1); newval = Some (Fint 2) };
+        Field { name = "Other"; change = Added; domain_type = DTNote;
+                oldval = None; newval = Some (Fint 3) };
+      ];
+    } in
+  (match item with
+   | Item i ->
+     let breakdown = count_fields_breakdown cfg i in
+     Alcotest.(check int) "ignored field not counted" 0 breakdown.modified;
+     Alcotest.(check int) "renderable field counted" 1 breakdown.added
+   | _ -> Alcotest.fail "expected Item")
+
 (* 11d. Test smart constructor *)
 let test_smart_constructor () =
   let cfg = with_type_override compact DTDevice
@@ -339,8 +366,34 @@ let test_inline () =
   Format.pp_print_flush ppf ();
   let output = Buffer.contents buffer in
   Alcotest.(check string) "inline output"
-    "* MidiClip [Name: Old -> New, Start: 0.00 -> 1.00]"
+    (* %.6g field formatting: 0.0/1.0 render as 0/1 (6 significant digits). *)
+    "* MidiClip [Name: Old -> New, Start: 0 -> 1]"
     (String.trim output)
+
+(* Regression: %.6g field formatting keeps small values distinguishable — a
+   Modified send/automation value must not render as "0.00 -> 0.00". *)
+let test_small_float_values_render_distinctly () =
+  let view = Item {
+      name = "Send";
+      change = Modified;
+      domain_type = DTOther;
+      children = [
+        Field { name = "Manual"; change = Modified; domain_type = DTOther;
+                oldval = Some (Ffloat 0.0003162277571); newval = Some (Ffloat 0.000317) };
+      ];
+    } in
+  let buffer = Buffer.create 1024 in
+  let ppf = Format.formatter_of_buffer buffer in
+  Fmt.set_style_renderer ppf `None;
+  pp full ppf view;
+  Format.pp_print_flush ppf ();
+  let output = Buffer.contents buffer in
+  Alcotest.(check bool) "old value keeps precision" true
+    (String.contains output '0' && Re.execp (Re.compile (Re.str "0.000316228")) output);
+  Alcotest.(check bool) "new value keeps precision" true
+    (Re.execp (Re.compile (Re.str "0.000317")) output);
+  Alcotest.(check bool) "values are distinguishable" true
+    (not (Re.execp (Re.compile (Re.str "0.00 -> 0.00")) output))
 
 (* Test inline with no fields - should not show brackets *)
 let test_inline_no_fields () =
@@ -515,6 +568,8 @@ let tests = [
   "nested type overrides", `Quick, test_nested_type_overrides;
   "override with none", `Quick, test_override_with_none;
   "uniform override", `Quick, test_uniform_override;
+  "summary count excludes ignored fields", `Quick, test_summary_count_excludes_ignored_fields;
+  "small float values render distinctly", `Quick, test_small_float_values_render_distinctly;
   "smart constructor", `Quick, test_smart_constructor;
   "validation", `Quick, test_validation;
   "edge cases", `Quick, test_edge_cases;
