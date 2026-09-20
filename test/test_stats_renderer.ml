@@ -3,7 +3,7 @@ open Alsdiff_output.Stats_renderer
 open Alsdiff_output.Config
 
 let mk_field name change =
-  Field { name; change; domain_type = DTOther; oldval = None; newval = None }
+  Field { name; change; domain_type = DTOther; kind = Content; oldval = None; newval = None }
 
 let mk_item name change domain_type children =
   Item { name; change; domain_type; children }

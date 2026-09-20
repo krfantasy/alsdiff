@@ -9,7 +9,7 @@ let test_compact () =
       change = Modified;
       domain_type = DTOther;
       children = [
-        Field { name = "Name"; change = Modified; domain_type = DTOther; oldval = Some (Fstring "Old"); newval = Some (Fstring "New") }
+        Field { name = "Name"; change = Modified; domain_type = DTOther; kind = Content; oldval = Some (Fstring "Old"); newval = Some (Fstring "New") }
       ]
     }
   in
@@ -31,7 +31,7 @@ let test_full () =
       change = Modified;
       domain_type = DTOther;
       children = [
-        Field { name = "Name"; change = Modified; domain_type = DTOther; oldval = Some (Fstring "Old"); newval = Some (Fstring "New") }
+        Field { name = "Name"; change = Modified; domain_type = DTOther; kind = Content; oldval = Some (Fstring "Old"); newval = Some (Fstring "New") }
       ]
     }
   in
@@ -57,7 +57,7 @@ let test_collection () =
           change = Added;
           domain_type = DTOther;
           children = [
-            Field { name = "Pitch"; change = Added; domain_type = DTOther; oldval = None; newval = Some (Fint 60) }
+            Field { name = "Pitch"; change = Added; domain_type = DTOther; kind = Content; oldval = None; newval = Some (Fint 60) }
           ]
         }
       ]
@@ -106,7 +106,7 @@ let test_removed_summary () =
       change = Removed;
       domain_type = DTOther;
       children = [
-        Field { name = "Name"; change = Removed; domain_type = DTOther; oldval = Some (Fstring "Test"); newval = None }
+        Field { name = "Name"; change = Removed; domain_type = DTOther; kind = Content; oldval = Some (Fstring "Test"); newval = None }
       ]
     }
   in
@@ -122,7 +122,7 @@ let test_removed_summary () =
 (* New test: Collection item limiting with truncation message *)
 let test_collection_limit () =
   let items = List.init 100 (fun i ->
-      Item { name = "Note"; change = Added; domain_type = DTOther; children = [Field { name = "Pitch"; change = Added; domain_type = DTOther; oldval = None; newval = Some (Fint i) }] }
+      Item { name = "Note"; change = Added; domain_type = DTOther; children = [Field { name = "Pitch"; change = Added; domain_type = DTOther; kind = Content; oldval = None; newval = Some (Fint i) }] }
     ) in
   let view = Collection { name = "Notes"; change = Added; domain_type = DTOther; items } in
   let cfg = { full with max_collection_items = Some 10 } in
@@ -228,9 +228,9 @@ let test_summary_count_excludes_ignored_fields () =
       change = Modified;
       domain_type = DTAutomation;
       children = [
-        Field { name = "Value"; change = Modified; domain_type = DTEvent;
+        Field { name = "Value"; change = Modified; domain_type = DTEvent; kind = Content;
                 oldval = Some (Fint 1); newval = Some (Fint 2) };
-        Field { name = "Other"; change = Added; domain_type = DTNote;
+        Field { name = "Other"; change = Added; domain_type = DTNote; kind = Content;
                 oldval = None; newval = Some (Fint 3) };
       ];
     } in
@@ -310,7 +310,7 @@ let test_rendering_with_nested_overrides () =
       name = "Operator";
       change = Added;
       domain_type = DTDevice;
-      children = [Field {name = "Preset"; change = Added; domain_type = DTDevice; oldval = None; newval = Some (Fstring "Init")}];
+      children = [Field {name = "Preset"; change = Added; domain_type = DTDevice; kind = Content; oldval = None; newval = Some (Fstring "Init")}];
     } in
 
   let removed_device = Item {
@@ -351,9 +351,9 @@ let test_inline () =
       change = Modified;
       domain_type = DTOther;
       children = [
-        Field { name = "Name"; change = Modified; domain_type = DTOther;
+        Field { name = "Name"; change = Modified; domain_type = DTOther; kind = Content;
                 oldval = Some (Fstring "Old"); newval = Some (Fstring "New") };
-        Field { name = "Start"; change = Modified; domain_type = DTOther;
+        Field { name = "Start"; change = Modified; domain_type = DTOther; kind = Content;
                 oldval = Some (Ffloat 0.0); newval = Some (Ffloat 1.0) };
       ]
     }
@@ -378,7 +378,7 @@ let test_small_float_values_render_distinctly () =
       change = Modified;
       domain_type = DTOther;
       children = [
-        Field { name = "Manual"; change = Modified; domain_type = DTOther;
+        Field { name = "Manual"; change = Modified; domain_type = DTOther; kind = Content;
                 oldval = Some (Ffloat 0.0003162277571); newval = Some (Ffloat 0.000317) };
       ];
     } in
@@ -422,7 +422,7 @@ let test_inline_with_nested () =
       change = Modified;
       domain_type = DTOther;
       children = [
-        Field { name = "Name"; change = Modified; domain_type = DTOther;
+        Field { name = "Name"; change = Modified; domain_type = DTOther; kind = Content;
                 oldval = Some (Fstring "A"); newval = Some (Fstring "B") };
         Item { name = "Loop"; change = Modified; domain_type = DTOther; children = [] };
       ]
@@ -461,10 +461,10 @@ let test_inline_collection () =
       domain_type = DTNote;
       items = [
         Item { name = "Note C4"; change = Added; domain_type = DTNote;
-               children = [Field { name = "Velocity"; change = Added; domain_type = DTNote;
+               children = [Field { name = "Velocity"; change = Added; domain_type = DTNote; kind = Content;
                                    oldval = None; newval = Some (Fint 100) }] };
         Item { name = "Note E4"; change = Added; domain_type = DTNote;
-               children = [Field { name = "Velocity"; change = Added; domain_type = DTNote;
+               children = [Field { name = "Velocity"; change = Added; domain_type = DTNote; kind = Content;
                                    oldval = None; newval = Some (Fint 80) }] };
       ]
     }

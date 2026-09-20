@@ -229,6 +229,7 @@ let build_value_field_views
           name = spec.name;
           change = change_type;
           domain_type;
+          kind = Content;
           oldval = (if change_type = Removed then Some old_val else None);
           newval = (if change_type = Added then Some (spec.get_value value) else None);
         } : view))
@@ -255,6 +256,7 @@ let build_patch_field_views
             name = spec.name;
             change = Modified;
             domain_type;
+            kind = Content;
             oldval = Some oldval;
             newval = Some newval;
           } : view))
@@ -1095,7 +1097,8 @@ let prepend_track_identity_fields
       | Field f -> f.name = name
       | _ -> false) item.children in
   let mk name v =
-    Field { name; change = Unchanged; domain_type = DTTrack; oldval = None; newval = Some (Fint v) }
+    Field { name; change = Unchanged; domain_type = DTTrack; kind = Identity;
+            oldval = None; newval = Some (Fint v) }
   in
   let extras = List.filter_map (fun (name, v) ->
       match v with
@@ -1702,6 +1705,7 @@ let create_liveset_item
         match v with
         | Some fv ->
           Some (Field { name; change = Unchanged; domain_type = DTLiveset;
+                        kind = Context;
                         oldval = None; newval = Some fv })
         | None -> None)
       [ ("Tempo", tempo_context); ("Time Signature", ts_context) ]

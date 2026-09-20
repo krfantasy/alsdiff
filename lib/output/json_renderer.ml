@@ -24,6 +24,10 @@ let change_type_to_string = function
   | Removed -> "Removed"
   | Modified -> "Modified"
 
+let field_kind_to_string = function
+  | Content -> "Content"
+  | Context -> "Context"
+  | Identity -> "Identity"
 
 let rec item_to_yojson (cfg : detail_config) (item : item) : Yojson.Safe.t option =
   let level = get_effective_detail cfg item.change item.domain_type in
@@ -38,27 +42,20 @@ let rec item_to_yojson (cfg : detail_config) (item : item) : Yojson.Safe.t optio
     if children = [] then `Assoc base
     else `Assoc (base @ [("children", `List children)])
   in
-  (* TrackId/GroupId are structural identity, not diff content: consumers (the
-     web app) nest tracks under their group by these fields, so they ride along
-     at every detail level — including counts-only Summary and Field-dropping
-     Compact — exactly once each, even where the normal path would render them.
-     The LiveSet-level Tempo/Time Signature context fields (the project's
-     current tempo/time signature, emitted by create_liveset_item) ride the
-     same channel: the web app's realtime ruler needs them even when the
-     whole MainTrack item is level-dropped under Summary/Compact presets. *)
-  let is_context_field (f : field) =
-    match item.domain_type with
-    | DTTrack -> f.name = "TrackId" || f.name = "GroupId"
-    | DTLiveset -> f.name = "Tempo" || f.name = "Time Signature"
-    | _ -> false
-  in
+  (* Fields with kind Context or Identity are riders materialized from the
+     old document (identity join keys, presentation context — ADR 0001).
+     Consumers need them at every detail level — including counts-only
+     Summary and Field-dropping Compact — exactly once each, wherever the
+     normal path would render them. Riding is kind-driven: the projector
+     stamps the role, this renderer never name-matches. *)
+  let is_meta_field (f : field) = f.kind <> Content in
   let identity =
     List.filter_map (function
-        | Field f when is_context_field f -> Some (field_to_yojson f)
+        | Field f when is_meta_field f -> Some (field_to_yojson f)
         | _ -> None) item.children
   in
   let sub_views = List.filter (function
-      | Field f -> not (is_context_field f)
+      | Field f -> not (is_meta_field f)
       | _ -> true) item.children in
   match level with
   | Ignore -> None
@@ -153,6 +150,7 @@ and field_to_yojson (f : field) : Yojson.Safe.t =
     ("name", `String f.name);
     ("change", `String (change_type_to_string f.change));
     ("domain_type", `String (domain_type_to_string f.domain_type));
+    ("kind", `String (field_kind_to_string f.kind));
   ] in
   let with_old = match f.oldval with
     | None -> base

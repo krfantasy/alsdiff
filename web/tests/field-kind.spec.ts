@@ -1,0 +1,81 @@
+import { test, expect } from "@playwright/test";
+import { extractTempo, extractTracks } from "../src/lib/diff-parser";
+
+test("extractTracks resolves ids from Identity-stamped riders", () => {
+  const tracks = extractTracks([
+    {
+      type: "item",
+      name: "MidiTrack (#17): Bell",
+      change: "Modified",
+      domain_type: "Track",
+      children: [
+        { type: "field", name: "TrackId", change: "Unchanged", domain_type: "Track", kind: "Identity", new_value: 17 },
+        { type: "field", name: "GroupId", change: "Unchanged", domain_type: "Track", kind: "Identity", new_value: 2 },
+      ],
+    } as any,
+  ]);
+  expect(tracks).toHaveLength(1);
+  expect(tracks[0].trackId).toBe(17);
+  expect(tracks[0].groupId).toBe(2);
+});
+
+test("resolves a Modified GroupId emitted as Content (the changed id is the diff)", () => {
+  const tracks = extractTracks([
+    {
+      type: "item",
+      name: "AudioTrack (#5): Pad",
+      change: "Modified",
+      domain_type: "Track",
+      children: [
+        { type: "field", name: "GroupId", change: "Modified", domain_type: "Track", old_value: 1, new_value: 3 },
+      ],
+    } as any,
+  ]);
+  expect(tracks[0].groupId).toBe(3);
+});
+
+test("parses artifacts without the kind key", () => {
+  const tracks = extractTracks([
+    {
+      type: "item",
+      name: "AudioTrack (#5): 5-Audio",
+      change: "Removed",
+      domain_type: "Track",
+      children: [
+        { type: "field", name: "TrackId", change: "Removed", domain_type: "Track", old_value: 5 },
+      ],
+    } as any,
+  ]);
+  expect(tracks[0].trackId).toBe(5);
+});
+
+test("defaults trackId to 0 without any id field (regex hack retired)", () => {
+  const tracks = extractTracks([
+    { type: "item", name: "MainTrack: Master", change: "Modified", domain_type: "Track", children: [] } as any,
+  ]);
+  expect(tracks[0].trackId).toBe(0);
+});
+
+test("Summary-shaped removed track loses its id — accepted loss (ADR 0001)", () => {
+  // At counts-only levels Content id fields drop and the retired regex was
+  // the old recovery path; Modified tracks keep Identity riders, Added and
+  // Removed tracks get their id-ness back with items 3-4.
+  const tracks = extractTracks([
+    {
+      type: "item",
+      name: "AudioTrack (#5): Pad",
+      change: "Removed",
+      domain_type: "Track",
+      counts: { added: 0, removed: 4, modified: 1 },
+    } as any,
+  ]);
+  expect(tracks[0].trackId).toBe(0);
+});
+
+test("extractTempo reads Context-stamped liveset fields", () => {
+  expect(
+    extractTempo([
+      { type: "field", name: "Tempo", change: "Unchanged", domain_type: "Liveset", kind: "Context", new_value: 124 } as any,
+    ]),
+  ).toBe(124);
+});

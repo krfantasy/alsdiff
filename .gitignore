@@ -22,6 +22,8 @@ gha-creds-*.json
 
 *.org
 /docs/superpowers/
+docs/adr/
+CONTEXT.md
 
 *.trace
 

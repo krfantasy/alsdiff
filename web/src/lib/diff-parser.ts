@@ -2,6 +2,7 @@ import type {
   ViewNode,
   ItemView,
   FieldView,
+  FieldKind,
   CollectionView,
   TrackData,
   TrackNode,
@@ -17,6 +18,32 @@ function isItem(node: ViewNode): node is ItemView {
 
 function isCollection(node: ViewNode): node is CollectionView {
   return node.type === "collection";
+}
+
+/**
+ * Find a field by name, preferring the given kind stamp (docs/adr/0001).
+ * The kind-first match is authoritative for riders; the name fallback
+ * covers Added/Removed tracks (const-spec ids ride as Content), changed
+ * ids (which are the diff, hence Content), and artifacts older than the
+ * kind key.
+ */
+function findField(
+  children: ViewNode[],
+  fieldName: string,
+  kind?: FieldKind,
+): FieldView | undefined {
+  const byKind = kind
+    ? children.find(
+        (c): c is FieldView =>
+          c.type === "field" && c.name === fieldName && c.kind === kind,
+      )
+    : undefined;
+  return (
+    byKind ??
+    children.find(
+      (c): c is FieldView => c.type === "field" && c.name === fieldName,
+    )
+  );
 }
 
 function findCollection(
@@ -46,18 +73,10 @@ function getTrackIntField(
   fieldName: string,
   defaultVal: number,
 ): number {
-  const field = children.find(
-    (c) => c.type === "field" && c.name === fieldName,
-  );
-  if (field && field.type === "field")
+  const field = findField(children, fieldName, "Identity");
+  if (field)
     return ((field.new_value ?? field.old_value) as number) ?? defaultVal;
   return defaultVal;
-}
-
-/** Extract track ID from item name like "AudioTrack (#17): Bell" → 17 */
-function extractTrackIdFromName(name: string): number {
-  const m = name.match(/\(#(\d+)\)/);
-  return m ? parseInt(m[1], 10) : 0;
 }
 
 export function extractTracks(livesetChildren: ViewNode[]): TrackData[] {
@@ -83,7 +102,7 @@ export function extractTracks(livesetChildren: ViewNode[]): TrackData[] {
       name: child.name,
       change: child.change,
       domainType: child.domain_type,
-      trackId: fieldTrackId || extractTrackIdFromName(child.name),
+      trackId: fieldTrackId,
       groupId: getTrackIntField(tc, "GroupId", -1),
       counts: child.counts,
       children: tc,
@@ -361,9 +380,7 @@ function extractLivesetNumberField(
   name: string,
 ): number | undefined {
   const search = (nodes: ViewNode[] | undefined): number | undefined => {
-    const f = nodes?.find(
-      (c): c is FieldView => c.type === "field" && c.name === name,
-    );
+    const f = nodes ? findField(nodes, name, "Context") : undefined;
     if (!f) return undefined;
     return ((f.new_value ?? f.old_value) as number) ?? undefined;
   };

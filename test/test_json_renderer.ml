@@ -49,6 +49,7 @@ let elem_item =
               name = "Value";
               change = Modified;
               domain_type = DTOther;
+              kind = Content;
               oldval = Some (Fint 1);
               newval = Some (Fint 2);
             };
@@ -185,11 +186,13 @@ let track_identity_item change =
           Field
             {
               name = "TrackId"; change = Unchanged; domain_type = DTTrack;
+              kind = Identity;
               oldval = None; newval = Some (Fint 14);
             };
           Field
             {
               name = "GroupId"; change = Unchanged; domain_type = DTTrack;
+              kind = Identity;
               oldval = None; newval = Some (Fint 91);
             };
           Item { name = "Mixer"; change = Modified; domain_type = DTMixer; children = [] };
@@ -252,6 +255,7 @@ let test_non_track_item_no_identity_hoisting () =
             Field
               {
                 name = "TrackId"; change = Unchanged; domain_type = DTOther;
+                kind = Content;
                 oldval = None; newval = Some (Fint 7);
               };
           ];
@@ -278,16 +282,19 @@ let liveset_tempo_item =
           Field
             {
               name = "Tempo"; change = Unchanged; domain_type = DTLiveset;
+              kind = Context;
               oldval = None; newval = Some (Ffloat 138.0);
             };
           Field
             {
               name = "Time Signature"; change = Unchanged; domain_type = DTLiveset;
+              kind = Context;
               oldval = None; newval = Some (Fint 201);
             };
           Field
             {
               name = "Creator"; change = Unchanged; domain_type = DTLiveset;
+              kind = Content;
               oldval = None; newval = Some (Fstring "Ableton");
             };
           Item
@@ -359,6 +366,7 @@ let test_non_liveset_item_no_tempo_hoisting () =
             Field
               {
                 name = "Tempo"; change = Unchanged; domain_type = DTMixer;
+                kind = Content;
                 oldval = None; newval = Some (Ffloat 138.0);
               };
           ];
@@ -379,6 +387,7 @@ let float_field new_val =
       name = "Value";
       change = Modified;
       domain_type = DTOther;
+      kind = Content;
       oldval = None;
       newval = Some (Ffloat new_val);
     }
@@ -418,6 +427,138 @@ let test_finite_float_is_number () =
     Alcotest.failf "expected `Float 1.5, got %s"
       (Yojson.Safe.to_string (Option.value other ~default:`Null))
 
+(* ADR 0001: every field carries an explicit kind in the JSON contract.
+   TrackId here is an Identity rider; Volume is ordinary diff content. *)
+let test_field_kind_serializes () =
+  let item =
+    Item
+      { name = "AudioTrack (#17): Bell";
+        change = Modified;
+        domain_type = DTTrack;
+        children =
+          [ Field { name = "TrackId"; change = Unchanged;
+                    domain_type = DTTrack; kind = Identity;
+                    oldval = None; newval = Some (Fint 17) };
+            Field { name = "Volume"; change = Modified;
+                    domain_type = DTTrack; kind = Content;
+                    oldval = Some (Ffloat 0.8); newval = Some (Ffloat 0.9) }
+          ];
+      }
+  in
+  let obj = one (render_one (cfg_of Full) item) in
+  let children =
+    match obj with
+    | `Assoc members ->
+      (match List.assoc_opt "children" members with
+       | Some (`List children) -> children
+       | _ -> Alcotest.failf "expected children: %s" (Yojson.Safe.to_string obj))
+    | _ -> Alcotest.failf "expected assoc item: %s" (Yojson.Safe.to_string obj)
+  in
+  let find name =
+    match
+      List.find_opt
+        (fun c ->
+           match c with
+           | `Assoc members ->
+             (match List.assoc_opt "name" members with
+              | Some (`String n) -> String.equal n name
+              | _ -> false)
+           | _ -> false)
+        children
+    with
+    | Some (`Assoc members) -> members
+    | _ -> Alcotest.failf "field %s not rendered" name
+  in
+  let kind members =
+    match List.assoc_opt "kind" members with
+    | Some (`String k) -> k
+    | _ ->
+      Alcotest.failf "no kind key: %s"
+        (Yojson.Safe.to_string (`Assoc members))
+  in
+  Alcotest.(check string) "TrackId kind" "Identity" (kind (find "TrackId"));
+  Alcotest.(check string) "Volume kind" "Content" (kind (find "Volume"))
+
+(* ADR 0001: riding is a kind-driven policy, not a name whitelist. A
+   Context-stamped field must ride Summary even when its name is not one of
+   the four legacy-whitelisted names ("TrackId"/"GroupId"/"Tempo"/
+   "Time Signature"). The old name-matching predicate drops it — red. *)
+let test_context_kind_rides_summary () =
+  let item =
+    Item
+      { name = "Strip";
+        change = Modified;
+        domain_type = DTTrack;
+        children =
+          [ Field { name = "Send A"; change = Unchanged;
+                    domain_type = DTTrack; kind = Context;
+                    oldval = None; newval = Some (Ffloat 0.25) } ];
+      }
+  in
+  let obj = one (render_one (cfg_of Summary) item) in
+  let rides =
+    match obj with
+    | `Assoc members ->
+      (match List.assoc_opt "children" members with
+       | Some (`List children) ->
+         List.exists
+           (fun c ->
+              match c with
+              | `Assoc fs ->
+                (match List.assoc_opt "name" fs with
+                 | Some (`String "Send A") -> true
+                 | _ -> false)
+              | _ -> false)
+           children
+       | _ -> false)
+    | _ -> false
+  in
+  Alcotest.(check bool) "context field rides at Summary" true rides
+
+(* Plain Content Unchanged fields must still drop at Summary — only kind
+   riders are exempt from level gates. *)
+let test_content_unchanged_drops_at_summary () =
+  let item =
+    Item
+      { name = "Strip";
+        change = Modified;
+        domain_type = DTTrack;
+        children =
+          [ Field { name = "Send A"; change = Unchanged;
+                    domain_type = DTTrack; kind = Content;
+                    oldval = None; newval = Some (Ffloat 0.25) } ];
+      }
+  in
+  let obj = one (render_one (cfg_of Summary) item) in
+  let has_children =
+    match obj with
+    | `Assoc members -> List.mem_assoc "children" members
+    | _ -> false
+  in
+  Alcotest.(check bool) "no children key at Summary" false has_children
+
+(* Review Focus 5: a liveset with no tempo/TS/meta riders must render
+   header/counts only, with no phantom children key. change = Modified so
+   the item survives cfg_of Summary (unchanged = Ignore would drop it
+   before the DTLiveset Summary branch is even reached). *)
+let test_liveset_without_meta_fields_has_no_children_at_summary () =
+  let item =
+    Item
+      { name = "LiveSet";
+        change = Modified;
+        domain_type = DTLiveset;
+        children = [];
+      }
+  in
+  let obj = one (render_one (cfg_of Summary) item) in
+  let has_children =
+    match obj with
+    | `Assoc members -> List.mem_assoc "children" members
+    | _ -> false
+  in
+  Alcotest.(check bool) "liveset without meta fields has no children"
+    false has_children
+
 let tests =
   [
     "element Summary", `Quick, test_elem_summary;
@@ -440,6 +581,10 @@ let tests =
     "NaN float serializes to null", `Quick, test_nan_float_is_null;
     "Infinity float serializes to null", `Quick, test_infinity_float_is_null;
     "finite float stays a number", `Quick, test_finite_float_is_number;
+    "field kind serializes", `Quick, test_field_kind_serializes;
+    "context kind rides summary", `Quick, test_context_kind_rides_summary;
+    "content unchanged drops at summary", `Quick, test_content_unchanged_drops_at_summary;
+    "liveset without meta fields", `Quick, test_liveset_without_meta_fields_has_no_children_at_summary;
   ]
 
 let () = Alcotest.run "Json renderer detail levels" [ "json_renderer", tests ]

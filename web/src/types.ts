@@ -24,11 +24,16 @@ export type DomainType =
 
 export type FieldValue = number | string | boolean;
 
+export type FieldKind = "Content" | "Context" | "Identity";
+
 export interface FieldView {
   type: "field";
   name: string;
   change: ChangeType;
   domain_type: DomainType;
+  // ADR 0001: role the backend stamped at emission. Absent on artifacts
+  // produced before the kind key existed.
+  kind?: FieldKind;
   old_value?: FieldValue;
   new_value?: FieldValue;
 }

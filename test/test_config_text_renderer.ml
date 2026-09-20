@@ -17,7 +17,7 @@ let make_test_item ~name ~change ~domain_type ~fields =
         Field {
           name = n;
           change;
-          domain_type = DTOther;
+          domain_type = DTOther; kind = Content;
           oldval = Option.map (fun x -> Fstring x) o;
           newval = Option.map (fun x -> Fstring x) v;
         }
@@ -38,7 +38,7 @@ let simple_field_item name change field_name old_val new_val =
       Field {
         name = field_name;
         change;
-        domain_type = DTOther;
+        domain_type = DTOther; kind = Content;
         oldval = Option.map (fun x -> Fstring x) old_val;
         newval = Option.map (fun x -> Fstring x) new_val;
       }
@@ -315,7 +315,7 @@ let test_inline_with_custom_indent () =
       change = Added;
       domain_type = DTOther;
       children = [
-        Field { name = "Field"; change = Added; domain_type = DTOther; oldval = None; newval = Some (Fstring "value") };
+        Field { name = "Field"; change = Added; domain_type = DTOther; kind = Content; oldval = None; newval = Some (Fstring "value") };
         child_item;
       ]
     } in
