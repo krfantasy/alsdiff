@@ -9,6 +9,12 @@ open Presentation_model
 let opt_view (wrap : 'a -> view) (x : 'a option) : view list =
   Option.to_list (Option.map wrap x)
 
+(** [track_id_of t] returns the identity id of a track value (0 for Main). *)
+let track_id_of = function
+  | Track.Midi t -> t.Track.MidiTrack.id
+  | Track.Audio t | Track.Group t | Track.Return t -> t.Track.AudioTrack.id
+  | Track.Main _ -> 0
+
 
 (** ViewBuilder module - uses the unified 3-type system (Field, Item, Collection) *)
 module ViewBuilder = struct
@@ -190,6 +196,176 @@ module ViewBuilder = struct
     if items = [] then None
     else Some { name; change = change_type; domain_type; items }
 
+end
+
+
+(* ==================== Reference Context (the old document) ==================== *)
+
+(** [Ctx] is the generic context-resolution layer: the old (pre-change)
+    document, indexed by id at each domain scope, queried by item builders.
+    Built once per projection; [empty] is the no-reference context — every
+    lookup returns [None].
+
+    Id scoping mirrors the schema: track ids are global across a liveset's
+    tracks and returns (siblings of one XML <Tracks> element); id 0 is the
+    Main-track sentinel, so [track ~id:0] is always [None] while
+    [automation ~track_id:0] resolves within the Main track's automations.
+    Clip, automation, note and event ids are local to their container, so
+    their lookups take the full scope path.
+
+    Sub-entity tables are memoized lazily per parent: a clip with thousands
+    of notes indexes its notes once on the first changed note, not once per
+    note (same rationale as the per-clip tables this module replaces). A
+    memoized [None] means "parent absent in the old document" and is cached
+    too, so repeated lookups of an added child's id never rescan. *)
+module Ctx : sig
+  type t
+
+  val empty : t
+  (** No old document: every lookup returns [None]. *)
+
+  val of_liveset : Liveset.t -> t
+  (** Index [ls.tracks @ ls.returns] and [ls.main]. *)
+
+  val of_track_list : main:Track.MainTrack.t option -> Track.t list -> t
+  (** Index an explicit track list — narrow callers and tests. *)
+
+  val track : t -> id:int -> Track.t option
+  val main_track : t -> Track.MainTrack.t option
+
+  val midi_clip : t -> track_id:int -> id:int -> Clip.MidiClip.t option
+  val audio_clip : t -> track_id:int -> id:int -> Clip.AudioClip.t option
+  val automation : t -> track_id:int -> id:int -> Automation.t option
+  (** [automation ~track_id:0] resolves within the Main track's automations. *)
+
+  val midi_note : t -> track_id:int -> clip_id:int -> id:int -> Clip.MidiNote.t option
+  val envelope_event :
+    t -> track_id:int -> automation_id:int -> id:int -> Automation.EnvelopeEvent.t option
+end = struct
+  type t = {
+    tracks : (int, Track.t) Hashtbl.t;
+    main : Track.MainTrack.t option;
+    (* Lazy per-parent memo tables; a [None] value memoizes "parent absent". *)
+    midi_clips : (int, (int, Clip.MidiClip.t) Hashtbl.t option) Hashtbl.t;
+    audio_clips : (int, (int, Clip.AudioClip.t) Hashtbl.t option) Hashtbl.t;
+    automations : (int, (int, Automation.t) Hashtbl.t option) Hashtbl.t;
+    notes : (int * int, (int, Clip.MidiNote.t) Hashtbl.t option) Hashtbl.t;
+    events : (int * int, (int, Automation.EnvelopeEvent.t) Hashtbl.t option) Hashtbl.t;
+  }
+
+  let of_track_list ~(main : Track.MainTrack.t option) (tracks : Track.t list) : t =
+    let tbl = Hashtbl.create 16 in
+    List.iter (fun t -> Hashtbl.add tbl (track_id_of t) t) tracks;
+    { tracks = tbl; main;
+      midi_clips = Hashtbl.create 8; audio_clips = Hashtbl.create 8;
+      automations = Hashtbl.create 8; notes = Hashtbl.create 8;
+      events = Hashtbl.create 8 }
+
+  let of_liveset (ls : Liveset.t) : t =
+    let main = match ls.Liveset.main with Track.Main m -> Some m | _ -> None in
+    of_track_list ~main (ls.Liveset.tracks @ ls.Liveset.returns)
+
+  let empty = of_track_list ~main:None []
+
+  let track (c : t) ~(id : int) : Track.t option =
+    if id = 0 then None else Hashtbl.find_opt c.tracks id
+
+  let main_track (c : t) : Track.MainTrack.t option = c.main
+
+  (* [memo_parent tbl ~key ~build] returns the id-keyed table for [key],
+     building and memoizing it — including the [None] case — on first use.
+     Returns ['v option]: a memoized [None] means "parent absent". *)
+  let memo_parent (tbl : ('k, 'v option) Hashtbl.t) ~key (build : unit -> 'v option)
+    : 'v option =
+    match Hashtbl.find_opt tbl key with
+    | Some v -> v
+    | None ->
+      let v = build () in
+      Hashtbl.replace tbl key v;
+      v
+
+  let midi_clip (c : t) ~(track_id : int) ~(id : int) : Clip.MidiClip.t option =
+    match
+      memo_parent c.midi_clips ~key:track_id (fun () ->
+          match track c ~id:track_id with
+          | Some (Track.Midi t) ->
+            let tbl = Hashtbl.create 16 in
+            List.iter (fun (cl : Clip.MidiClip.t) ->
+                Hashtbl.replace tbl cl.Clip.MidiClip.id cl) t.Track.MidiTrack.clips;
+            Some tbl
+          | _ -> None)
+    with
+    | None -> None
+    | Some clips -> Hashtbl.find_opt clips id
+
+  let audio_clip (c : t) ~(track_id : int) ~(id : int) : Clip.AudioClip.t option =
+    match
+      memo_parent c.audio_clips ~key:track_id (fun () ->
+          match track c ~id:track_id with
+          | Some (Track.Audio t | Track.Group t | Track.Return t) ->
+            let tbl = Hashtbl.create 16 in
+            List.iter (fun (cl : Clip.AudioClip.t) ->
+                Hashtbl.replace tbl cl.Clip.AudioClip.id cl) t.Track.AudioTrack.clips;
+            Some tbl
+          | _ -> None)
+    with
+    | None -> None
+    | Some clips -> Hashtbl.find_opt clips id
+
+  let track_automations (t : Track.t) : Automation.t list =
+    match t with
+    | Track.Midi x -> x.Track.MidiTrack.automations
+    | Track.Audio x | Track.Group x | Track.Return x -> x.Track.AudioTrack.automations
+    | Track.Main x -> x.Track.MainTrack.automations
+
+  let automation (c : t) ~(track_id : int) ~(id : int) : Automation.t option =
+    match
+      memo_parent c.automations ~key:track_id (fun () ->
+          let autos =
+            if track_id = 0 then
+              Option.map (fun (m : Track.MainTrack.t) -> m.Track.MainTrack.automations) c.main
+            else Option.map track_automations (track c ~id:track_id)
+          in
+          match autos with
+          | None -> None
+          | Some autos ->
+            let tbl = Hashtbl.create 8 in
+            List.iter (fun (a : Automation.t) ->
+                Hashtbl.replace tbl a.Automation.id a) autos;
+            Some tbl)
+    with
+    | None -> None
+    | Some tbl -> Hashtbl.find_opt tbl id
+
+  let midi_note (c : t) ~(track_id : int) ~(clip_id : int) ~(id : int)
+    : Clip.MidiNote.t option =
+    match
+      memo_parent c.notes ~key:(track_id, clip_id) (fun () ->
+          match midi_clip c ~track_id ~id:clip_id with
+          | None -> None
+          | Some cl ->
+            let tbl = Hashtbl.create 64 in
+            List.iter (fun (n : Clip.MidiNote.t) ->
+                Hashtbl.replace tbl n.Clip.MidiNote.id n) cl.Clip.MidiClip.notes;
+            Some tbl)
+    with
+    | None -> None
+    | Some notes -> Hashtbl.find_opt notes id
+
+  let envelope_event (c : t) ~(track_id : int) ~(automation_id : int) ~(id : int)
+    : Automation.EnvelopeEvent.t option =
+    match
+      memo_parent c.events ~key:(track_id, automation_id) (fun () ->
+          match automation c ~track_id ~id:automation_id with
+          | None -> None
+          | Some a ->
+            let tbl = Hashtbl.create 32 in
+            List.iter (fun (e : Automation.EnvelopeEvent.t) ->
+                Hashtbl.replace tbl e.Automation.EnvelopeEvent.id e) a.Automation.events;
+            Some tbl)
+    with
+    | None -> None
+    | Some events -> Hashtbl.find_opt events id
 end
 
 
@@ -1430,12 +1606,6 @@ let dispatch_track_change
   | `Added (Track.Main _) | `Removed (Track.Main _) | `Modified (Track.Patch.MainPatch _) -> None
   | `Unchanged -> None
 
-
-(** [track_id_of t] returns the identity id of a track value (0 for Main). *)
-let track_id_of = function
-  | Track.Midi t -> t.Track.MidiTrack.id
-  | Track.Audio t | Track.Group t | Track.Return t -> t.Track.AudioTrack.id
-  | Track.Main _ -> 0
 
 (** [patch_track_id_of p] returns the identity id of a track patch (0 for MainPatch). *)
 let patch_track_id_of = function

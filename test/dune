@@ -239,6 +239,11 @@
  (libraries alsdiff_base alsdiff_live alsdiff_output alcotest))
 
 (test
+ (name test_projector_context)
+ (modules test_projector_context track_helpers)
+ (libraries alsdiff_base alsdiff_live alsdiff_output alcotest))
+
+(test
  (name test_stats_renderer)
  (modules test_stats_renderer)
  (libraries alsdiff_output alcotest))
