@@ -47,6 +47,15 @@ let find_item_in_collection name (col : collection) =
       ) col.items |> get_item
   with Not_found -> failwith ("Item starting with '" ^ name ^ "' not found in collection")
 
+(* Ctx fixtures: the old document is one Midi track (id 1) holding [clips] /
+   [automations]; enough for every leaf-builder reference test. *)
+let make_track1_ctx (clips : Clip.MidiClip.t list) : Ctx.t =
+  Ctx.of_track_list ~main:None [Track.Midi (Track_helpers.make_midi_track ~clips 1 "T")]
+
+let make_track1_auto_ctx (automations : Automation.t list) : Ctx.t =
+  Ctx.of_track_list ~main:None
+    [Track.Midi (Track_helpers.make_midi_track ~automations 1 "T")]
+
 
 (* ========== ViewBuilder Module Tests ========== *)
 
@@ -84,7 +93,7 @@ let test_create_note_item_added () =
   let note = { MidiNote.id = 1; note = 60; time = 0.0; duration = 1.0; velocity = 100.0; off_velocity = 64.0 } in
   let change = `Added note in
 
-  let item = create_note_item change in
+  let item = create_note_item ~ctx:Ctx.empty ~track_id:1 ~clip_id:9 change in
 
   check bool "Name starts with 'Note'" true (String.starts_with ~prefix:"Note" item.name);
   check bool "Item is Added" true (item.change = Added);
@@ -105,7 +114,7 @@ let test_create_note_item_modified () =
   let patch = MidiNote.diff old_note new_note in
   let change = `Modified patch in
 
-  let item = create_note_item change in
+  let item = create_note_item ~ctx:Ctx.empty ~track_id:1 ~clip_id:9 change in
 
   check bool "Item is Modified" true (item.change = Modified);
 
@@ -127,7 +136,9 @@ let test_modified_note_reference_context () =
   (* only velocity changes *)
   let new_note = { old_note with velocity = 110.0 } in
   let patch = MidiNote.diff old_note new_note in
-  let item = create_note_item ~reference_note:old_note (`Modified patch) in
+  let item =
+    create_note_item ~ctx:(make_track1_ctx [Track_helpers.make_clip 9 [old_note]])
+      ~track_id:1 ~clip_id:9 (`Modified patch) in
   check string "note name includes pitch" "Note E3 (52)" item.name;
   let note_field = get_field (find_view_by_name "Note" item.children) in
   check bool "Note field is Unchanged context" true (note_field.change = Unchanged);
@@ -152,7 +163,7 @@ let test_modified_note_no_reference_falls_back_to_id_name () =
   let old_note = { MidiNote.id = 7; note = 52; time = 4.0; duration = 11.0; velocity = 102.0; off_velocity = 64.0 } in
   let new_note = { old_note with velocity = 110.0 } in
   let patch = MidiNote.diff old_note new_note in
-  let item = create_note_item (`Modified patch) in
+  let item = create_note_item ~ctx:Ctx.empty ~track_id:1 ~clip_id:9 (`Modified patch) in
   check string "note name falls back to id" "Note (#7)" item.name;
   check bool "no Note context field without reference" true
     (not (List.exists (function Field { name = "Note"; _ } -> true | _ -> false) item.children))
@@ -164,7 +175,8 @@ let test_create_note_item_sharp_style () =
   let change = `Added note in
 
   (* Test with explicit Sharp style *)
-  let item = create_note_item ~note_name_style:Sharp change in
+  let item =
+    create_note_item ~ctx:Ctx.empty ~track_id:1 ~clip_id:9 ~note_name_style:Sharp change in
 
   check string "Item name contains F#3" "Note F#3 (54)" item.name;
   check bool "Item is Added" true (item.change = Added)
@@ -175,7 +187,8 @@ let test_create_note_item_flat_style () =
   let note = { MidiNote.id = 1; note = 54; time = 0.0; duration = 1.0; velocity = 100.0; off_velocity = 64.0 } in
   let change = `Added note in
 
-  let item = create_note_item ~note_name_style:Flat change in
+  let item =
+    create_note_item ~ctx:Ctx.empty ~track_id:1 ~clip_id:9 ~note_name_style:Flat change in
 
   check string "Item name contains Gb3" "Note Gb3 (54)" item.name;
   check bool "Item is Added" true (item.change = Added)
@@ -186,7 +199,8 @@ let test_create_note_item_flat_style_ab_note () =
   let note = { MidiNote.id = 1; note = 56; time = 0.0; duration = 1.0; velocity = 100.0; off_velocity = 64.0 } in
   let change = `Added note in
 
-  let item = create_note_item ~note_name_style:Flat change in
+  let item =
+    create_note_item ~ctx:Ctx.empty ~track_id:1 ~clip_id:9 ~note_name_style:Flat change in
 
   check string "Item name contains Ab3" "Note Ab3 (56)" item.name;
   check bool "Item is Added" true (item.change = Added)
@@ -197,7 +211,7 @@ let test_create_note_item_default_is_sharp () =
   let note = { MidiNote.id = 1; note = 54; time = 0.0; duration = 1.0; velocity = 100.0; off_velocity = 64.0 } in
   let change = `Added note in
 
-  let item = create_note_item change in
+  let item = create_note_item ~ctx:Ctx.empty ~track_id:1 ~clip_id:9 change in
 
   check string "Default style is Sharp (F#3)" "Note F#3 (54)" item.name
 
@@ -230,7 +244,7 @@ let test_create_midi_clip_item () =
   let change = `Modified clip_patch in
 
   (* Execute *)
-  let item = create_midi_clip_item change in
+  let item = create_midi_clip_item ~ctx:Ctx.empty ~track_id:1 change in
 
   (* Verify - item name contains MidiClip *)
   check bool "Item name contains MidiClip" true (String.starts_with ~prefix:"MidiClip" item.name);
@@ -301,7 +315,7 @@ let test_inline_field_inherits_parent_domain () =
     signature = `Unchanged;
     notes = [];
   } in
-  let item = create_midi_clip_item (`Modified clip_patch) in
+  let item = create_midi_clip_item ~ctx:Ctx.empty ~track_id:1 (`Modified clip_patch) in
   check bool "parent item keeps DTClip domain" true (item.domain_type = DTClip);
   let name_field = get_field (find_view_by_name "Name" item.children) in
   check bool "inline Name field inherits parent DTClip domain" true
@@ -324,7 +338,7 @@ let test_create_audio_clip_item_added () =
   } in
 
   let change = `Added clip in
-  let item = create_audio_clip_item change in
+  let item = create_audio_clip_item ~ctx:Ctx.empty ~track_id:1 change in
 
   check bool "Item name contains AudioClip" true (String.starts_with ~prefix:"AudioClip" item.name);
   check bool "Item is Added" true (item.change = Added);
@@ -355,7 +369,8 @@ let build_automation_item_from_event_patch event_patch =
     target = 2;
     events = [`Modified event_patch];
   } in
-  create_automation_item ~get_pointee_name:(fun _ -> "Target") (`Modified automation_patch)
+  create_automation_item ~ctx:Ctx.empty ~track_id:1
+    ~get_pointee_name:(fun _ -> "Target") (`Modified automation_patch)
 
 let get_single_event_item item =
   check int "single events collection" 1 (List.length item.children);
@@ -487,7 +502,10 @@ let test_curve_only_event_carries_time_value_context () =
   let new_event = { old_event with curve = Some curve } in
   let ev_patch = Automation.EnvelopeEvent.diff old_event new_event in
   (* the patch's time/value are Unchanged; only curve moved *)
-  let item = create_events_item ~reference_event:old_event (`Modified ev_patch) in
+  let item =
+    create_events_item
+      ~ctx:(make_track1_auto_ctx [Track_helpers.make_automation 2 8 [old_event]])
+      ~track_id:1 ~automation_id:2 (`Modified ev_patch) in
   let time_field = get_field (find_view_by_name "Time" item.children) in
   check bool "Time context is Unchanged" true (time_field.change = Unchanged);
   (match time_field.newval with
@@ -513,7 +531,8 @@ let build_automation_item_added () =
         curve = None;
       }];
   } in
-  create_automation_item ~get_pointee_name:(fun _ -> "Target") (`Added automation)
+  create_automation_item ~ctx:Ctx.empty ~track_id:1
+    ~get_pointee_name:(fun _ -> "Target") (`Added automation)
 
 let build_automation_item_removed () =
   let automation = {
@@ -526,7 +545,8 @@ let build_automation_item_removed () =
         curve = None;
       }];
   } in
-  create_automation_item ~get_pointee_name:(fun _ -> "Target") (`Removed automation)
+  create_automation_item ~ctx:Ctx.empty ~track_id:1
+    ~get_pointee_name:(fun _ -> "Target") (`Removed automation)
 
 let test_create_automation_item_added_event_summary () =
   let item = build_automation_item_added () in
@@ -929,13 +949,13 @@ let test_reference_fills_modified_clip_sections () =
   let c2 = mk_clip "New" in
   let patch = Clip.MidiClip.diff c1 c2 in
   (* WITHOUT reference: the unchanged sections stay empty placeholders. *)
-  let item_no_ref = create_midi_clip_item (`Modified patch) in
+  let item_no_ref = create_midi_clip_item ~ctx:Ctx.empty ~track_id:1 (`Modified patch) in
   check bool "without reference: clip is Modified" true (item_no_ref.change = Modified);
   check bool "without reference: Loop is empty placeholder" true
     ((get_item (find_view_by_name "Loop" item_no_ref.children)).children = []);
   (* WITH reference: sections populated from the reference clip, restamped
      Unchanged, carrying the reference values (3/8 signature, loop on). *)
-  let item = create_midi_clip_item ~reference_clips:[ c1 ] (`Modified patch) in
+  let item = create_midi_clip_item ~ctx:(make_track1_ctx [c1]) ~track_id:1 (`Modified patch) in
   check bool "with reference: clip is Modified" true (item.change = Modified);
   let loop = get_item (find_view_by_name "Loop" item.children) in
   check bool "with reference: Loop is Unchanged" true (loop.change = Unchanged);

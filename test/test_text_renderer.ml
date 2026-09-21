@@ -536,7 +536,7 @@ let test_inline_field_survives_type_override () =
     signature = `Unchanged;
     notes = [];
   } in
-  let view = Item (create_midi_clip_item (`Modified clip_patch)) in
+  let view = Item (create_midi_clip_item ~ctx:Ctx.empty ~track_id:1 (`Modified clip_patch)) in
   let cfg = {
     full with
     modified = Ignore;

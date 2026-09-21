@@ -682,16 +682,29 @@ let make_time_field (fmt : dual_time_formatter) name get_v get_p = {
 let default_note_name_style = Sharp
 
 (** [create_note_item] builds a [item] for a single note change (new type system).
+    @param ctx the old-document context; the old note (resolved by id within
+      the (track, clip) scope) backs a Modified note's unchanged leaf fields
+    @param track_id the enclosing track's identity id (ctx scope)
+    @param clip_id the enclosing clip's identity id (ctx scope)
     @param note_name_style the style to use for note names (Sharp or Flat)
     @param c the note structured change
 *)
 let create_note_item
+    ~(ctx : Ctx.t)
+    ~(track_id : int)
+    ~(clip_id : int)
     ?(note_name_style : note_display_style = default_note_name_style)
     ?(format_time : dual_time_formatter = default_dual_time_formatter)
-    ?(reference_note : Clip.MidiNote.t option)
     (c : (Clip.MidiNote.t, Clip.MidiNote.Patch.t) structured_change)
   : item =
   let open Clip.MidiNote in
+  (* The old note backs a Modified note's unchanged leaf fields as context
+     (see the fill below); its absence (no old document, added clip) keeps
+     the patch-only emission. *)
+  let reference_note = match c with
+    | `Modified np -> Ctx.midi_note ctx ~track_id ~clip_id ~id:np.Patch.id
+    | _ -> None
+  in
   let specs = [
     make_time_field format_time "Time" (fun (x : t) -> x.time) (fun (x : Patch.t) -> x.time);
     make_float "Duration" (fun (x : t) -> x.duration) (fun (x : Patch.t) -> x.duration);
@@ -725,14 +738,14 @@ let create_note_item
     let present name = List.exists (function
         | Field f -> f.name = name
         | _ -> false) item.children in
-    let ctx = build_value_field_views specs Added ref ~domain_type:DTNote
+    let context = build_value_field_views specs Added ref ~domain_type:DTNote
       |> List.filter_map (fun v ->
           match v with
           | Field ({ name; _ } as f) when not (present name) ->
             Some (view_to_unchanged (Field f))
           | _ -> None)
     in
-    { item with children = ctx @ item.children }
+    { item with children = context @ item.children }
   | _ -> item
 
 
@@ -895,16 +908,28 @@ module VersionVS = Liveset.Version.ViewSpec(DeviceViewSpecB)
 
 
 (** [create_events_item] builds a [item] for an envelope event change (new type system).
-    @param reference_event the old (reference) event for a `` `Modified `` change: unchanged
-    leaf fields carry no values in the patch, so they are re-attached from the reference
-    as Unchanged context (mirroring [create_note_item]). A curve-only edit otherwise emits
-    just the Curve child with no Time/Value to place the event by. *)
+    @param ctx the old-document context; the old event (resolved by id within
+      the (track, automation) scope) re-attaches unchanged leaf fields for a
+      `` `Modified `` change (mirroring [create_note_item]). A curve-only edit
+      otherwise emits just the Curve child with no Time/Value to place the
+      event by.
+    @param track_id the enclosing track's identity id (ctx scope; 0 = Main)
+    @param automation_id the enclosing automation's identity id (ctx scope)
+*)
 let create_events_item
+    ~(ctx : Ctx.t)
+    ~(track_id : int)
+    ~(automation_id : int)
     ?(format_time : dual_time_formatter = default_dual_time_formatter)
-    ?(reference_event : Automation.EnvelopeEvent.t option)
     (c : (Automation.EnvelopeEvent.t, Automation.EnvelopeEvent.Patch.t) structured_change)
   : item =
   let open Automation in
+  let reference_event = match c with
+    | `Modified ep ->
+      Ctx.envelope_event ctx ~track_id ~automation_id
+        ~id:ep.Automation.EnvelopeEvent.Patch.id
+    | _ -> None
+  in
   let base_specs = [
     make_time_field format_time "Time" (fun (x : EnvelopeEvent.t) -> x.time) (fun (x : EnvelopeEvent.Patch.t) -> x.time);
     make_spec event_value_to_field_value "Value"
@@ -930,14 +955,14 @@ let create_events_item
     let present name = List.exists (function
         | Field f -> f.name = name
         | _ -> false) item.children in
-    let ctx = build_value_field_views base_specs Added ref ~domain_type:DTEvent
+    let context = build_value_field_views base_specs Added ref ~domain_type:DTEvent
       |> List.filter_map (fun v ->
           match v with
           | Field ({ name; _ } as f) when not (present name) ->
             Some (view_to_unchanged (Field f))
           | _ -> None)
     in
-    { item with children = ctx @ item.children }
+    { item with children = context @ item.children }
   | _ -> item
 
 
@@ -966,55 +991,42 @@ let fill_clip_section_placeholders
 (** [create_midi_clip_item] creates a [item] from a MidiClip structured change.
     The PPX generates inline fields (name, start/end time), the Loop child,
     the TimeSignature child, and the Notes collection, threading format_time
-    parent->child so Loop's time fields render correctly. *)
+    parent->child so Loop's time fields render correctly. Modified notes
+    resolve their old values through [ctx], keyed by this clip's identity id
+    ([Ctx] memoizes the note table once per clip); the same ctx-resolved old
+    clip fills the empty Unchanged Loop/TimeSignature section placeholders. *)
 let create_midi_clip_item
+    ~(ctx : Ctx.t)
+    ~(track_id : int)
     ?(note_name_style : note_display_style = default_note_name_style)
     ?(format_time : dual_time_formatter = default_dual_time_formatter)
-    ?(reference_clips : Clip.MidiClip.t list option)
     (c : (Clip.MidiClip.t, Clip.MidiClip.Patch.t) structured_change)
   : item =
   let name = build_midi_clip_section_name c in
-  (* For a Modified clip, resolve the old clip (matched by clip id) once: its
-     notes back Modified notes' unchanged fields as context, and its
-     Loop/TimeSignature values fill the empty Unchanged section placeholders
-     the patch path emits for unchanged sub-structures. The note table is
-     indexed once per clip: the per-note lookup below runs for every changed
-     note, and a linear scan there would make projection quadratic in the
-     clip's note count (realistic clips hold thousands of notes). *)
-  let ref_clip = match c, reference_clips with
-    | `Modified cp, Some clips ->
-      List.find_opt (fun (rc : Clip.MidiClip.t) -> rc.Clip.MidiClip.id = cp.Clip.MidiClip.Patch.id) clips
-    | _ -> None
-  in
-  let ref_notes = match ref_clip with
-    | None -> None
-    | Some rc ->
-      let tbl = Hashtbl.create 64 in
-      List.iter (fun (rn : Clip.MidiNote.t) ->
-          Hashtbl.replace tbl rn.Clip.MidiNote.id rn) rc.Clip.MidiClip.notes;
-      Some tbl
+  let clip_id = match c with
+    | `Added cl | `Removed cl -> cl.Clip.MidiClip.id
+    | `Modified p -> p.Clip.MidiClip.Patch.id
+    | `Unchanged -> -1
   in
   let specs = MidiClipVS.section_specs ~format_time
-      ~build_notes:(fun nc ->
-          create_note_item ~note_name_style ~format_time
-            ?reference_note:(match nc, ref_notes with
-                | `Modified np, Some notes ->
-                  Hashtbl.find_opt notes np.Clip.MidiNote.Patch.id
-                | _ -> None)
-            nc) in
+      ~build_notes:(create_note_item ~ctx ~track_id ~clip_id
+                      ~note_name_style ~format_time) in
   let item = build_item_from_specs ~name ~domain_type:DTClip ~specs c in
-  match c, ref_clip with
-  | `Modified _, Some ref ->
-    fill_clip_section_placeholders
-      ~fills:[
-        ("Loop",
-         List.map view_to_unchanged
-           (ClipLoopVS.build_value_children ~format_time Added ref.Clip.MidiClip.loop));
-        ("TimeSignature",
-         List.map view_to_unchanged
-           (ClipTimeSignatureVS.build_value_children ~format_time Added ref.Clip.MidiClip.signature));
-      ]
-      item
+  match c with
+  | `Modified cp ->
+    (match Ctx.midi_clip ctx ~track_id ~id:cp.Clip.MidiClip.Patch.id with
+     | Some ref ->
+       fill_clip_section_placeholders
+         ~fills:[
+           ("Loop",
+            List.map view_to_unchanged
+              (ClipLoopVS.build_value_children ~format_time Added ref.Clip.MidiClip.loop));
+           ("TimeSignature",
+            List.map view_to_unchanged
+              (ClipTimeSignatureVS.build_value_children ~format_time Added ref.Clip.MidiClip.signature));
+         ]
+         item
+     | None -> item)
   | _ -> item
 
 (** [create_audio_clip_item] creates a [item] from an AudioClip structured change.
@@ -1022,17 +1034,17 @@ let create_midi_clip_item
     the TimeSignature child, the SampleRef child, and the Fade child, threading
     format_time parent->child so Loop's time fields render correctly. *)
 let create_audio_clip_item
+    ~(ctx : Ctx.t)
+    ~(track_id : int)
     ?(format_time : dual_time_formatter = default_dual_time_formatter)
-    ?(reference_clips : Clip.AudioClip.t list option)
     (c : (Clip.AudioClip.t, Clip.AudioClip.Patch.t) structured_change)
   : item =
   let name = build_audio_clip_section_name c in
   let specs = AudioClipVS.section_specs ~format_time in
   let item = build_item_from_specs ~name ~domain_type:DTClip ~specs c in
-  match c, reference_clips with
-  | `Modified cp, Some clips ->
-    (match List.find_opt (fun (rc : Clip.AudioClip.t) ->
-         rc.Clip.AudioClip.id = cp.Clip.AudioClip.Patch.id) clips with
+  match c with
+  | `Modified cp ->
+    (match Ctx.audio_clip ctx ~track_id ~id:cp.Clip.AudioClip.Patch.id with
      | None -> item
      | Some ref ->
        let fade_children = match ref.Clip.AudioClip.fade with
@@ -1061,21 +1073,28 @@ let create_audio_clip_item
 
 
 (** [create_automation_item] builds a [item] for an automation change (new type system).
+    @param ctx the old-document context; the old automation (resolved by id
+      within the track scope) supplies per-event references for `` `Modified ``
+      events so unchanged event fields can be re-attached as context (see
+      [create_events_item])
+    @param track_id the enclosing track's identity id (ctx scope; 0 = Main)
     @param get_pointee_name function to resolve pointee IDs to names
-    @param reference_automations the old track's automations: for a `` `Modified ``
-      automation, the old automation (matched by patch id) supplies per-event
-      references so unchanged event fields can be re-attached as context
-      (see [create_events_item]).
     @param c the automation structured change
 *)
 let create_automation_item
+    ~(ctx : Ctx.t)
+    ~(track_id : int)
     ~(get_pointee_name : int -> string)
     ?(format_time : dual_time_formatter = default_dual_time_formatter)
-    ?(reference_automations : Automation.t list option)
     (c : (Automation.t, Automation.Patch.t) structured_change)
   : item =
   let open Automation in
   let change_type = ViewBuilder.change_type_of c in
+  let automation_id = match c with
+    | `Added a | `Removed a -> a.Automation.id
+    | `Modified patch -> patch.Automation.Patch.id
+    | `Unchanged -> -1
+  in
   let automation_name = match c with
     | `Added a | `Removed a ->
       Printf.sprintf "Automation (id=%d, target=%s)" a.id (get_pointee_name a.target)
@@ -1095,44 +1114,30 @@ let create_automation_item
       (tag : EnvelopeEvent.t -> (EnvelopeEvent.t, EnvelopeEvent.Patch.t) structured_change)
       (events : EnvelopeEvent.t list) : view list =
     events |> List.map (fun e ->
-        let event_item = create_events_item ~format_time (tag e) in
+        let event_item =
+          create_events_item ~ctx ~track_id ~automation_id ~format_time (tag e) in
         Item { event_item with name = Printf.sprintf "Event[%d]" e.Automation.EnvelopeEvent.id })
   in
-  (* For a Modified automation, resolve the old automation's events (matched by
-     automation id) so Modified events can render their unchanged fields as
-     context. Indexed once per automation: the per-event lookup below runs for
-     every changed event (same quadratic-scan hazard as the notes path). *)
-  let ref_events = match c, reference_automations with
-    | `Modified patch, Some autos ->
-      List.find_opt (fun (ra : Automation.t) -> ra.Automation.id = patch.Automation.Patch.id) autos
-      |> Option.map (fun (ra : Automation.t) ->
-          let tbl = Hashtbl.create 64 in
-          List.iter (fun (re : EnvelopeEvent.t) ->
-              Hashtbl.replace tbl re.EnvelopeEvent.id re) ra.Automation.events;
-          tbl)
-    | _ -> None
-  in
+  (* Modified events resolve their old values through [ctx] themselves, keyed
+     by this automation's identity id; [Ctx] memoizes the event table once per
+     (track, automation) — same quadratic-scan rationale as the notes path. *)
   let event_children : view list =
     match c with
     | `Modified patch ->
-      let events = patch.events |> List.map (fun event_change ->
-          let reference_event = match event_change, ref_events with
-            | `Modified ep, Some events ->
-              Hashtbl.find_opt events ep.Automation.EnvelopeEvent.Patch.id
-            | _ -> None
-          in
-          let event_id = match event_change with
-            | `Added e -> e.Automation.EnvelopeEvent.id
-            | `Removed e -> e.Automation.EnvelopeEvent.id
-            | `Modified p -> p.Automation.EnvelopeEvent.Patch.id
-            | `Unchanged -> -1
-          in
+      let events = patch.events |> List.filter_map (fun event_change ->
           match event_change with
           | `Unchanged -> None
           | _ ->
-            let event_item = create_events_item ~format_time ?reference_event event_change in
-            Some (Item { event_item with name = Printf.sprintf "Event[%d]" event_id })
-        ) |> List.filter_map Fun.id in
+            let event_id = match event_change with
+              | `Added e -> e.Automation.EnvelopeEvent.id
+              | `Removed e -> e.Automation.EnvelopeEvent.id
+              | `Modified p -> p.Automation.EnvelopeEvent.Patch.id
+              | `Unchanged -> -1
+            in
+            let event_item =
+              create_events_item ~ctx ~track_id ~automation_id ~format_time event_change in
+            Some (Item { event_item with name = Printf.sprintf "Event[%d]" event_id }))
+      in
       wrap_events events
     | `Added a -> wrap_events (render_value_events (fun e -> `Added e) a.events)
     | `Removed r -> wrap_events (render_value_events (fun e -> `Removed e) r.events)
@@ -1342,12 +1347,21 @@ let create_midi_track_item
     ?(reference_track : Track.MidiTrack.t option)
     (c : (Track.MidiTrack.t, Track.MidiTrack.Patch.t) structured_change)
   : item =
+  (* Transitional (deleted in the next task): leaf builders resolve context
+     through [ctx]; scope it to this single reference track here. *)
+  let ctx = match reference_track with
+    | Some rt -> Ctx.of_track_list ~main:None [Track.Midi rt]
+    | None -> Ctx.empty
+  in
+  let track_id = match c with
+    | `Modified p -> p.Track.MidiTrack.Patch.id
+    | `Added t | `Removed t -> t.Track.MidiTrack.id
+    | `Unchanged -> 0
+  in
   let item = MidiTrackVS.build_item
       ~format_time
-      ~build_clips:(create_midi_clip_item ~note_name_style ~format_time
-                      ?reference_clips:(Option.map (fun (rt : Track.MidiTrack.t) -> rt.Track.MidiTrack.clips) reference_track))
-      ~build_automations:(create_automation_item ~get_pointee_name ~format_time
-                            ?reference_automations:(Option.map (fun (rt : Track.MidiTrack.t) -> rt.Track.MidiTrack.automations) reference_track))
+      ~build_clips:(create_midi_clip_item ~ctx ~track_id ~note_name_style ~format_time)
+      ~build_automations:(create_automation_item ~ctx ~track_id ~get_pointee_name ~format_time)
       ~build_devices:(create_device_item ~format_time)
       ~name:(MidiTrackVS.build_section_name c)
       ~domain_type:DTTrack c in
@@ -1377,13 +1391,21 @@ let create_audio_like_track_item
     ?(reference_track : Track.AudioTrack.t option)
     (c : (Track.AudioTrack.t, Track.AudioTrack.Patch.t) structured_change)
   : item =
+  (* Transitional (deleted in the next task): leaf builders resolve context
+     through [ctx]; scope it to this single reference track here. *)
+  let ctx = match reference_track with
+    | Some rt -> Ctx.of_track_list ~main:None [Track.Audio rt]
+    | None -> Ctx.empty
+  in
+  let track_id = match c with
+    | `Modified p -> p.Track.AudioTrack.Patch.id
+    | `Added t | `Removed t -> t.Track.AudioTrack.id
+    | `Unchanged -> 0
+  in
   let item = AudioTrackVS.build_item
       ~format_time
-      ~build_clips:(create_audio_clip_item ~format_time
-                      ?reference_clips:(Option.map (fun (rt : Track.AudioTrack.t) ->
-                          rt.Track.AudioTrack.clips) reference_track))
-      ~build_automations:(create_automation_item ~get_pointee_name ~format_time
-                            ?reference_automations:(Option.map (fun (rt : Track.AudioTrack.t) -> rt.Track.AudioTrack.automations) reference_track))
+      ~build_clips:(create_audio_clip_item ~ctx ~track_id ~format_time)
+      ~build_automations:(create_automation_item ~ctx ~track_id ~get_pointee_name ~format_time)
       ~build_devices:(create_device_item ~format_time)
       ~name:(AudioTrackVS.build_section_name ~type_label:track_type_name c)
       ~domain_type:DTTrack c in
@@ -1459,13 +1481,19 @@ let create_main_track_item
     (c : (Track.MainTrack.t, Track.MainTrack.Patch.t) structured_change)
   : item =
   ignore (note_name_style : note_display_style);
+  (* Transitional (deleted in the next task): leaf builders resolve context
+     through [ctx]; the Main track rides [ctx.main] and its automations use
+     the id-0 sentinel scope. *)
+  let ctx = match reference_track with
+    | Some m -> Ctx.of_track_list ~main:(Some m) []
+    | None -> Ctx.empty
+  in
   let build_main
       (tag : (Track.MainTrack.t, Track.MainTrack.Patch.t) structured_change)
     : item =
     MainTrackVS.build_item
       ~format_time
-      ~build_automations:(create_automation_item ~get_pointee_name ~format_time
-                            ?reference_automations:(Option.map (fun (rt : Track.MainTrack.t) -> rt.Track.MainTrack.automations) reference_track))
+      ~build_automations:(create_automation_item ~ctx ~track_id:0 ~get_pointee_name ~format_time)
       ~build_devices:(create_device_item ~format_time)
       ~name:(MainTrackVS.build_section_name tag)
       ~domain_type:DTTrack tag
