@@ -1635,7 +1635,7 @@ let dispatch_track_change
     Some (Item (create_return_track_item ~ctx ~get_pointee_name ~note_name_style ~format_time (`Added t)))
   | `Removed (Track.Return t) ->
     Some (Item (create_return_track_item ~ctx ~get_pointee_name ~note_name_style ~format_time (`Removed t)))
-  (* Main tracks - handled separately in create_liveset_item *)
+  (* Main tracks - handled separately in project *)
   | `Added (Track.Main _) | `Removed (Track.Main _) | `Modified (Track.Patch.MainPatch _) -> None
   | `Unchanged -> None
 
@@ -1719,8 +1719,14 @@ let liveset_field_specs : (Liveset.t, Liveset.Patch.t) unified_field_spec list =
 ]
 
 
-(** [create_liveset_item] creates a [item] from a Liveset structured change (new type system).
+(** [project ~old change] projects a liveset change into the view tree.
+    [old], the pre-change document, is a peer input — not a patch annotation:
+    unchanged context (mixer strips, note pitch, tempo/time-signature,
+    GroupId) is resolved from it by id through [Ctx], so "show unchanged
+    context" is one uniform policy instead of per-type plumbing. All callers
+    already hold both documents.
     @param note_name_style the style to use for note names (Sharp or Flat)
+    @param old the pre-change document; [None] is the no-reference projection
     @param c the liveset structured change
 *)
 (** [param_value_to_field_value] converts a device parameter value to a
@@ -1780,13 +1786,13 @@ let liveset_tempo_context
      | `Unchanged -> ref_values ())
   | `Unchanged -> (None, None)
 
-let create_liveset_item
+let project
     ?(note_name_style : note_display_style = default_note_name_style)
     ?(format_time : dual_time_formatter = default_dual_time_formatter)
-    ?(reference_liveset : Liveset.t option)
+    ?(old : Liveset.t option)
     (c : (Liveset.t, Liveset.Patch.t) structured_change)
   : item =
-  let ctx = match reference_liveset with
+  let ctx = match old with
     | Some ls -> Ctx.of_liveset ls
     | None -> Ctx.empty
   in

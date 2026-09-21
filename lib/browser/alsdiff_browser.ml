@@ -631,8 +631,8 @@ module Liveset_diff = struct
     let* () = browser_yield () in
     let views =
       [View_model.Item
-         (View_model.create_liveset_item
-            ~reference_liveset:liveset1
+         (View_model.project
+            ~old:liveset1
             ~note_name_style:config.renderer_config.note_name_style
             (if Liveset.Patch.is_empty patch then `Unchanged else `Modified patch))]
     in
@@ -671,8 +671,8 @@ module Liveset_diff_id = struct
     let* () = browser_yield () in
     let views =
       [View_model.Item
-         (View_model.create_liveset_item
-            ~reference_liveset:liveset1
+         (View_model.project
+            ~old:liveset1
             ~note_name_style:config.renderer_config.note_name_style
             (if Liveset.Patch.is_empty patch then `Unchanged else `Modified patch))]
     in

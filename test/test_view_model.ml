@@ -581,7 +581,7 @@ let test_create_automation_item_removed_event_summary () =
    | Some (Ffloat o) -> check (float 0.001) "time old" 1.0 o
    | _ -> fail "Expected Ffloat for Time")
 
-let test_create_liveset_item_with_main_only_change () =
+let test_project_with_main_only_change () =
   let path = Utils.resolve_test_data_path "t4.xml" in
   let xml = read_file path in
   let liveset1 = Liveset.create xml path in
@@ -599,7 +599,7 @@ let test_create_liveset_item_with_main_only_change () =
     | _ -> fail "Expected Track.Main type for main track"
   in
   let patch = Liveset.diff liveset1 { liveset2 with main = updated_main } in
-  let item = create_liveset_item (`Modified patch) in
+  let item = project (`Modified patch) in
   (* After the Main Track outer wrapper was removed, the inner item appears
      directly as a child — no need to descend a section. *)
   let main_track_item = get_item (find_view_by_name "MainTrack: Main" item.children) in
@@ -623,7 +623,7 @@ let test_reference_populates_unchanged_main_mixer_params () =
     | _ -> fail "Expected Track.Main type for main track"
   in
   let patch = Liveset.diff liveset1 { liveset2 with main = updated_main } in
-  let item = create_liveset_item ~reference_liveset:liveset1 (`Modified patch) in
+  let item = project ~old:liveset1 (`Modified patch) in
   let main_item = get_item (find_view_by_name "MainTrack: Main" item.children) in
   let mixer = get_item (find_view_by_name "Mixer" main_item.children) in
   (* Tempo changed: Modified Value field with old/new. *)
@@ -656,7 +656,7 @@ let test_unchanged_main_track_emitted_with_reference () =
     | _ -> fail "expected MidiTrack first in t4.xml"
   in
   let patch = Liveset.diff ls1 ls2 in
-  let item = create_liveset_item ~reference_liveset:ls1 (`Modified patch) in
+  let item = project ~old:ls1 (`Modified patch) in
   let main_item =
     List.find_opt (function
         | Item i -> String.starts_with ~prefix:"MainTrack" i.name
@@ -714,7 +714,7 @@ let test_unchanged_section_placeholder_handling () =
   in
   (* Only the main track's tempo changes, so version is `Unchanged in the patch. *)
   let patch = Liveset.diff liveset1 { liveset2 with main = updated_main } in
-  let item = create_liveset_item (`Modified patch) in
+  let item = project (`Modified patch) in
   (* 1. Projector DOES emit the placeholder (so JSON/web can show the node). *)
   let has_unchanged_version =
     List.exists (fun v ->
@@ -765,7 +765,7 @@ let test_liveset_carries_tempo_context_with_reference () =
     | _ -> fail "expected MidiTrack first in t4.xml"
   in
   let patch = Liveset.diff ls1 ls2 in
-  let item = create_liveset_item ~reference_liveset:ls1 (`Modified patch) in
+  let item = project ~old:ls1 (`Modified patch) in
   let tempo = get_field (find_view_by_name "Tempo" item.children) in
   check bool "liveset Tempo context is Unchanged" true (tempo.change = Unchanged);
   (match tempo.newval with
@@ -790,7 +790,7 @@ let test_liveset_tempo_context_from_patch () =
     | _ -> fail "Expected Track.Main type for main track"
   in
   let patch = Liveset.diff liveset1 { liveset2 with main = updated_main } in
-  let item = create_liveset_item (`Modified patch) in
+  let item = project (`Modified patch) in
   let tempo = get_field (find_view_by_name "Tempo" item.children) in
   (match tempo.newval with
    | Some (Ffloat 138.0) -> ()
@@ -815,7 +815,7 @@ let test_liveset_no_tempo_context_without_reference () =
     | _ -> fail "expected MidiTrack first in t4.xml"
   in
   let patch = Liveset.diff ls1 ls2 in
-  let item = create_liveset_item (`Modified patch) in
+  let item = project (`Modified patch) in
   check bool "no liveset Tempo context without reference" true
     (not (List.exists (function
          | Field { name = "Tempo"; _ } -> true | _ -> false) item.children));
@@ -829,7 +829,7 @@ let test_liveset_no_tempo_context_when_unchanged () =
   let path = Utils.resolve_test_data_path "t4.xml" in
   let xml = read_file path in
   let ls1 = Liveset.create xml path in
-  let item = create_liveset_item ~reference_liveset:ls1 `Unchanged in
+  let item = project ~old:ls1 `Unchanged in
   check bool "no liveset Tempo context on Unchanged" true
     (not (List.exists (function
          | Field { name = "Tempo"; _ } -> true | _ -> false) item.children));
@@ -1077,7 +1077,7 @@ let test_main_track_emitted_for_added_liveset () =
   let path = Utils.resolve_test_data_path "t4.xml" in
   let xml = read_file path in
   let ls = Liveset.create xml path in
-  let item = create_liveset_item (`Added ls) in
+  let item = project (`Added ls) in
   let main_item =
     List.find_opt (function
         | Item i -> String.starts_with ~prefix:"MainTrack" i.name
@@ -1113,7 +1113,7 @@ let test_return_track_change_labeled_returntrack () =
   in
   let ls2 = { ls1 with Liveset.returns = [bumped] } in
   let patch = Liveset.diff ls1 ls2 in
-  let item = create_liveset_item ~reference_liveset:ls1 (`Modified patch) in
+  let item = project ~old:ls1 (`Modified patch) in
   let return_item =
     List.find_opt (function
         | Item i -> String.starts_with ~prefix:"ReturnTrack" i.name
@@ -1172,8 +1172,8 @@ let () =
       test_case "Added liveset emits main track item" `Quick
         test_main_track_emitted_for_added_liveset;
     ];
-    "create_liveset_item", [
-      test_case "Renders main track when it is the only change" `Quick test_create_liveset_item_with_main_only_change;
+    "project", [
+      test_case "Renders main track when it is the only change" `Quick test_project_with_main_only_change;
       test_case "Reference populates unchanged main mixer params" `Quick test_reference_populates_unchanged_main_mixer_params;
       test_case "Unchanged main track emitted with reference" `Quick test_unchanged_main_track_emitted_with_reference;
       test_case "Unchanged section placeholder handling" `Quick test_unchanged_section_placeholder_handling;
