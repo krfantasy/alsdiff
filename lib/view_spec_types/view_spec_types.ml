@@ -80,6 +80,18 @@ module type S = sig
     name:string -> domain_type:domain_type -> specs:('v, 'p) section_spec list ->
     ('v, 'p) structured_change -> item
 
+  (** [fill_context] fills a Modified item's unchanged context from the old
+      (pre-change) value: child sections marked [@view.context] are rebuilt
+      from the old value when the patch emitted them as empty Unchanged
+      placeholders, and a Modified marked child recurses through the child
+      type's own fill. The B-side default is a no-op; only context-marked
+      types generate a real fill (TODO item 4). *)
+  val fill_context : format_time:dual_time_formatter -> 'a -> item -> item
+
+  (** [fill_section_context specs old item] applies each spec's context fill
+      to [item]'s children — the body of a generated [fill_context]. *)
+  val fill_section_context : ('v, 'p) section_spec list -> 'v -> item -> item
+
   module Spec : sig
     val inline_fields :
       specs:('v, 'p) unified_field_spec list -> domain_type:domain_type -> ('v, 'p) section_spec
@@ -92,6 +104,34 @@ module type S = sig
       domain_type:domain_type ->
       ('parent, 'patch) section_spec
     val child_optional :
+      name:string ->
+      of_value:('parent -> 'nested option) ->
+      of_patch:('patch -> ('nested, 'np) structured_change) ->
+      build_value_children:(change_type -> 'nested -> view list) ->
+      build_patch_children:('np -> view list) ->
+      domain_type:domain_type ->
+      ('parent, 'patch) section_spec
+    (* [child_with_context] is [child] for a context-marked field
+       ([@view.context]): the mandatory [~context] callback (the child
+       type's [fill_context], format_time pre-applied) fills empty
+       Unchanged placeholders from the old parent value and recurses into
+       Modified children. Mandatory rather than optional so existing
+       [child] applications stay total — an optional argument followed only
+       by labelled arguments cannot be erased. (Plain comment: docstrings
+       cannot attach inside a nested module-type sig — warning 50.) *)
+    val child_with_context :
+      context:('nested -> item -> item) ->
+      name:string ->
+      of_value:('parent -> 'nested) ->
+      of_patch:('patch -> 'np structured_update) ->
+      build_value_children:(change_type -> 'nested -> view list) ->
+      build_patch_children:('np -> view list) ->
+      domain_type:domain_type ->
+      ('parent, 'patch) section_spec
+    (* [child_optional_with_context] is [child_optional] for a
+       context-marked field; see [child_with_context]. *)
+    val child_optional_with_context :
+      context:('nested -> item -> item) ->
       name:string ->
       of_value:('parent -> 'nested option) ->
       of_patch:('patch -> ('nested, 'np) structured_change) ->

@@ -1163,6 +1163,94 @@ let test_return_track_change_labeled_returntrack () =
          | Item i -> String.starts_with ~prefix:"AudioTrack" i.name
          | _ -> false) item.children))
 
+(* ---- Spec context fills: runtime machinery for [@view.context] (TODO item 4) ---- *)
+
+(* An unmarked [Spec.child]'s fill is identity; [Spec.child_with_context]
+   rebuilds an empty Unchanged placeholder from the old parent value
+   (restamped, children populated), recurses into a Modified child via
+   [~context], and never touches other names or non-placeholder/non-Modified
+   views. *)
+let test_spec_context_placeholder_and_recursion () =
+  let format_time = default_dual_time_formatter in
+  let old_clip = Track_helpers.make_clip 9 [] in
+  let mk ?context () =
+    let common =
+      (Spec.child ~name:"Inner"
+         ~of_value:(fun (c : Clip.MidiClip.t) -> c.Clip.MidiClip.signature)
+         ~of_patch:(fun (p : Clip.MidiClip.Patch.t) -> p.Clip.MidiClip.Patch.signature)
+         ~build_value_children:(ClipTimeSignatureVS.build_value_children ~format_time)
+         ~build_patch_children:(ClipTimeSignatureVS.build_patch_fields ~format_time)
+         ~domain_type:DTSignature) in
+    match context with
+    | None -> common
+    | Some ctx ->
+      Spec.child_with_context ~context:ctx
+        ~name:"Inner"
+        ~of_value:(fun (c : Clip.MidiClip.t) -> c.Clip.MidiClip.signature)
+        ~of_patch:(fun (p : Clip.MidiClip.Patch.t) -> p.Clip.MidiClip.Patch.signature)
+        ~build_value_children:(ClipTimeSignatureVS.build_value_children ~format_time)
+        ~build_patch_children:(ClipTimeSignatureVS.build_patch_fields ~format_time)
+        ~domain_type:DTSignature
+  in
+  let placeholder = Item { name = "Inner"; change = Unchanged; domain_type = DTSignature; children = [] } in
+  let unmarked = mk () in
+  check bool "unmarked: placeholder untouched" true (unmarked.fill old_clip placeholder = placeholder);
+  let rec_calls = ref 0 in
+  let marked =
+    mk ~context:(fun (_old : Clip.TimeSignature.t) (i : item) -> incr rec_calls; i) ()
+  in
+  (match marked.fill old_clip placeholder with
+   | Item { change = Unchanged; children; _ } ->
+     check int "marked: placeholder restamped with children" 2 (List.length children);
+     (match find_view_by_name "Numer" children with
+      | Field { change = Unchanged; newval = Some (Fint 4); _ } -> ()
+      | _ -> check bool "marked: Numer = Unchanged 4" true false)
+   | _ -> check bool "marked: placeholder filled" true false);
+  ignore (marked.fill old_clip
+            (Item { name = "Inner"; change = Modified; domain_type = DTSignature; children = [] }));
+  check int "marked: Modified child recursed once" 1 !rec_calls;
+  let other = Item { name = "Other"; change = Unchanged; domain_type = DTOther; children = [] } in
+  check bool "unrelated name untouched" true (marked.fill old_clip other = other)
+
+(* [fill_section_context] folds every spec's fill over the item's children;
+   [fill_inline_context] prepends missing fields from the old value and
+   no-ops without one. *)
+let test_fill_section_and_inline_context () =
+  let touched = ref 0 in
+  let spec : (unit, unit) section_spec =
+    { name = "A"; build = (fun _ -> None); fill = (fun _ v -> incr touched; v) } in
+  let item = { name = ""; change = Modified; domain_type = DTOther;
+               children = [ Item { name = "A"; change = Modified; domain_type = DTOther; children = [] } ] } in
+  let filled = fill_section_context [spec] () item in
+  check int "fill_section_context applied the spec fill" 1 !touched;
+  check bool "fill_section_context keeps the item name" true (filled.name = "");
+  let specs = [ make_int "X" (fun (v : int * int) -> fst v) (fun (_ : unit) -> `Unchanged) ] in
+  let item = { name = ""; change = Modified; domain_type = DTOther;
+               children = [ Field { name = "Y"; change = Modified; domain_type = DTOther;
+                                    kind = Content; oldval = Some (Fint 0); newval = Some (Fint 1) } ] } in
+  (match (fill_inline_context ~domain_type:DTOther specs (Some (7, 3)) item).children with
+   | Field { name = "X"; change = Unchanged; newval = Some (Fint 7); _ } :: _ -> ()
+   | _ -> check bool "missing X prepended as Unchanged 7" true false);
+  check bool "no old value: item unchanged" true
+    (fill_inline_context ~domain_type:DTOther specs None item = item)
+
+(* [child_optional_with_context]'s fill: a reference without the optional
+   section leaves the placeholder as emitted. *)
+let test_spec_optional_context_without_reference_section () =
+  let spec =
+    Spec.child_optional_with_context
+      ~context:(fun _ (i : item) -> i)
+      ~name:"Opt"
+      ~of_value:(fun (_ : unit) -> (None : Clip.TimeSignature.t option))
+      ~of_patch:(fun (_ : unit) -> `Unchanged)
+      ~build_value_children:(fun _ _ -> [])
+      ~build_patch_children:(fun _ -> [])
+      ~domain_type:DTSignature
+  in
+  let placeholder = Item { name = "Opt"; change = Unchanged; domain_type = DTSignature; children = [] } in
+  check bool "reference lacks section: placeholder untouched" true
+    (spec.fill () placeholder = placeholder)
+
 let () =
   run "ViewModel" [
     "ViewBuilder.change_type_of", [
@@ -1226,5 +1314,13 @@ let () =
       test_case "Modified track carries identity fields" `Quick test_modified_track_identity_fields;
       test_case "Changed group emits single Modified GroupId" `Quick test_modified_track_group_change_no_duplicate;
       test_case "Return track change labeled ReturnTrack" `Quick test_return_track_change_labeled_returntrack;
+    ];
+    "spec context fill", [
+      test_case "child_with_context fills placeholders and recurses" `Quick
+        test_spec_context_placeholder_and_recursion;
+      test_case "fill_section_context / fill_inline_context" `Quick
+        test_fill_section_and_inline_context;
+      test_case "optional context without reference section" `Quick
+        test_spec_optional_context_without_reference_section;
     ];
   ]
