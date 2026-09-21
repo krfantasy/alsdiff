@@ -860,13 +860,15 @@ let test_reference_populates_unchanged_mixer () =
   in
   let get_pointee_name _ = "?" in
   (* WITHOUT reference: Mixer is an empty placeholder. *)
-  let item_no_ref = create_midi_track_item ~get_pointee_name (`Modified patch) in
+  let item_no_ref = create_midi_track_item ~ctx:Ctx.empty ~get_pointee_name (`Modified patch) in
   (match find_mixer item_no_ref with
    | Some (Item mi) ->
      check bool "without reference: mixer is empty placeholder" true (mi.children = [])
    | _ -> check bool "without reference: mixer placeholder present" true false);
   (* WITH reference: Mixer is populated with Volume/Pan/Mute/Solo. *)
-  let item_with_ref = create_midi_track_item ~get_pointee_name ~reference_track:t1 (`Modified patch) in
+  let item_with_ref =
+    create_midi_track_item ~ctx:(Ctx.of_track_list ~main:None [Track.Midi t1])
+      ~get_pointee_name (`Modified patch) in
   (match find_mixer item_with_ref with
    | Some (Item mi) ->
      let names = List.filter_map (fun v ->
@@ -904,13 +906,16 @@ let test_reference_fills_modified_mixer_params () =
   let get_param name mixer = get_item (find_view_by_name name mixer.children) in
   let get_value param = get_field (find_view_by_name "Value" param.children) in
   (* WITHOUT reference: the unchanged params stay empty placeholders. *)
-  let mixer_no_ref = get_mixer (create_midi_track_item ~get_pointee_name:(fun _ -> "?") (`Modified patch)) in
+  let mixer_no_ref =
+    get_mixer (create_midi_track_item ~ctx:Ctx.empty ~get_pointee_name:(fun _ -> "?")
+                 (`Modified patch)) in
   check bool "without reference: mixer is Modified" true (mixer_no_ref.change = Modified);
   check bool "without reference: Pan is empty placeholder" true
     ((get_param "Pan" mixer_no_ref).children = []);
   (* WITH reference: changed param keeps its old/new, others are populated. *)
   let mixer = get_mixer
-      (create_midi_track_item ~get_pointee_name:(fun _ -> "?") ~reference_track:t1 (`Modified patch)) in
+      (create_midi_track_item ~ctx:(Ctx.of_track_list ~main:None [Track.Midi t1])
+         ~get_pointee_name:(fun _ -> "?") (`Modified patch)) in
   check bool "with reference: mixer is Modified" true (mixer.change = Modified);
   let volume = get_param "Volume" mixer in
   let vol_value = get_value volume in
@@ -987,7 +992,9 @@ let test_modified_track_identity_fields () =
   let t1 = mk_track "Old" 91 (Track_helpers.make_mixer 0.70 (-0.30)) in
   let t2 = mk_track "New" 91 (Track_helpers.make_mixer 0.80 (-0.30)) in
   let patch = Track.MidiTrack.diff t1 t2 in
-  let item = create_midi_track_item ~get_pointee_name:(fun _ -> "?") ~reference_track:t1 (`Modified patch) in
+  let item =
+    create_midi_track_item ~ctx:(Ctx.of_track_list ~main:None [Track.Midi t1])
+      ~get_pointee_name:(fun _ -> "?") (`Modified patch) in
   let track_id_field = get_field (find_view_by_name "TrackId" item.children) in
   check bool "TrackId emitted for Modified track" true (track_id_field.change = Unchanged);
   (match track_id_field.newval with
@@ -1017,7 +1024,9 @@ let test_modified_track_group_change_no_duplicate () =
   let t1 = mk_track 91 in
   let t2 = mk_track (-1) in
   let patch = Track.MidiTrack.diff t1 t2 in
-  let item = create_midi_track_item ~get_pointee_name:(fun _ -> "?") ~reference_track:t1 (`Modified patch) in
+  let item =
+    create_midi_track_item ~ctx:(Ctx.of_track_list ~main:None [Track.Midi t1])
+      ~get_pointee_name:(fun _ -> "?") (`Modified patch) in
   let group_fields =
     List.filter (function
         | Field { name = "GroupId"; _ } -> true | _ -> false) item.children
@@ -1054,8 +1063,8 @@ let test_build_liveset_track_sections_added () =
   let path = Utils.resolve_test_data_path "t4.xml" in
   let xml = read_file path in
   let ls = Liveset.create xml path in
-  let tracks = build_liveset_tracks_items ~get_pointee_name:(fun _ -> "?") (`Added ls) in
-  let returns = build_liveset_returns_items ~get_pointee_name:(fun _ -> "?") (`Added ls) in
+  let tracks = build_liveset_tracks_items ~ctx:Ctx.empty ~get_pointee_name:(fun _ -> "?") (`Added ls) in
+  let returns = build_liveset_returns_items ~ctx:Ctx.empty ~get_pointee_name:(fun _ -> "?") (`Added ls) in
   (* t4.xml has 1 MidiTrack + 1 AudioTrack; Main/Return excluded by the regular-track filter. *)
   check int "renders 2 regular tracks (Midi+Audio)" 2 (List.length tracks);
   check int "renders 0 returns" 0 (List.length returns)
