@@ -90,10 +90,10 @@ end
 
 module Mixer = struct
   type t = {
-    volume : GenericParam.t;   [@view.child "DTMixer"] [@view.label "Volume"]
-    pan : GenericParam.t;      [@view.child "DTMixer"] [@view.label "Pan"]
-    mute : GenericParam.t;     [@view.child "DTMixer"] [@view.label "Mute"]
-    solo : GenericParam.t;     [@view.child "DTMixer"] [@view.label "Solo"]
+    volume : GenericParam.t;   [@view.child "DTMixer"] [@view.label "Volume"] [@view.context]
+    pan : GenericParam.t;      [@view.child "DTMixer"] [@view.label "Pan"] [@view.context]
+    mute : GenericParam.t;     [@view.child "DTMixer"] [@view.label "Mute"] [@view.context]
+    solo : GenericParam.t;     [@view.child "DTMixer"] [@view.label "Solo"] [@view.context]
     sends : Send.t list;       [@view.collection "DTSend"] [@view.label "Sends"]
   } [@@deriving eq, patch, view_spec] [@@patch.generate_diff]
 
@@ -135,7 +135,7 @@ module MidiTrack = struct
     clips : Clip.MidiClip.t list; [@view.collection "DTClip"] [@view.builder "build_clips"]
     automations : Automation.t list; [@view.collection "DTAutomation"] [@view.builder "build_automations"]
     devices : Device.t list;      [@view.collection "DTDevice"] [@view.builder "build_devices"]
-    mixer : Mixer.t;              [@view.child "DTMixer"]
+    mixer : Mixer.t;              [@view.child "DTMixer"] [@view.context]
     routings : RoutingSet.t;      [@view.child "DTRouting"]
   } [@@deriving eq, id, patch, view_spec] [@@patch.generate_diff] [@@view.type_label "MidiTrack"]
 
@@ -172,7 +172,7 @@ module AudioTrack = struct
     clips : Clip.AudioClip.t list; [@view.collection "DTClip"] [@view.builder "build_clips"]
     automations : Automation.t list; [@view.collection "DTAutomation"] [@view.builder "build_automations"]
     devices : Device.t list;      [@view.collection "DTDevice"] [@view.builder "build_devices"]
-    mixer : Mixer.t;              [@view.child "DTMixer"]
+    mixer : Mixer.t;              [@view.child "DTMixer"] [@view.context]
     routings : RoutingSet.t;      [@view.child "DTRouting"]
   } [@@deriving eq, id, patch, view_spec] [@@patch.generate_diff] [@@view.type_label "AudioTrack"]
 
@@ -201,11 +201,11 @@ end
 
 module MainMixer = struct
   type t = {
-    base : Mixer.t;                   [@view.child "DTMixer"] [@view.label "Mixer"]
-    tempo : GenericParam.t;           [@view.child "DTMixer"] [@view.label "Tempo"]
-    time_signature : GenericParam.t;  [@view.child "DTMixer"] [@view.label "Time Signature"]
-    crossfade : GenericParam.t;       [@view.child "DTMixer"] [@view.label "Crossfade"]
-    global_groove : GenericParam.t;   [@view.child "DTMixer"] [@view.label "Global Groove"]
+    base : Mixer.t;                   [@view.child "DTMixer"] [@view.label "Mixer"] [@view.context]
+    tempo : GenericParam.t;           [@view.child "DTMixer"] [@view.label "Tempo"] [@view.context]
+    time_signature : GenericParam.t;  [@view.child "DTMixer"] [@view.label "Time Signature"] [@view.context]
+    crossfade : GenericParam.t;       [@view.child "DTMixer"] [@view.label "Crossfade"] [@view.context]
+    global_groove : GenericParam.t;   [@view.child "DTMixer"] [@view.label "Global Groove"] [@view.context]
   } [@@deriving eq, patch, view_spec] [@@patch.generate_diff]
 
   let create (xml : Xml.t) : t =
@@ -225,7 +225,7 @@ module MainTrack = struct
     current_name : string;        [@patch.identity] [@view.name_patch]
     automations : Automation.t list; [@view.collection "DTAutomation"] [@view.builder "build_automations"]
     devices : Device.t list;      [@view.collection "DTDevice"] [@view.builder "build_devices"]
-    mixer : MainMixer.t;          [@view.child "DTMixer"]
+    mixer : MainMixer.t;          [@view.child "DTMixer"] [@view.context]
     routings : RoutingSet.t;      [@view.child "DTRouting"]
   } [@@deriving eq, patch, view_spec] [@@patch.generate_diff] [@@view.type_label "MainTrack"]
 

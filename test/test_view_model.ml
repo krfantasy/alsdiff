@@ -1165,6 +1165,8 @@ let test_return_track_change_labeled_returntrack () =
 
 (* ---- Spec context fills: runtime machinery for [@view.context] (TODO item 4) ---- *)
 
+module TSigVS = Clip.TimeSignature.ViewSpec(DeviceViewSpecB)
+
 (* An unmarked [Spec.child]'s fill is identity; [Spec.child_with_context]
    rebuilds an empty Unchanged placeholder from the old parent value
    (restamped, children populated), recurses into a Modified child via
@@ -1178,8 +1180,8 @@ let test_spec_context_placeholder_and_recursion () =
       (Spec.child ~name:"Inner"
          ~of_value:(fun (c : Clip.MidiClip.t) -> c.Clip.MidiClip.signature)
          ~of_patch:(fun (p : Clip.MidiClip.Patch.t) -> p.Clip.MidiClip.Patch.signature)
-         ~build_value_children:(ClipTimeSignatureVS.build_value_children ~format_time)
-         ~build_patch_children:(ClipTimeSignatureVS.build_patch_fields ~format_time)
+         ~build_value_children:(TSigVS.build_value_children ~format_time)
+         ~build_patch_children:(TSigVS.build_patch_fields ~format_time)
          ~domain_type:DTSignature) in
     match context with
     | None -> common
@@ -1188,8 +1190,8 @@ let test_spec_context_placeholder_and_recursion () =
         ~name:"Inner"
         ~of_value:(fun (c : Clip.MidiClip.t) -> c.Clip.MidiClip.signature)
         ~of_patch:(fun (p : Clip.MidiClip.Patch.t) -> p.Clip.MidiClip.Patch.signature)
-        ~build_value_children:(ClipTimeSignatureVS.build_value_children ~format_time)
-        ~build_patch_children:(ClipTimeSignatureVS.build_patch_fields ~format_time)
+        ~build_value_children:(TSigVS.build_value_children ~format_time)
+        ~build_patch_children:(TSigVS.build_patch_fields ~format_time)
         ~domain_type:DTSignature
   in
   let placeholder = Item { name = "Inner"; change = Unchanged; domain_type = DTSignature; children = [] } in

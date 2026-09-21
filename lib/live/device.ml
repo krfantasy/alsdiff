@@ -217,6 +217,12 @@ module GenericParam = struct
       build_patch_fields ~format_time ~domain_type p
 
     let item_children i = B.item_children i
+
+    (* S-conformant no-op: GenericParam is never context-marked itself
+       ([@view.context]), so its fill is identity — marked parents (Mixer,
+       MainMixer) recurse here and stop, leaving Modified params untouched
+       (see Spec.child_with_context in lib/output/change_projector.ml). *)
+    let fill_context ~format_time:_ (_ : t) (item : B.item) : B.item = item
   end
 end
 

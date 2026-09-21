@@ -871,24 +871,7 @@ let create_note_item
   in
   let section_spec = Spec.inline_fields ~specs ~domain_type:DTNote in
   let item = build_item_from_specs ~name:note_name ~domain_type:DTNote ~specs:[section_spec] c in
-  match c, reference_note with
-  | `Modified _, Some ref ->
-    (* Unchanged leaf fields carry no values in the patch: re-attach them from
-       the reference note as Unchanged context so consumers render the real
-       pitch/duration/velocity instead of defaults (mirrors the mixer-context
-       population). Fields the patch path emitted stay untouched. *)
-    let present name = List.exists (function
-        | Field f -> f.name = name
-        | _ -> false) item.children in
-    let context = build_value_field_views specs Added ref ~domain_type:DTNote
-      |> List.filter_map (fun v ->
-          match v with
-          | Field ({ name; _ } as f) when not (present name) ->
-            Some (view_to_unchanged (Field f))
-          | _ -> None)
-    in
-    { item with children = context @ item.children }
-  | _ -> item
+  fill_inline_context ~domain_type:DTNote specs reference_note item
 
 
 (** [event_value_to_field_value] converts an Automation.event_value to a field_value *)
@@ -1041,16 +1024,8 @@ module GroupDeviceVS = Device.GroupDevice.ViewSpec(DeviceViewSpecB)
 module MidiTrackVS = Track.MidiTrack.ViewSpec(DeviceViewSpecB)
 module AudioTrackVS = Track.AudioTrack.ViewSpec(DeviceViewSpecB)
 module MainTrackVS = Track.MainTrack.ViewSpec(DeviceViewSpecB)
-module MixerVS = Track.Mixer.ViewSpec(DeviceViewSpecB)
-module MainMixerVS = Track.MainMixer.ViewSpec(DeviceViewSpecB)
-module GenericParamVS = Device.GenericParam.ViewSpec(DeviceViewSpecB)
-module RoutingSetVS = Track.RoutingSet.ViewSpec(DeviceViewSpecB)
 module MidiClipVS = Clip.MidiClip.ViewSpec(DeviceViewSpecB)
 module AudioClipVS = Clip.AudioClip.ViewSpec(DeviceViewSpecB)
-module ClipLoopVS = Clip.Loop.ViewSpec(DeviceViewSpecB)
-module ClipTimeSignatureVS = Clip.TimeSignature.ViewSpec(DeviceViewSpecB)
-module ClipSampleRefVS = Clip.SampleRef.ViewSpec(DeviceViewSpecB)
-module ClipFadeVS = Clip.Fade.ViewSpec(DeviceViewSpecB)
 module CurveControlsVS = Automation.CurveControls.ViewSpec(DeviceViewSpecB)
 module VersionVS = Liveset.Version.ViewSpec(DeviceViewSpecB)
 
@@ -1094,47 +1069,10 @@ let create_events_item
   in
   let base_section_spec = Spec.inline_fields ~specs:base_specs ~domain_type:DTEvent in
   let item = build_item_from_specs ~name:"EnvelopeEvent" ~domain_type:DTEvent ~specs:[base_section_spec; curve_section_spec] c in
-  match c, reference_event with
-  | `Modified _, Some ref ->
-    (* Unchanged leaf fields carry no values in the patch: re-attach them from
-       the reference event as Unchanged context so consumers (the web's
-       structured parser) can place the event even when only the curve moved.
-       Fields the patch path emitted (Modified Time/Value) stay untouched. *)
-    let present name = List.exists (function
-        | Field f -> f.name = name
-        | _ -> false) item.children in
-    let context = build_value_field_views base_specs Added ref ~domain_type:DTEvent
-      |> List.filter_map (fun v ->
-          match v with
-          | Field ({ name; _ } as f) when not (present name) ->
-            Some (view_to_unchanged (Field f))
-          | _ -> None)
-    in
-    { item with children = context @ item.children }
-  | _ -> item
+  fill_inline_context ~domain_type:DTEvent base_specs reference_event item
 
 
 (* ==================== Clip Item Builders (after VS instantiations) ==================== *)
-
-(** [fill_clip_section_placeholders ~fills item] fills empty Unchanged section
-    placeholders (e.g. "Loop", "TimeSignature") of a Modified clip with the
-    reference clip's values, restamped Unchanged via [view_to_unchanged] so
-    verbose/web consumers show unchanged context instead of bare headers (same
-    rationale as [populate_unchanged_mixer_item]). [fills] maps a placeholder
-    name to its value-side children; sections without an entry (e.g. "Fade"
-    when the reference clip has no fade) stay as emitted. *)
-let fill_clip_section_placeholders
-    ~(fills : (string * view list) list)
-    (item : item)
-  : item =
-  { item with
-    children =
-      List.map (function
-          | Item ({ name; change = Unchanged; children = []; _ } as pi) ->
-            (match List.assoc_opt name fills with
-             | Some children -> Item { pi with children }
-             | None -> Item pi)
-          | v -> v) item.children }
 
 (** [create_midi_clip_item] creates a [item] from a MidiClip structured change.
     The PPX generates inline fields (name, start/end time), the Loop child,
@@ -1142,7 +1080,8 @@ let fill_clip_section_placeholders
     parent->child so Loop's time fields render correctly. Modified notes
     resolve their old values through [ctx], keyed by this clip's identity id
     ([Ctx] memoizes the note table once per clip); the same ctx-resolved old
-    clip fills the empty Unchanged Loop/TimeSignature section placeholders. *)
+    clip fills the empty Unchanged Loop/TimeSignature placeholders via the
+    generated [fill_context] ([@view.context] on loop/signature). *)
 let create_midi_clip_item
     ~(ctx : Ctx.t)
     ~(track_id : int)
@@ -1163,24 +1102,17 @@ let create_midi_clip_item
   match c with
   | `Modified cp ->
     (match Ctx.midi_clip ctx ~track_id ~id:cp.Clip.MidiClip.Patch.id with
-     | Some ref ->
-       fill_clip_section_placeholders
-         ~fills:[
-           ("Loop",
-            List.map view_to_unchanged
-              (ClipLoopVS.build_value_children ~format_time Added ref.Clip.MidiClip.loop));
-           ("TimeSignature",
-            List.map view_to_unchanged
-              (ClipTimeSignatureVS.build_value_children ~format_time Added ref.Clip.MidiClip.signature));
-         ]
-         item
+     | Some ref -> MidiClipVS.fill_context ~format_time ref item
      | None -> item)
   | _ -> item
 
 (** [create_audio_clip_item] creates a [item] from an AudioClip structured change.
     The PPX generates inline fields (name, start/end time), the Loop child,
     the TimeSignature child, the SampleRef child, and the Fade child, threading
-    format_time parent->child so Loop's time fields render correctly. *)
+    format_time parent->child so Loop's time fields render correctly. The
+    empty Unchanged placeholders are filled from the ctx-resolved old clip via
+    the generated [fill_context] ([@view.context] on loop/signature/sample_ref/
+    fade). *)
 let create_audio_clip_item
     ~(ctx : Ctx.t)
     ~(track_id : int)
@@ -1194,26 +1126,7 @@ let create_audio_clip_item
   | `Modified cp ->
     (match Ctx.audio_clip ctx ~track_id ~id:cp.Clip.AudioClip.Patch.id with
      | None -> item
-     | Some ref ->
-       let fade_children = match ref.Clip.AudioClip.fade with
-         | None -> []
-         | Some f ->
-           List.map view_to_unchanged (ClipFadeVS.build_value_children ~format_time Added f)
-       in
-       fill_clip_section_placeholders
-         ~fills:[
-           ("Loop",
-            List.map view_to_unchanged
-              (ClipLoopVS.build_value_children ~format_time Added ref.Clip.AudioClip.loop));
-           ("TimeSignature",
-            List.map view_to_unchanged
-              (ClipTimeSignatureVS.build_value_children ~format_time Added ref.Clip.AudioClip.signature));
-           ("SampleRef",
-            List.map view_to_unchanged
-              (ClipSampleRefVS.build_value_children ~format_time Added ref.Clip.AudioClip.sample_ref));
-           ("Fade", fade_children);
-         ]
-         item)
+     | Some ref -> AudioClipVS.fill_context ~format_time ref item)
   | _ -> item
 
 
@@ -1348,67 +1261,6 @@ let create_device_item
 (* ==================== Full Track Views ==================== *)
 
 
-(** [fill_mixer_param_placeholders ~format_time mixer_item mixer_val] fills any
-    empty Unchanged Volume/Pan/Mute/Solo placeholders inside a partially
-    changed Mixer item with the reference mixer's values, restamped Unchanged
-    via [view_to_unchanged] — the per-param counterpart of the whole-Mixer
-    placeholder fill, so a track whose mixer changed in only one parameter
-    still renders its other strip controls (web) instead of dropping them.
-    Reference children are rebuilt through the same [MixerVS] value path as the
-    whole-Mixer fill, keeping field/domain types identical. *)
-let fill_mixer_param_placeholders
-    ~(format_time : dual_time_formatter)
-    (mixer_item : item)
-    (mixer_val : Track.Mixer.t)
-  : item =
-  let has_empty_placeholder = List.exists (function
-      | Item ({ name = ("Volume" | "Pan" | "Mute" | "Solo");
-                change = Unchanged; children = []; _ }) -> true
-      | _ -> false) mixer_item.children in
-  if not has_empty_placeholder then mixer_item
-  else begin
-    let ref_children =
-      List.map view_to_unchanged (MixerVS.build_value_children ~format_time Added mixer_val) in
-    let fill = function
-      | Item ({ name = ("Volume" | "Pan" | "Mute" | "Solo");
-                change = Unchanged; children = []; _ } as pi) ->
-        (match List.find_opt (fun (rv : view) ->
-             match rv with
-             | Item { name; change = Unchanged; _ } -> name = pi.name
-             | _ -> false) ref_children with
-         | Some filled -> filled
-         | None -> Item pi)
-      | v -> v
-    in
-    { mixer_item with children = List.map fill mixer_item.children }
-  end
-
-(** [populate_unchanged_mixer_item ~format_time item mixer_val] walks an item's
-    children and, for any empty Unchanged "Mixer" placeholder (a Modified track
-    whose mixer patch is Unchanged), rebuilds the mixer's children from the
-    reference [mixer_val] (the old track's mixer value) and restamps them
-    Unchanged via [view_to_unchanged]. For a Modified Mixer item, the per-param
-    empty Unchanged placeholders (Volume/Pan/Mute/Solo) are filled the same way
-    (see [fill_mixer_param_placeholders]). This restores the lost 044a9a7
-    feature: Unchanged mixer strips now show volume/pan/mute/solo values (as
-    context, not as changes) so the web app can render mixer strips for every
-    track. *)
-let populate_unchanged_mixer_item
-    ~(format_time : dual_time_formatter)
-    (item : item)
-    (mixer_val : Track.Mixer.t)
-  : item =
-  let children = List.map (fun child ->
-      match child with
-      | Item ({ name = "Mixer"; change = Unchanged; children = []; _ } as mi) ->
-        let mc = MixerVS.build_value_children ~format_time Added mixer_val in
-        Item { mi with children = List.map view_to_unchanged mc }
-      | Item ({ name = "Mixer"; _ } as mi) ->
-        Item (fill_mixer_param_placeholders ~format_time mi mixer_val)
-      | _ -> child) item.children in
-  { item with children }
-
-
 (** [prepend_track_identity_fields ~track_id ~group_id item] re-attaches the
     TrackId/GroupId identity fields to a Modified track item. They are identity
     metadata, not diff content: consumers (the web app) nest tracks under their
@@ -1438,51 +1290,6 @@ let prepend_track_identity_fields
   { item with children = extras @ item.children }
 
 
-(** [populate_unchanged_main_mixer_item] fills the master's empty Unchanged
-    param placeholders — Tempo/Time Signature/Crossfade/Global Groove, the
-    inner base Mixer, or the whole Mixer item when the entire MainMixer is
-    unchanged — from the reference main track, so the current tempo/time
-    signature stays readable even when only part of the master mixer changed.
-    Mirrors [populate_unchanged_mixer_item]. *)
-let populate_unchanged_main_mixer_item
-    ~(format_time : dual_time_formatter)
-    (item : item)
-    (ref : Track.MainTrack.t)
-  : item =
-  let param_children (v : Device.GenericParam.t) =
-    List.map view_to_unchanged (GenericParamVS.build_value_children ~format_time Added v)
-  in
-  let fill_mixer_child = function
-    | Item ({ name = ("Tempo" | "Time Signature" | "Crossfade" | "Global Groove");
-              change = Unchanged; children = []; _ } as mi) ->
-      let v = match mi.name with
-        | "Tempo" -> ref.Track.MainTrack.mixer.tempo
-        | "Time Signature" -> ref.Track.MainTrack.mixer.time_signature
-        | "Crossfade" -> ref.Track.MainTrack.mixer.crossfade
-        | _ -> ref.Track.MainTrack.mixer.global_groove
-      in
-      Item { mi with children = param_children v }
-    | Item ({ name = "Mixer"; change = Unchanged; children = []; _ } as mi) ->
-      let mc = MixerVS.build_value_children ~format_time Added ref.Track.MainTrack.mixer.base in
-      Item { mi with children = List.map view_to_unchanged mc }
-    | Item ({ name = "Mixer"; _ } as mi) ->
-      (* base Mixer partially changed (e.g. master volume only): fill its empty
-         unchanged param placeholders so the whole strip stays renderable. *)
-      Item (fill_mixer_param_placeholders ~format_time mi ref.Track.MainTrack.mixer.base)
-    | v -> v
-  in
-  let children = List.map (function
-      | Item ({ name = "Mixer"; change = Unchanged; children = []; _ } as mi) ->
-        (* whole MainMixer unchanged: rebuild all five sub-items *)
-        let mc = MainMixerVS.build_value_children ~format_time Added ref.Track.MainTrack.mixer in
-        Item { mi with children = List.map view_to_unchanged mc }
-      | Item ({ name = "Mixer"; _ } as mi) ->
-        Item { mi with children = List.map fill_mixer_child mi.children }
-      | v -> v) item.children
-  in
-  { item with children }
-
-
 (** [create_midi_track_item] creates a [item] from a MidiTrack structured change (new type system).
     @param get_pointee_name function to resolve pointee IDs to names
     @param note_name_style the style to use for note names (Sharp or Flat)
@@ -1509,8 +1316,7 @@ let create_midi_track_item
       ~name:(MidiTrackVS.build_section_name c)
       ~domain_type:DTTrack c in
   let item = match ref_track with
-    | Some (Track.Midi rt) ->
-      populate_unchanged_mixer_item ~format_time item rt.Track.MidiTrack.mixer
+    | Some (Track.Midi rt) -> MidiTrackVS.fill_context ~format_time rt item
     | _ -> item
   in
   match c with
@@ -1550,7 +1356,7 @@ let create_audio_like_track_item
       ~domain_type:DTTrack c in
   let item = match ref_track with
     | Some (Track.Audio rt | Track.Group rt | Track.Return rt) ->
-      populate_unchanged_mixer_item ~format_time item rt.Track.AudioTrack.mixer
+      AudioTrackVS.fill_context ~format_time rt item
     | _ -> item
   in
   match c with
@@ -1609,14 +1415,13 @@ let create_group_track_item
 
     For an `` `Unchanged `` master with a reference value, [build_item] renders a
     bare item with NO children — there is no Mixer placeholder for
-    [populate_unchanged_main_mixer_item] to fill. Instead the value side is
-    built from the reference ([`Added m]) and restamped [Unchanged] via
-    [view_to_unchanged] (fields get [oldval = newval]), so consumers can read
-    the project's tempo/time signature even when only regular tracks changed.
-    Only the Mixer child is kept: restamping the whole subtree would also
-    materialize the reference master's Automations/Devices as pseudo-context —
-    symmetric with [populate_unchanged_mixer_item], which fills only the
-    Mixer strip. *)
+    [fill_context] to fill. Instead the value side is built from the reference
+    ([`Added m]) and restamped [Unchanged] via [view_to_unchanged] (fields get
+    [oldval = newval]), so consumers can read the project's tempo/time
+    signature even when only regular tracks changed. Only the Mixer child is
+    kept: restamping the whole subtree would also materialize the reference
+    master's Automations/Devices as pseudo-context — symmetric with
+    [fill_context], which fills only context-marked sections. *)
 let create_main_track_item
     ~(ctx : Ctx.t)
     ~(get_pointee_name : int -> string)
@@ -1650,7 +1455,7 @@ let create_main_track_item
     let item = build_main c in
     (match ref_main with
      | None -> item
-     | Some rt -> populate_unchanged_main_mixer_item ~format_time item rt)
+     | Some rt -> MainTrackVS.fill_context ~format_time rt item)
 
 
 (* ==================== Liveset View ==================== *)

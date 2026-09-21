@@ -64,8 +64,8 @@ module MidiClip = struct
     name : string;
     start_time : float; [@view.scalar time]
     end_time : float; [@view.scalar time]
-    loop : Loop.t; [@view.child "DTLoop"] [@view.label "Loop"]
-    signature : TimeSignature.t; [@view.child "DTSignature"] [@view.label "TimeSignature"]
+    loop : Loop.t; [@view.child "DTLoop"] [@view.label "Loop"] [@view.context]
+    signature : TimeSignature.t; [@view.child "DTSignature"] [@view.label "TimeSignature"] [@view.context]
     notes : MidiNote.t list; [@view.collection "DTNote"] [@view.builder "build_notes"]
   } [@@deriving eq, id, patch, view_spec] [@@patch.generate_diff]
 
@@ -165,10 +165,10 @@ module AudioClip = struct
     name : string;
     start_time : float; [@view.scalar time]
     end_time : float; [@view.scalar time]
-    loop : Loop.t; [@view.child "DTLoop"] [@view.label "Loop"]
-    signature : TimeSignature.t; [@view.child "DTSignature"] [@view.label "TimeSignature"]
-    sample_ref : SampleRef.t; [@view.child "DTSampleRef"] [@view.label "SampleRef"]
-    fade : Fade.t option; [@view.optional_child "DTClip"]
+    loop : Loop.t; [@view.child "DTLoop"] [@view.label "Loop"] [@view.context]
+    signature : TimeSignature.t; [@view.child "DTSignature"] [@view.label "TimeSignature"] [@view.context]
+    sample_ref : SampleRef.t; [@view.child "DTSampleRef"] [@view.label "SampleRef"] [@view.context]
+    fade : Fade.t option; [@view.optional_child "DTClip"] [@view.context]
   } [@@deriving eq, id, patch, view_spec]
 
   let create (xml : Xml.t) : t =
