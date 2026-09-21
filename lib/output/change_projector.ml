@@ -231,10 +231,13 @@ module Ctx : sig
   (** No old document: every lookup returns [None]. *)
 
   val of_liveset : Liveset.t -> t
-  (** Index [ls.tracks @ ls.returns] and [ls.main]. *)
+  (** Index [ls.tracks @ ls.returns] and [ls.main]. On an id shared by a
+      regular track and a return (impossible in Live-authored data — track ids
+      are globally unique), the first occurrence wins. *)
 
   val of_track_list : main:Track.MainTrack.t option -> Track.t list -> t
-  (** Index an explicit track list — narrow callers and tests. *)
+  (** Index an explicit track list — narrow callers and tests. First
+      occurrence of an id wins (see [of_liveset]). *)
 
   val track : t -> id:int -> Track.t option
   val main_track : t -> Track.MainTrack.t option
@@ -259,9 +262,16 @@ end = struct
     events : (int * int, (int, Automation.EnvelopeEvent.t) Hashtbl.t option) Hashtbl.t;
   }
 
+  (* [add_first tbl id t] indexes [t] under [id] unless one is present: the
+     first occurrence of an id wins, so a return sharing a regular track's id
+     cannot shadow it ([Hashtbl.add] alone would be last-wins). Live-authored
+     ids are globally unique; this is a defensive, documented tie-break. *)
+  let add_first tbl id (t : Track.t) =
+    if not (Hashtbl.mem tbl id) then Hashtbl.add tbl id t
+
   let of_track_list ~(main : Track.MainTrack.t option) (tracks : Track.t list) : t =
     let tbl = Hashtbl.create 16 in
-    List.iter (fun t -> Hashtbl.add tbl (track_id_of t) t) tracks;
+    List.iter (fun t -> add_first tbl (track_id_of t) t) tracks;
     { tracks = tbl; main;
       midi_clips = Hashtbl.create 8; audio_clips = Hashtbl.create 8;
       automations = Hashtbl.create 8; notes = Hashtbl.create 8;
@@ -1719,16 +1729,6 @@ let liveset_field_specs : (Liveset.t, Liveset.Patch.t) unified_field_spec list =
 ]
 
 
-(** [project ~old change] projects a liveset change into the view tree.
-    [old], the pre-change document, is a peer input — not a patch annotation:
-    unchanged context (mixer strips, note pitch, tempo/time-signature,
-    GroupId) is resolved from it by id through [Ctx], so "show unchanged
-    context" is one uniform policy instead of per-type plumbing. All callers
-    already hold both documents.
-    @param note_name_style the style to use for note names (Sharp or Flat)
-    @param old the pre-change document; [None] is the no-reference projection
-    @param c the liveset structured change
-*)
 (** [param_value_to_field_value] converts a device parameter value to a
     serializable field value (mirrors GenericParam.ViewSpec.pv_to_fv). *)
 let param_value_to_field_value (v : Device.param_value) : field_value =
@@ -1786,6 +1786,15 @@ let liveset_tempo_context
      | `Unchanged -> ref_values ())
   | `Unchanged -> (None, None)
 
+(** [project ~old change] projects a liveset change into the view tree.
+    [old], the pre-change document, is a peer input — not a patch annotation:
+    unchanged context (mixer strips, note pitch, tempo/time-signature,
+    GroupId) is resolved from it by id through [Ctx], so "show unchanged
+    context" is one uniform policy instead of per-type plumbing. All callers
+    already hold both documents.
+    @param note_name_style the style to use for note names (Sharp or Flat)
+    @param old the pre-change document; [None] is the no-reference projection
+    @param c the liveset structured change *)
 let project
     ?(note_name_style : note_display_style = default_note_name_style)
     ?(format_time : dual_time_formatter = default_dual_time_formatter)

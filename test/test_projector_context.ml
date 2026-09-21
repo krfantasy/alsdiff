@@ -103,6 +103,23 @@ let test_of_track_list_matches_of_liveset () =
   check bool "no main via list" true (Ctx.main_track via_list = None);
   check bool "main via liveset" true (Ctx.main_track via_liveset <> None)
 
+(* First-occurrence-wins tie-break: when a regular track and a return share
+   an id (impossible in Live-authored data — track ids are globally unique),
+   the first indexed track wins; the return must not silently shadow it
+   ([Hashtbl.add] alone would resolve last-wins). *)
+let test_shared_id_first_occurrence_wins () =
+  let ctx = Ctx.of_track_list ~main:None
+      [Track.Midi (make_midi_track 5 "Bass");
+       Track.Return (make_return_track 5 "Return A");
+       Track.Return (make_return_track 6 "Return B")]
+  in
+  (match Ctx.track ctx ~id:5 with
+   | Some (Track.Midi t) -> check string "shared id: first track wins" "Bass" t.Track.MidiTrack.name
+   | _ -> fail "expected first-occurring Midi track 5, not the shadowing Return");
+  (match Ctx.track ctx ~id:6 with
+   | Some (Track.Return _) -> ()
+   | _ -> fail "expected Return 6")
+
 let () =
   run "ProjectorContext" [
     "Ctx", [
@@ -115,5 +132,7 @@ let () =
         test_main_automation_and_event_scope;
       test_case "of_track_list matches of_liveset" `Quick
         test_of_track_list_matches_of_liveset;
+      test_case "shared id: first occurrence wins" `Quick
+        test_shared_id_first_occurrence_wins;
     ];
   ]

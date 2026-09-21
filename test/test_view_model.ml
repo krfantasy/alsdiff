@@ -933,6 +933,44 @@ let test_reference_fills_modified_mixer_params () =
   check bool "with reference: Solo populated from reference" true
     ((get_param "Solo" mixer).children <> [])
 
+(* Id recycling: an Added track whose id collides with an old (removed)
+   track's id must not inherit that old track's context. The context fills
+   target only empty Unchanged placeholders and identity fields are
+   Modified-gated, so the Added item keeps its own values throughout. Pins
+   this invariant before the view_spec PPX (TODO item 4) generates fills. *)
+let test_added_track_ignores_same_id_old_track () =
+  let mk_track name mixer =
+    {
+      Track.MidiTrack.id = 7; name; current_name = name; group_id = -1;
+      clips = []; automations = []; devices = [];
+      mixer; routings = Track_helpers.make_empty_routing_set ();
+    }
+  in
+  (* The old track's 0.10/-0.90 values are unique to it; any field carrying
+     them in the Added projection would mean the old track leaked in. *)
+  let old_track = mk_track "Old" (Track_helpers.make_mixer 0.10 (-0.90)) in
+  let new_track = mk_track "New" (Track_helpers.make_mixer 0.90 (-0.10)) in
+  let ctx = Ctx.of_track_list ~main:None [Track.Midi old_track] in
+  let item = create_midi_track_item ~ctx ~get_pointee_name:(fun _ -> "?") (`Added new_track) in
+  let mixer = get_item (find_view_by_name "Mixer" item.children) in
+  check bool "added track: mixer is Added, not context-filled" true (mixer.change = Added);
+  let volume = get_item (find_view_by_name "Volume" mixer.children) in
+  (match find_view_by_name "Value" volume.children with
+   | Field { change = Added; oldval = None; newval = Some (Ffloat 0.90); _ } -> ()
+   | _ -> check bool "added track: Volume Value is Added 0.90" true false);
+  let rec has_old_value (views : view list) : bool =
+    let is_old = function
+      | Some (Ffloat v) -> v = 0.10 || v = -0.90
+      | _ -> false
+    in
+    List.exists (function
+        | Field f -> is_old f.oldval || is_old f.newval
+        | Item i -> has_old_value i.children
+        | Collection c -> has_old_value c.items) views
+  in
+  check bool "added track: no old-track value anywhere" true
+    (not (has_old_value [ Item item ]))
+
 (* When a MidiClip is Modified in an inline field, the patch path emits the
    unchanged Loop/TimeSignature sections as empty Unchanged placeholders.
    With reference clips threaded in (matched by clip id), the placeholders are
@@ -1183,6 +1221,7 @@ let () =
       test_case "No tempo context on Unchanged liveset" `Quick test_liveset_no_tempo_context_when_unchanged;
       test_case "Reference liveset populates unchanged mixer" `Quick test_reference_populates_unchanged_mixer;
       test_case "Reference fills modified mixer params" `Quick test_reference_fills_modified_mixer_params;
+      test_case "Added track ignores same-id old track" `Quick test_added_track_ignores_same_id_old_track;
       test_case "Reference fills modified clip sections" `Quick test_reference_fills_modified_clip_sections;
       test_case "Modified track carries identity fields" `Quick test_modified_track_identity_fields;
       test_case "Changed group emits single Modified GroupId" `Quick test_modified_track_group_change_no_duplicate;
