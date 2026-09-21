@@ -297,6 +297,12 @@
  (libraries alsdiff_output alcotest)
  (preprocess (pps ppx_deriving.eq ppx_patch)))
 
+(test
+ (name test_view_spec_context)
+ (modules test_view_spec_context)
+ (libraries alsdiff_base alsdiff_output alcotest)
+ (preprocess (pps ppx_deriving.eq ppx_patch)))
+
 ;; Auto indent files with `dune build @fmt`
 (subdir
  run
@@ -309,7 +315,7 @@
    (glob_files ../*.{ml,mli}))
   (target dune.ocp-indent)
   (action
-   (run ocp-indent-gen-rules --ignore=test_variant_patch.pp.ml,test_view_spec_inline_child.pp.ml -o %{target}))))
+   (run ocp-indent-gen-rules --ignore=test_variant_patch.pp.ml,test_view_spec_inline_child.pp.ml,test_view_spec_context.pp.ml -o %{target}))))
 
 (test
  (name test_keymap)

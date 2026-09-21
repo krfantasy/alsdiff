@@ -39,6 +39,7 @@ let cases =
     ("view_spec_multi_decl.ml", Some "multiple mutually defined types");
     ("patch_skip_view_label.ml", Some "cannot also carry");
     ("patch_variant_attr.ml", Some "Cannot derive patch for variant type with attributes on constructor A");
+    ("view_spec_context_on_atomic.ml", Some "there is no section placeholder to fill");
     ("valid_record.ml", None);
     ("valid_variant_deprecated.ml", None);
   ]
