@@ -98,6 +98,143 @@ let get_builder_name (attrs : attributes) : string option =
 let has_context_attr (attrs : attributes) : bool =
   has_attribute attrs "view.context"
 
+(* ==================== Variant dispatch attribute ==================== *)
+
+(* Routing-table entry for [@@view.variant_dispatch] — see the payload
+   grammar comment at [parse_variant_dispatch]. The PPX does NOT check that
+   constructor, module or patch names exist: the generated match is
+   exhaustiveness- and name-checked by the compiler downstream (a missing
+   table entry = non-exhaustive match error; a wrong module = unbound
+   module error). *)
+type variant_entry = {
+  vctor : string;    (* constructor name, e.g. "Regular" *)
+  vmodule : string;  (* variant module, e.g. "RegularDevice"; "" = skip entry *)
+  vpatch : string;   (* patch constructor, e.g. "RegularPatch"; "" = no Modified arm *)
+  vbuilder : string; (* builder label, e.g. "build_midi"; "" = self-routed mode *)
+}
+
+type variant_dispatch = {
+  vd_domain : string;        (* domain-type name, e.g. "DTDevice" *)
+  vd_entries : variant_entry list;
+}
+
+let has_variant_dispatch_attr (attrs : attributes) : bool =
+  has_attribute attrs "view.variant_dispatch"
+
+let string_literal_of_pexp (e : expression) : string option =
+  match e.pexp_desc with
+  | Pexp_constant (Pconst_string (s, _, _)) -> Some s
+  | _ -> None
+
+let expr_of_item (it : structure_item) : expression option =
+  match it.pstr_desc with
+  | Pstr_eval (e, _) -> Some e
+  | _ -> None
+
+(* Flatten `e1; e2; ...` into [e1; e2; ...] *)
+let rec flatten_sequence (e : expression) : expression list =
+  match e.pexp_desc with
+  | Pexp_sequence (a, b) -> flatten_sequence a @ flatten_sequence b
+  | _ -> [e]
+
+let entry_of_expr (e : expression) : (variant_entry, string) result =
+  match e.pexp_desc with
+  | Pexp_tuple [ a; b; c; d ] ->
+    (match (string_literal_of_pexp a, string_literal_of_pexp b,
+            string_literal_of_pexp c, string_literal_of_pexp d) with
+     | Some vctor, Some vmodule, Some vpatch, Some vbuilder ->
+       Ok { vctor; vmodule; vpatch; vbuilder }
+     | _ -> Error "view.variant_dispatch entries must be 4 string literals")
+  | _ -> Error "view.variant_dispatch entries must be 4 string literals"
+
+(* Payload grammar, as written on the sum types:
+
+     [@@view.variant_dispatch "DTDevice" (
+         "Regular", "RegularDevice", "RegularPatch", "";
+         "Plugin", "PluginDevice", "PluginPatch", "";
+       )]
+
+   which the parser delivers as PStr [Pstr_eval (Pexp_apply ("DTDevice",
+   <entry tuples joined by Pexp_sequence>))]: the domain-type name string
+   applied to a parenthesized `;`-separated sequence of 4-string tuples. *)
+(* Stdlib [Result] provides no [let*] binding operators, so the folds below
+   thread [Ok]/[Error] explicitly, in the brief's rejection order. *)
+let parse_variant_dispatch (attrs : attributes) : (variant_dispatch, string) result =
+  let payload =
+    List.find_opt attrs ~f:(fun (a : attribute) ->
+        String.equal a.attr_name.txt "view.variant_dispatch")
+    |> Option.map (fun a -> a.attr_payload)
+  in
+  match payload with
+  | None -> Error "internal: view.variant_dispatch absent"
+  | Some (PStr items) ->
+    let exprs = List.filter_map items ~f:expr_of_item in
+    (match exprs with
+     | [] -> Error "view.variant_dispatch needs at least one entry"
+     | first :: rest ->
+       (match first.pexp_desc, rest with
+        | Pexp_apply
+            ( { pexp_desc = Pexp_constant (Pconst_string (domain, _, _)); _ },
+              [ (Nolabel, body) ] ),
+          [] ->
+          let entry_exprs = flatten_sequence body in
+          if entry_exprs = [] then Error "view.variant_dispatch needs at least one entry"
+          else
+            List.fold_left entry_exprs ~init:(Ok [])
+              ~f:(fun acc e ->
+                  match acc with
+                  | Error msg -> Error msg
+                  | Ok entries ->
+                    (match entry_of_expr e with
+                     | Error msg -> Error msg
+                     | Ok entry -> Ok (entry :: entries)))
+            |> Result.map (fun entries ->
+                { vd_domain = domain; vd_entries = List.rev entries })
+        | _ -> Error "view.variant_dispatch must start with a domain-type name string"))
+  | Some _ -> Error "view.variant_dispatch payload must be a domain name applied to entry tuples"
+
+(* Mode + table consistency, in rejection order (order matters — a
+   skip-in-all-self table must report the skip error, not the mixed error):
+   - all-self: every entry has a module and an empty builder (Device)
+   - builder-routed: every entry either has a module AND a builder label, or
+     is a skip entry (module = "", builder = "") (Track)
+   Returns [true] = builder-routed. *)
+let validate_variant_dispatch
+    ~(type_label : string option)
+    (vd : variant_dispatch)
+  : (bool, string) result
+  =
+  let all_self =
+    List.for_all vd.vd_entries ~f:(fun e -> e.vmodule <> "" && e.vbuilder = "") in
+  let no_builders = List.for_all vd.vd_entries ~f:(fun e -> e.vbuilder = "") in
+  let has_skip = List.exists vd.vd_entries ~f:(fun e -> e.vmodule = "") in
+  if vd.vd_entries = [] then Error "view.variant_dispatch needs at least one entry"
+  else
+    match
+      (if all_self then Ok false
+       else if no_builders && has_skip then
+         Error "self-routed variant_dispatch cannot skip constructors"
+       else if
+         List.for_all vd.vd_entries ~f:(fun e -> e.vmodule = "" || e.vbuilder <> "")
+       then Ok true
+       else Error "view.variant_dispatch mixes self-routed and builder-routed entries")
+    with
+    | Error msg -> Error msg
+    | Ok builder_routed ->
+      (* self-routed needs a placeholder name for the `Unchanged arm *)
+      if (not builder_routed) && type_label = None then
+        Error "self-routed variant_dispatch requires [@view.type_label] for the Unchanged placeholder"
+      else
+        (* patch constructors must be claimed by at most one entry *)
+        let patches =
+          List.filter_map vd.vd_entries ~f:(fun e ->
+              if e.vpatch = "" then None else Some e.vpatch)
+        in
+        if List.length patches
+           <> List.length (List.sort_uniq ~cmp:String.compare patches) then
+          Error "duplicate patch constructor in view.variant_dispatch"
+        else Ok builder_routed
+
 (* ==================== Label generation ==================== *)
 
 (* Convert snake_case to title case: start_time -> "Start Time", on -> "On" *)
@@ -732,10 +869,35 @@ let generate_specs_from_fields ~loc fields =
      ~format_time, so they are excluded from the build_* threading above. *)
   (has_time_field, field_specs, child_section_specs, inline_child_fields, builder_fields)
 
+(* Task 3 (self-routed) and Task 5 (builder-routed) replace this stub with
+   the real ViewSpec emitter. No green test reaches the success path in
+   Task 2: all six rejection fixtures take an [Error] branch before this
+   call, and no real type carries the attribute yet. *)
+let generate_variant_dispatch ~type_decl:_ ~vd:_ ~builder_routed:_ : structure =
+  assert false
+
 let generate_view_spec_for_decl ~type_decl =
   let open Ast_builder.Default in
   let loc = type_decl.ptype_loc in
   match type_decl.ptype_kind with
+  | Ptype_record _ when has_variant_dispatch_attr type_decl.ptype_attributes ->
+    let ext = Ppxlib.Location.error_extensionf ~loc
+        "view.variant_dispatch is for variant (sum) types, not records" in
+    [pstr_extension ~loc ext []]
+  | Ptype_variant _ | Ptype_abstract when
+      has_variant_dispatch_attr type_decl.ptype_attributes ->
+    (match parse_variant_dispatch type_decl.ptype_attributes with
+     | Error msg ->
+       let ext = Ppxlib.Location.error_extensionf ~loc "%s" msg in
+       [pstr_extension ~loc ext []]
+     | Ok vd ->
+       (match validate_variant_dispatch
+                ~type_label:(get_type_label type_decl.ptype_attributes) vd with
+        | Error msg ->
+          let ext = Ppxlib.Location.error_extensionf ~loc "%s" msg in
+          [pstr_extension ~loc ext []]
+        | Ok builder_routed ->
+          generate_variant_dispatch ~type_decl ~vd ~builder_routed))
   | Ptype_record fields ->
     (match List.find_map ~f:find_incompatible_patch_skip_view fields with
      | Some attr_name ->

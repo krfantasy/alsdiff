@@ -40,6 +40,12 @@ let cases =
     ("patch_skip_view_label.ml", Some "cannot also carry");
     ("patch_variant_attr.ml", Some "Cannot derive patch for variant type with attributes on constructor A");
     ("view_spec_context_on_atomic.ml", Some "there is no section placeholder to fill");
+    ("variant_dispatch_on_record.ml", Some "view.variant_dispatch is for variant (sum) types");
+    ("variant_dispatch_bad_arity.ml", Some "4 string literals");
+    ("variant_dispatch_mixed_mode.ml", Some "mixes self-routed and builder-routed");
+    ("variant_dispatch_skip_in_self.ml", Some "cannot skip constructors");
+    ("variant_dispatch_no_type_label.ml", Some "requires [@view.type_label]");
+    ("variant_dispatch_dup_patch.ml", Some "duplicate patch constructor");
     ("valid_record.ml", None);
     ("valid_variant_deprecated.ml", None);
   ]
