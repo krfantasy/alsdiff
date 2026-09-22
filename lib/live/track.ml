@@ -479,6 +479,20 @@ module MainTrack = struct
 
 end
 
+module Patch = struct
+  type t =
+    | MidiPatch of MidiTrack.Patch.t
+    | AudioPatch of AudioTrack.Patch.t
+    | GroupPatch of AudioTrack.Patch.t
+    | MainPatch of MainTrack.Patch.t
+
+  let is_empty = function
+    | MidiPatch patch -> MidiTrack.Patch.is_empty patch
+    | AudioPatch patch -> AudioTrack.Patch.is_empty patch
+    | GroupPatch patch -> AudioTrack.Patch.is_empty patch
+    | MainPatch patch -> MainTrack.Patch.is_empty patch
+end
+
 (* Sum type that represents either a MidiTrack or AudioTrack *)
 type t =
   | Midi of MidiTrack.t
@@ -486,7 +500,14 @@ type t =
   | Group of AudioTrack.t
   | Return of AudioTrack.t
   | Main of MainTrack.t
-[@@deriving eq]
+[@@deriving eq, view_spec]
+[@@view.variant_dispatch "DTTrack" (
+    "Midi",   "MidiTrack",  "MidiPatch",   "build_midi";
+    "Audio",  "AudioTrack", "AudioPatch",  "build_audio";
+    "Group",  "AudioTrack", "GroupPatch",  "build_group";
+    "Return", "AudioTrack", "",            "build_return";
+    "Main",   "",           "MainPatch",   "";
+  )]
 
 let has_same_id old_track new_track =
   match old_track, new_track with
@@ -515,20 +536,6 @@ let create (xml : Xml.t) : t =
       | _ -> "non-element"
     in
     raise (Xml.Xml_error (xml, "Unsupported track type: " ^ name))
-
-module Patch = struct
-  type t =
-    | MidiPatch of MidiTrack.Patch.t
-    | AudioPatch of AudioTrack.Patch.t
-    | GroupPatch of AudioTrack.Patch.t
-    | MainPatch of MainTrack.Patch.t
-
-  let is_empty = function
-    | MidiPatch patch -> MidiTrack.Patch.is_empty patch
-    | AudioPatch patch -> AudioTrack.Patch.is_empty patch
-    | GroupPatch patch -> AudioTrack.Patch.is_empty patch
-    | MainPatch patch -> MainTrack.Patch.is_empty patch
-end
 
 let get_name = function
   | Midi a -> a.name

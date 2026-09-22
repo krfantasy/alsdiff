@@ -1332,6 +1332,60 @@ let test_device_dispatch_generated_output () =
       check bool "unchanged item has no children" true (unchanged.children = []))
     kinds
 
+(* ===== Track dispatch (TODO review item 5): generated routing ===== *)
+
+(* The sniff regression pin: the SAME AudioTrack payload and the SAME
+   AudioPatch change relabel to AudioTrack vs ReturnTrack purely by which
+   track kind the ctx's old document carries at that id. *)
+let test_track_dispatch_modified_audio_vs_return () =
+  let old_at = Track_helpers.make_return_track 30 "Rev A" in
+  (* same id, changed mixer volume -> AudioPatch (Return has no patch variant) *)
+  let new_at = { old_at with Track.AudioTrack.mixer = Track_helpers.make_mixer 0.7 0.1 } in
+  let patch = Track.AudioTrack.diff old_at new_at in
+  let get_pointee_name _ = "?" in
+  let as_audio =
+    dispatch_track_change ~ctx:(Ctx.of_track_list ~main:None [Track.Audio old_at])
+      ~get_pointee_name (`Modified (Track.Patch.AudioPatch patch)) in
+  let as_return =
+    dispatch_track_change ~ctx:(Ctx.of_track_list ~main:None [Track.Return old_at])
+      ~get_pointee_name (`Modified (Track.Patch.AudioPatch patch)) in
+  (match as_audio, as_return with
+   | Some (Item ia), Some (Item ir) ->
+     check bool "audio ctx -> AudioTrack label" true (String.starts_with ~prefix:"AudioTrack" ia.name);
+     check bool "return ctx -> ReturnTrack label" true (String.starts_with ~prefix:"ReturnTrack" ir.name)
+   | _ -> check bool "both dispatch to Some Item" true false)
+
+let test_track_dispatch_added_midi_and_group_modified () =
+  let get_pointee_name _ = "?" in
+  let ctx = Ctx.empty in
+  (match dispatch_track_change ~ctx ~get_pointee_name (`Added (Track.Midi (Track_helpers.make_midi_track 1 "Bass"))) with
+   | Some (Item i) -> check bool "added midi label" true (String.starts_with ~prefix:"MidiTrack" i.name)
+   | _ -> check bool "added midi dispatches" true false);
+  let old_g = Track_helpers.make_return_track 5 "G1" in
+  let new_g = { old_g with Track.AudioTrack.mixer = Track_helpers.make_mixer 0.9 0.0 } in
+  let patch = Track.AudioTrack.diff old_g new_g in
+  (match dispatch_track_change ~ctx ~get_pointee_name (`Modified (Track.Patch.GroupPatch patch)) with
+   | Some (Item i) -> check bool "group patch label" true (String.starts_with ~prefix:"Group" i.name)
+   | _ -> check bool "group patch dispatches" true false)
+
+let test_track_dispatch_main_and_unchanged_none () =
+  let get_pointee_name _ = "?" in
+  check bool "Main -> None" true
+    (dispatch_track_change ~ctx:Ctx.empty ~get_pointee_name
+       (`Added (Track.Main (Track_helpers.make_main_track ()))) = None);
+  check bool "Unchanged -> None" true
+    (dispatch_track_change ~ctx:Ctx.empty ~get_pointee_name `Unchanged = None)
+
+(* Return's Added arm routes to the return builder (not the audio one), so
+   the item name carries the ReturnTrack kind. *)
+let test_track_dispatch_added_return () =
+  let get_pointee_name _ = "?" in
+  match dispatch_track_change ~ctx:Ctx.empty ~get_pointee_name
+          (`Added (Track.Return (Track_helpers.make_return_track 31 "Rev B"))) with
+  | Some (Item i) ->
+    check bool "added return label" true (String.starts_with ~prefix:"ReturnTrack" i.name)
+  | _ -> check bool "added return dispatches" true false
+
 let () =
   run "ViewModel" [
     "ViewBuilder.change_type_of", [
@@ -1407,5 +1461,15 @@ let () =
     "device variant dispatch", [
       test_case "generated Device.ViewSpec dispatcher output pinned" `Quick
         test_device_dispatch_generated_output;
+    ];
+    "track variant dispatch", [
+      test_case "Modified AudioPatch relabels by ctx track kind" `Quick
+        test_track_dispatch_modified_audio_vs_return;
+      test_case "Added midi and Modified GroupPatch dispatch" `Quick
+        test_track_dispatch_added_midi_and_group_modified;
+      test_case "Main and Unchanged dispatch to None" `Quick
+        test_track_dispatch_main_and_unchanged_none;
+      test_case "Added Return routes to return builder" `Quick
+        test_track_dispatch_added_return;
     ];
   ]
