@@ -871,21 +871,125 @@ let generate_specs_from_fields ~loc fields =
 
 (* ==================== Variant dispatch ViewSpec generation ==================== *)
 
-(* Self-routed emitter (Task 3): the sum's own ViewSpec functor, delegating
-   each change arm to the variant module's ViewSpec named in the routing
-   table. The PPX only transcribes the table — the generated match's
-   exhaustiveness (every constructor covered) and the referenced names are
-   checked by the compiler downstream. The `` `Unchanged `` arm delegates to
-   the FIRST entry's ViewSpec with ~name set to the type's
-   [@@view.type_label] string: build_item_from_specs on `Unchanged yields
-   {name; change=Unchanged; domain_type; children=[]}, identical to the
-   hand-written placeholder arm. Builder-routed mode (Track shape) is Task 5;
-   its branch stays unreachable here. *)
+(* Variant dispatch emitter. In BOTH modes the PPX only transcribes the
+   table — the generated match's exhaustiveness (every constructor covered)
+   and the referenced names are checked by the compiler downstream.
+
+   Self-routed (Task 3): the sum's own ViewSpec functor delegates each
+   change arm to the variant module's ViewSpec named in the routing table.
+   The `` `Unchanged `` arm delegates to the FIRST entry's ViewSpec with
+   ~name set to the type's [@@view.type_label] string: build_item_from_specs
+   on `Unchanged yields {name; change=Unchanged; domain_type; children=[]},
+   identical to the hand-written placeholder arm.
+
+   Builder-routed (Task 5): one labelled builder arg per ROUTED entry
+   (vmodule <> ""), in table order; `Added/`Removed/`Modified arms re-tag
+   the payload to the variant module's structured_change and hand it to
+   that entry's builder, returning Some. Skip entries (vmodule = "") get
+   NO builder arg — whatever their vbuilder string says (validation
+   currently tolerates a skip entry carrying a builder label; a parked gap
+   from the Task 2 review, so the emitter stays robust regardless) — and
+   their arms collapse with `Unchanged into one final -> None arm. No
+   ~format_time parameter: builders arrive as pre-applied closures. *)
 let generate_variant_dispatch ~type_decl ~vd ~builder_routed : structure =
   let open Ast_builder.Default in
-  if builder_routed then assert false (* Task 5: builder-routed generation *)
+  let loc = type_decl.ptype_loc in
+  if builder_routed then
+    let sc_lid = Ldot (Ldot (Lident "Alsdiff_base", "Diff"), "structured_change") in
+    let case pat rhs = { Parsetree.pc_lhs = pat; pc_guard = None; pc_rhs = rhs } in
+    let routed = List.filter vd.vd_entries ~f:(fun e -> e.vmodule <> "") in
+    let skips = List.filter vd.vd_entries ~f:(fun e -> e.vmodule = "") in
+    let v_var = pexp_ident ~loc { txt = Lident "v"; loc } in
+    let p_var = pexp_ident ~loc { txt = Lident "p"; loc } in
+    (* Some (build_x (`Tag payload)) *)
+    let retag e tag payload =
+      pexp_construct ~loc { txt = Lident "Some"; loc }
+        (Some (pexp_apply ~loc (pexp_ident ~loc { txt = Lident e.vbuilder; loc })
+             [ Nolabel, pexp_variant ~loc tag (Some payload) ]))
+    in
+    (* `Tag (<ctor> <payload-pat>) *)
+    let value_pat e tag payload_pat =
+      ppat_variant ~loc tag
+        (Some (ppat_construct ~loc { loc; txt = Lident e.vctor } (Some payload_pat)))
+    in
+    (* `Modified (Patch.<vpatch> <payload-pat>) *)
+    let patch_pat e payload_pat =
+      ppat_variant ~loc "Modified"
+        (Some (ppat_construct ~loc { loc; txt = Ldot (Lident "Patch", e.vpatch) }
+                 (Some payload_pat)))
+    in
+    (* Routed entry: `Added/`Removed arms, plus a `Modified arm iff the entry
+       claims a patch constructor (Return shape has none). *)
+    let routed_cases e =
+      [ case (value_pat e "Added" (ppat_var ~loc { txt = "v"; loc })) (retag e "Added" v_var)
+      ; case (value_pat e "Removed" (ppat_var ~loc { txt = "v"; loc })) (retag e "Removed" v_var) ]
+      @ (if e.vpatch = "" then []
+         else [ case (patch_pat e (ppat_var ~loc { txt = "p"; loc })) (retag e "Modified" p_var) ])
+    in
+    (* Skip entry: wildcard-payload patterns feeding the shared None arm. *)
+    let skip_pats e =
+      [ value_pat e "Added" (ppat_any ~loc); value_pat e "Removed" (ppat_any ~loc) ]
+      @ (if e.vpatch = "" then [] else [ patch_pat e (ppat_any ~loc) ])
+    in
+    (* One final arm: every skip pattern plus `Unchanged -> None. *)
+    let final_case =
+      let pats = List.concat_map skips ~f:skip_pats @ [ ppat_variant ~loc "Unchanged" None ] in
+      match pats with
+      | [] -> assert false (* unreachable: `Unchanged is always appended *)
+      | first :: rest ->
+        case (List.fold_left rest ~init:first ~f:(ppat_or ~loc))
+          (pexp_construct ~loc { txt = Lident "None"; loc } None)
+    in
+    let cases = List.concat_map routed ~f:routed_cases @ [ final_case ] in
+    let c_pat =
+      ppat_constraint ~loc
+        (ppat_var ~loc { txt = "c"; loc })
+        (ptyp_constr ~loc { loc; txt = sc_lid }
+           [ ptyp_constr ~loc { loc; txt = Lident "t" } []
+           ; ptyp_constr ~loc { loc; txt = Ldot (Lident "Patch", "t") } [] ])
+    in
+    let match_expr =
+      pexp_constraint ~loc
+        (pexp_match ~loc (pexp_ident ~loc { txt = Lident "c"; loc }) cases)
+        (ptyp_constr ~loc { loc; txt = Lident "option" }
+           [ ptyp_constr ~loc { loc; txt = Ldot (Lident "B", "item") } [] ])
+    in
+    let with_c = pexp_fun ~loc Nolabel None c_pat match_expr in
+    (* ~(build_x : (<vmodule>.t, <vmodule>.Patch.t) structured_change -> B.item),
+       one per routed entry, wrapped in table order. *)
+    let builder_arg_ty e =
+      ptyp_arrow ~loc Nolabel
+        (ptyp_constr ~loc { loc; txt = sc_lid }
+           [ ptyp_constr ~loc { loc; txt = Ldot (Lident e.vmodule, "t") } []
+           ; ptyp_constr ~loc { loc; txt = Ldot (Ldot (Lident e.vmodule, "Patch"), "t") } [] ])
+        (ptyp_constr ~loc { loc; txt = Ldot (Lident "B", "item") } [])
+    in
+    let expr =
+      List.fold_left (List.rev routed) ~init:with_c
+        ~f:(fun acc e ->
+            pexp_fun ~loc (Labelled e.vbuilder) None
+              (ppat_constraint ~loc (ppat_var ~loc { txt = e.vbuilder; loc })
+                 (builder_arg_ty e))
+              acc)
+    in
+    let build_item_binding =
+      pstr_value ~loc Nonrecursive [{
+        pvb_pat = ppat_var ~loc { txt = "build_item"; loc };
+        pvb_expr = expr;
+        pvb_attributes = [];
+        pvb_loc = loc;
+        pvb_constraint = None }]
+    in
+    let b_sig = pmty_ident ~loc { loc; txt = Longident.parse "Alsdiff_view_spec_types.View_spec_types.S" } in
+    let functor_param = Named ({ txt = Some "B"; loc }, b_sig) in
+    let body_mod = pmod_structure ~loc [build_item_binding] in
+    let functor_mod = pmod_functor ~loc functor_param body_mod in
+    [pstr_module ~loc {
+        pmb_name = { txt = Some "ViewSpec"; loc };
+        pmb_expr = functor_mod;
+        pmb_attributes = [];
+        pmb_loc = loc }]
   else
-    let loc = type_decl.ptype_loc in
     match (vd.vd_entries, get_type_label type_decl.ptype_attributes) with
     | first :: _, Some type_label ->
       let fmt_var = pexp_ident ~loc { txt = Lident "format_time"; loc } in
