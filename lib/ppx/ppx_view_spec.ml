@@ -173,23 +173,23 @@ let parse_variant_dispatch (attrs : attributes) : (variant_dispatch, string) res
      | [] -> Error "view.variant_dispatch needs at least one entry"
      | first :: rest ->
        (match first.pexp_desc, rest with
+        | Pexp_constant (Pconst_string (_, _, _)), [] ->
+          (* domain string with no entry tuples applied to it *)
+          Error "view.variant_dispatch needs at least one entry"
         | Pexp_apply
             ( { pexp_desc = Pexp_constant (Pconst_string (domain, _, _)); _ },
               [ (Nolabel, body) ] ),
           [] ->
-          let entry_exprs = flatten_sequence body in
-          if entry_exprs = [] then Error "view.variant_dispatch needs at least one entry"
-          else
-            List.fold_left entry_exprs ~init:(Ok [])
-              ~f:(fun acc e ->
-                  match acc with
-                  | Error msg -> Error msg
-                  | Ok entries ->
-                    (match entry_of_expr e with
-                     | Error msg -> Error msg
-                     | Ok entry -> Ok (entry :: entries)))
-            |> Result.map (fun entries ->
-                { vd_domain = domain; vd_entries = List.rev entries })
+          List.fold_left (flatten_sequence body) ~init:(Ok [])
+            ~f:(fun acc e ->
+                match acc with
+                | Error msg -> Error msg
+                | Ok entries ->
+                  (match entry_of_expr e with
+                   | Error msg -> Error msg
+                   | Ok entry -> Ok (entry :: entries)))
+          |> Result.map (fun entries ->
+              { vd_domain = domain; vd_entries = List.rev entries })
         | _ -> Error "view.variant_dispatch must start with a domain-type name string"))
   | Some _ -> Error "view.variant_dispatch payload must be a domain name applied to entry tuples"
 
@@ -198,6 +198,9 @@ let parse_variant_dispatch (attrs : attributes) : (variant_dispatch, string) res
    - all-self: every entry has a module and an empty builder (Device)
    - builder-routed: every entry either has a module AND a builder label, or
      is a skip entry (module = "", builder = "") (Track)
+   Then, regardless of mode: self-routed needs [@view.type_label]; a skip
+   entry may not carry a builder label; patch constructors and (routed)
+   builder labels are each claimed by at most one entry.
    Returns [true] = builder-routed. *)
 let validate_variant_dispatch
     ~(type_label : string option)
@@ -224,6 +227,8 @@ let validate_variant_dispatch
       (* self-routed needs a placeholder name for the `Unchanged arm *)
       if (not builder_routed) && type_label = None then
         Error "self-routed variant_dispatch requires [@view.type_label] for the Unchanged placeholder"
+      else if List.exists vd.vd_entries ~f:(fun e -> e.vmodule = "" && e.vbuilder <> "") then
+        Error "skip entry cannot carry a builder label in view.variant_dispatch"
       else
         (* patch constructors must be claimed by at most one entry *)
         let patches =
@@ -233,7 +238,19 @@ let validate_variant_dispatch
         if List.length patches
            <> List.length (List.sort_uniq ~cmp:String.compare patches) then
           Error "duplicate patch constructor in view.variant_dispatch"
-        else Ok builder_routed
+        else
+          (* builder labels too: two routed entries sharing one (necessarily
+             the same vmodule — different modules would be a type error) make
+             the generated nested labelled funs shadow-bind: the last binding
+             silently wins for BOTH arms, and the compiler catches nothing. *)
+          let builders =
+            List.filter_map vd.vd_entries ~f:(fun e ->
+                if e.vmodule <> "" && e.vbuilder <> "" then Some e.vbuilder else None)
+          in
+          if List.length builders
+             <> List.length (List.sort_uniq ~cmp:String.compare builders) then
+            Error "duplicate builder label in view.variant_dispatch"
+          else Ok builder_routed
 
 (* ==================== Label generation ==================== *)
 
@@ -886,10 +903,9 @@ let generate_specs_from_fields ~loc fields =
    (vmodule <> ""), in table order; `Added/`Removed/`Modified arms re-tag
    the payload to the variant module's structured_change and hand it to
    that entry's builder, returning Some. Skip entries (vmodule = "") get
-   NO builder arg — whatever their vbuilder string says (validation
-   currently tolerates a skip entry carrying a builder label; a parked gap
-   from the Task 2 review, so the emitter stays robust regardless) — and
-   their arms collapse with `Unchanged into one final -> None arm. No
+   NO builder arg — validation rejects a skip entry carrying a builder
+   label (the emitter would ignore it, but silently is worse than loud) —
+   and their arms collapse with `Unchanged into one final -> None arm. No
    ~format_time parameter: builders arrive as pre-applied closures. *)
 let generate_variant_dispatch ~type_decl ~vd ~builder_routed : structure =
   let open Ast_builder.Default in
@@ -1108,7 +1124,8 @@ let generate_view_spec_for_decl ~type_decl =
   let open Ast_builder.Default in
   let loc = type_decl.ptype_loc in
   match type_decl.ptype_kind with
-  | Ptype_record _ when has_variant_dispatch_attr type_decl.ptype_attributes ->
+  | Ptype_record _ | Ptype_open when
+      has_variant_dispatch_attr type_decl.ptype_attributes ->
     let ext = Ppxlib.Location.error_extensionf ~loc
         "view.variant_dispatch is for variant (sum) types, not records" in
     [pstr_extension ~loc ext []]

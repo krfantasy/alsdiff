@@ -33,6 +33,8 @@ CONTEXT.md
 !test/data/not_an_als.als
 !test/data/ctx_base.als
 !test/data/ctx_modified.als
+!test/data/dispatch_base.als
+!test/data/dispatch_modified.als
 .pi-subagents/
 __pycache__/
 *.pyc

@@ -1358,6 +1358,11 @@ let test_track_dispatch_modified_audio_vs_return () =
 let test_track_dispatch_added_midi_and_group_modified () =
   let get_pointee_name _ = "?" in
   let ctx = Ctx.empty in
+  let change_ct = Alcotest.of_pp (fun fmt ct ->
+      Fmt.pf fmt "%s" (match ct with
+          | Added -> "Added" | Removed -> "Removed"
+          | Modified -> "Modified" | Unchanged -> "Unchanged"))
+  in
   (match dispatch_track_change ~ctx ~get_pointee_name (`Added (Track.Midi (Track_helpers.make_midi_track 1 "Bass"))) with
    | Some (Item i) -> check bool "added midi label" true (String.starts_with ~prefix:"MidiTrack" i.name)
    | _ -> check bool "added midi dispatches" true false);
@@ -1366,7 +1371,12 @@ let test_track_dispatch_added_midi_and_group_modified () =
   let patch = Track.AudioTrack.diff old_g new_g in
   (match dispatch_track_change ~ctx ~get_pointee_name (`Modified (Track.Patch.GroupPatch patch)) with
    | Some (Item i) -> check bool "group patch label" true (String.starts_with ~prefix:"Group" i.name)
-   | _ -> check bool "group patch dispatches" true false)
+   | _ -> check bool "group patch dispatches" true false);
+  (match dispatch_track_change ~ctx ~get_pointee_name (`Removed (Track.Midi (Track_helpers.make_midi_track 9 "Old"))) with
+   | Some (Item i) ->
+     check bool "removed midi label" true (String.starts_with ~prefix:"MidiTrack" i.name);
+     check change_ct "removed midi change" Removed i.change
+   | _ -> check bool "removed midi dispatches" true false)
 
 let test_track_dispatch_main_and_unchanged_none () =
   let get_pointee_name _ = "?" in
