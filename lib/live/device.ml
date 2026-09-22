@@ -1701,7 +1701,30 @@ module Max4LiveDevice = struct
 end
 
 
-type t = device [@@deriving eq]
+(* Patch before the sum: the generated variant-dispatch ViewSpec matches on
+   Patch constructors, so Patch must be in scope at the generation point. *)
+module Patch = struct
+  type t =
+    | RegularPatch of RegularDevice.Patch.t
+    | PluginPatch of PluginDevice.Patch.t
+    | Max4LivePatch of Max4LiveDevice.Patch.t
+    | GroupPatch of GroupDevice.Patch.t
+
+  (* Use reference to break circular dependency - initialized after
+     the mutually recursive helpers are defined *)
+  let is_empty_ref : (t -> bool) ref = ref (fun _ -> failwith "is_empty not initialized")
+  let is_empty p = !is_empty_ref p
+end
+
+type t = device
+[@@deriving eq, view_spec]
+[@@view.type_label "Device"]
+[@@view.variant_dispatch "DTDevice" (
+    "Regular",  "RegularDevice",    "RegularPatch",  "";
+    "Plugin",   "PluginDevice",     "PluginPatch",   "";
+    "Max4Live", "Max4LiveDevice",   "Max4LivePatch", "";
+    "Group",    "GroupDevice",      "GroupPatch",    "";
+  )]
 
 let rec create (xml : Xml.t) : t =
   match xml with
@@ -1731,19 +1754,6 @@ let id_hash device =
   | Plugin plug -> Hashtbl.hash plug.id
   | Max4Live m4l -> Hashtbl.hash m4l.id
   | Group group -> Hashtbl.hash group.id
-
-module Patch = struct
-  type t =
-    | RegularPatch of RegularDevice.Patch.t
-    | PluginPatch of PluginDevice.Patch.t
-    | Max4LivePatch of Max4LiveDevice.Patch.t
-    | GroupPatch of GroupDevice.Patch.t
-
-  (* Use reference to break circular dependency - initialized after
-     the mutually recursive helpers are defined *)
-  let is_empty_ref : (t -> bool) ref = ref (fun _ -> failwith "is_empty not initialized")
-  let is_empty p = !is_empty_ref p
-end
 
 (* ================== Mutually Recursive is_empty Helpers ================== *)
 (* These functions are defined here at the end of the file where all modules

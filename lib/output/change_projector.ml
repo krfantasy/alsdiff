@@ -1028,6 +1028,7 @@ module MidiClipVS = Clip.MidiClip.ViewSpec(DeviceViewSpecB)
 module AudioClipVS = Clip.AudioClip.ViewSpec(DeviceViewSpecB)
 module CurveControlsVS = Automation.CurveControls.ViewSpec(DeviceViewSpecB)
 module VersionVS = Liveset.Version.ViewSpec(DeviceViewSpecB)
+module DeviceVS = Device.ViewSpec(DeviceViewSpecB)
 
 
 (** [create_events_item] builds a [item] for an envelope event change (new type system).

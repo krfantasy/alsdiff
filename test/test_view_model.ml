@@ -1253,6 +1253,62 @@ let test_spec_optional_context_without_reference_section () =
   check bool "reference lacks section: placeholder untouched" true
     (spec.fill () placeholder = placeholder)
 
+(* ===== Variant dispatch (TODO review item 5): generated Device.ViewSpec ===== *)
+
+let dev_param name v =
+  { Device.GenericParam.name; value = Device.Float v; automation = 0; modulation = 0; mapping = None }
+let dev_enabled = { Device.DeviceParam.base = dev_param "On" 1.0 }
+let mk_regular id dn disp =
+  Device.Regular { id; device_name = dn; display_name = disp; pointee = 0;
+                   enabled = dev_enabled; params = [ { Device.DeviceParam.base = dev_param "Amount" 1.0 } ];
+                   preset = None }
+let mk_plugin id dn disp =
+  Device.Plugin { id; device_name = dn; display_name = disp; pointee = 0;
+                  enabled = dev_enabled;
+                  desc = { Device.PluginDesc.name = dn; uid = "x"; plugin_type = Device.PluginDesc.Vst3;
+                           processor_state = "" };
+                  params = []; preset = None }
+let mk_m4l id dn disp =
+  Device.Max4Live { id; device_name = dn; display_name = disp; pointee = 0;
+                    enabled = dev_enabled;
+                    patch_ref = { Device.PatchRef.id; name = "p"; preset_type = Device.PresetRef.UserPreset;
+                                  relative_path = "r"; path = "p"; pack_name = ""; pack_id = 0;
+                                  file_size = 0; crc = 0; last_mod_date = 0 };
+                    params = []; preset = None }
+let mk_group_dev id dn disp =
+  Device.Group { id; device_name = dn; display_name = disp; pointee = 0;
+                 enabled = dev_enabled; branches = []; macros = []; snapshots = []; preset = None }
+
+(* Equivalence with the hand-written create_device_item across all 4 kinds x
+   3 change kinds + Unchanged. Field-level equality of the whole item. *)
+let bump_display = function
+  | Device.Regular r -> Device.Regular { r with display_name = r.display_name ^ "!" }
+  | Device.Plugin p -> Device.Plugin { p with display_name = p.display_name ^ "!" }
+  | Device.Max4Live m -> Device.Max4Live { m with display_name = m.display_name ^ "!" }
+  | Device.Group g -> Device.Group { g with display_name = g.display_name ^ "!" }
+
+let device_modified_change dev =
+  let new_dev = bump_display dev in
+  let patch = Device.diff dev new_dev in
+  `Modified patch
+
+let eq_item a b = a = b (* item is a structural record; = is fine *)
+
+let test_device_dispatch_matches_handwritten () =
+  let format_time = default_dual_time_formatter in
+  let kinds = [
+    mk_regular 1 "Eq8" "EQ Eight"; mk_plugin 2 "Serum" "Serum";
+    mk_m4l 3 "DeviceOn" "Device On"; mk_group_dev 4 "Rack" "Inst Rack" ]
+  in
+  List.iter (fun dev ->
+      let changes = [ `Added dev; `Removed dev; device_modified_change dev; `Unchanged ] in
+      List.iter (fun c ->
+          let generated = DeviceVS.build_item ~format_time c in
+          let handwritten = create_device_item ~format_time c in
+          check bool "generated == handwritten" true (eq_item generated handwritten))
+        changes)
+    kinds
+
 let () =
   run "ViewModel" [
     "ViewBuilder.change_type_of", [
@@ -1324,5 +1380,9 @@ let () =
         test_fill_section_and_inline_context;
       test_case "optional context without reference section" `Quick
         test_spec_optional_context_without_reference_section;
+    ];
+    "device variant dispatch", [
+      test_case "generated Device.ViewSpec matches create_device_item" `Quick
+        test_device_dispatch_matches_handwritten;
     ];
   ]

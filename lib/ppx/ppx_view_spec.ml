@@ -869,12 +869,136 @@ let generate_specs_from_fields ~loc fields =
      ~format_time, so they are excluded from the build_* threading above. *)
   (has_time_field, field_specs, child_section_specs, inline_child_fields, builder_fields)
 
-(* Task 3 (self-routed) and Task 5 (builder-routed) replace this stub with
-   the real ViewSpec emitter. No green test reaches the success path in
-   Task 2: all six rejection fixtures take an [Error] branch before this
-   call, and no real type carries the attribute yet. *)
-let generate_variant_dispatch ~type_decl:_ ~vd:_ ~builder_routed:_ : structure =
-  assert false
+(* ==================== Variant dispatch ViewSpec generation ==================== *)
+
+(* Self-routed emitter (Task 3): the sum's own ViewSpec functor, delegating
+   each change arm to the variant module's ViewSpec named in the routing
+   table. The PPX only transcribes the table — the generated match's
+   exhaustiveness (every constructor covered) and the referenced names are
+   checked by the compiler downstream. The `` `Unchanged `` arm delegates to
+   the FIRST entry's ViewSpec with ~name set to the type's
+   [@@view.type_label] string: build_item_from_specs on `Unchanged yields
+   {name; change=Unchanged; domain_type; children=[]}, identical to the
+   hand-written placeholder arm. Builder-routed mode (Track shape) is Task 5;
+   its branch stays unreachable here. *)
+let generate_variant_dispatch ~type_decl ~vd ~builder_routed : structure =
+  let open Ast_builder.Default in
+  if builder_routed then assert false (* Task 5: builder-routed generation *)
+  else
+    let loc = type_decl.ptype_loc in
+    match (vd.vd_entries, get_type_label type_decl.ptype_attributes) with
+    | first :: _, Some type_label ->
+      let fmt_var = pexp_ident ~loc { txt = Lident "format_time"; loc } in
+      let dt_var = pexp_ident ~loc { txt = Lident "domain_type"; loc } in
+      (* module VS_<ctor> = <vmodule>.ViewSpec (B) per table entry *)
+      let alias_of e =
+        pmod_apply ~loc
+          (pmod_ident ~loc { loc; txt = Ldot (Lident e.vmodule, "ViewSpec") })
+          (pmod_ident ~loc { loc; txt = Lident "B" })
+      in
+      let alias_items = List.map vd.vd_entries ~f:(fun e ->
+          pstr_module ~loc {
+            pmb_name = { txt = Some ("VS_" ^ e.vctor); loc };
+            pmb_expr = alias_of e;
+            pmb_attributes = [];
+            pmb_loc = loc }) in
+      (* VS_<ctor>.build_item ~format_time
+         ~name:(VS_<ctor>.build_section_name (<tag> x)) ~domain_type (<tag> x) *)
+      let dispatch_call alias tag arg =
+        pexp_apply ~loc
+          (pexp_ident ~loc { loc; txt = Ldot (Lident alias, "build_item") })
+          [ Labelled "format_time", fmt_var
+          ; Labelled "name",
+            pexp_apply ~loc
+              (pexp_ident ~loc { loc; txt = Ldot (Lident alias, "build_section_name") })
+              [ Nolabel, pexp_variant ~loc tag (Some arg) ]
+          ; Labelled "domain_type", dt_var
+          ; Nolabel, pexp_variant ~loc tag (Some arg) ]
+      in
+      let case pat rhs = { Parsetree.pc_lhs = pat; pc_guard = None; pc_rhs = rhs } in
+      (* Per entry: `Added (<ctor> v) / `Removed (<ctor> v) / — only when the
+         entry claims a patch constructor — `Modified (Patch.<vpatch> p). *)
+      let entry_cases e =
+        let alias = "VS_" ^ e.vctor in
+        let value_pat tag =
+          ppat_variant ~loc tag
+            (Some (ppat_construct ~loc { loc; txt = Lident e.vctor }
+                     (Some (ppat_var ~loc { txt = "v"; loc }))))
+        in
+        let added_removed =
+          [ case (value_pat "Added")
+              (dispatch_call alias "Added" (pexp_ident ~loc { txt = Lident "v"; loc }))
+          ; case (value_pat "Removed")
+              (dispatch_call alias "Removed" (pexp_ident ~loc { txt = Lident "v"; loc })) ]
+        in
+        let modified =
+          if e.vpatch = "" then []
+          else
+            [ case
+                  (ppat_variant ~loc "Modified"
+                     (Some (ppat_construct ~loc { loc; txt = Ldot (Lident "Patch", e.vpatch) }
+                              (Some (ppat_var ~loc { txt = "p"; loc })))))
+                  (dispatch_call alias "Modified" (pexp_ident ~loc { txt = Lident "p"; loc })) ]
+        in
+        added_removed @ modified
+      in
+      let unchanged_case =
+        case (ppat_variant ~loc "Unchanged" None)
+          (pexp_apply ~loc
+             (pexp_ident ~loc { loc; txt = Ldot (Lident ("VS_" ^ first.vctor), "build_item") })
+             [ Labelled "format_time", fmt_var
+             ; Labelled "name", mk_str loc type_label
+             ; Labelled "domain_type", dt_var
+             ; Nolabel, pexp_variant ~loc "Unchanged" None ])
+      in
+      let cases = List.concat_map vd.vd_entries ~f:entry_cases @ [unchanged_case] in
+      let c_pat =
+        ppat_constraint ~loc
+          (ppat_var ~loc { txt = "c"; loc })
+          (ptyp_constr ~loc
+             { loc; txt = Ldot (Ldot (Lident "Alsdiff_base", "Diff"), "structured_change") }
+             [ ptyp_constr ~loc { loc; txt = Lident "t" } []
+             ; ptyp_constr ~loc { loc; txt = Ldot (Lident "Patch", "t") } [] ])
+      in
+      let match_expr =
+        pexp_constraint ~loc
+          (pexp_match ~loc (pexp_ident ~loc { txt = Lident "c"; loc }) cases)
+          (ptyp_constr ~loc { loc; txt = Ldot (Lident "B", "item") } [])
+      in
+      let with_c = pexp_fun ~loc Nolabel None c_pat match_expr in
+      let with_dt =
+        pexp_fun ~loc (Optional "domain_type")
+          (Some (pexp_apply ~loc (mk_lid_expr loc (Ldot (Lident "B", "domain_type_of_name")))
+                   [ Nolabel, mk_str loc vd.vd_domain ]))
+          (ppat_var ~loc { txt = "domain_type"; loc })
+          with_c
+      in
+      let with_ft =
+        pexp_fun ~loc (Labelled "format_time") None
+          (ppat_var ~loc { txt = "format_time"; loc })
+          with_dt
+      in
+      let build_item_binding =
+        pstr_value ~loc Nonrecursive [{
+          pvb_pat = ppat_var ~loc { txt = "build_item"; loc };
+          pvb_expr = with_ft;
+          pvb_attributes = [];
+          pvb_loc = loc;
+          pvb_constraint = None }]
+      in
+      let b_sig = pmty_ident ~loc { loc; txt = Longident.parse "Alsdiff_view_spec_types.View_spec_types.S" } in
+      let functor_param = Named ({ txt = Some "B"; loc }, b_sig) in
+      let body_mod = pmod_structure ~loc (alias_items @ [build_item_binding]) in
+      let functor_mod = pmod_functor ~loc functor_param body_mod in
+      [pstr_module ~loc {
+          pmb_name = { txt = Some "ViewSpec"; loc };
+          pmb_expr = functor_mod;
+          pmb_attributes = [];
+          pmb_loc = loc }]
+    | _ ->
+      (* Unreachable: validate_variant_dispatch rejects empty tables and, in
+         self-routed mode, a missing type_label, before this runs. *)
+      assert false
 
 let generate_view_spec_for_decl ~type_decl =
   let open Ast_builder.Default in
