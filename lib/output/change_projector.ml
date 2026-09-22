@@ -1209,55 +1209,6 @@ let create_automation_item
   { name = automation_name; change = change_type; domain_type = DTAutomation; children = event_children }
 
 
-(** [create_device_item] builds a [item] for a device change (new type system).
-    @param c the device structured change
-*)
-let create_device_item
-    ?(format_time : dual_time_formatter = default_dual_time_formatter)
-    (c : (Device.t, Device.Patch.t) structured_change)
-  : item =
-  match c with
-  | `Added (Device.Regular d) ->
-    RegularDeviceVS.build_item ~format_time ~name:(RegularDeviceVS.build_section_name (`Added d))
-      ~domain_type:DTDevice (`Added d)
-  | `Removed (Device.Regular d) ->
-    RegularDeviceVS.build_item ~format_time ~name:(RegularDeviceVS.build_section_name (`Removed d))
-      ~domain_type:DTDevice (`Removed d)
-  | `Modified (Device.Patch.RegularPatch p) ->
-    RegularDeviceVS.build_item ~format_time ~name:(RegularDeviceVS.build_section_name (`Modified p))
-      ~domain_type:DTDevice (`Modified p)
-  | `Added (Device.Plugin d) ->
-    PluginDeviceVS.build_item ~format_time ~name:(PluginDeviceVS.build_section_name (`Added d))
-      ~domain_type:DTDevice (`Added d)
-  | `Removed (Device.Plugin d) ->
-    PluginDeviceVS.build_item ~format_time ~name:(PluginDeviceVS.build_section_name (`Removed d))
-      ~domain_type:DTDevice (`Removed d)
-  | `Modified (Device.Patch.PluginPatch p) ->
-    PluginDeviceVS.build_item ~format_time ~name:(PluginDeviceVS.build_section_name (`Modified p))
-      ~domain_type:DTDevice (`Modified p)
-  | `Added (Device.Max4Live d) ->
-    Max4LiveDeviceVS.build_item ~format_time ~name:(Max4LiveDeviceVS.build_section_name (`Added d))
-      ~domain_type:DTDevice (`Added d)
-  | `Removed (Device.Max4Live d) ->
-    Max4LiveDeviceVS.build_item ~format_time
-      ~name:(Max4LiveDeviceVS.build_section_name (`Removed d))
-      ~domain_type:DTDevice (`Removed d)
-  | `Modified (Device.Patch.Max4LivePatch p) ->
-    Max4LiveDeviceVS.build_item ~format_time
-      ~name:(Max4LiveDeviceVS.build_section_name (`Modified p))
-      ~domain_type:DTDevice (`Modified p)
-  | `Added (Device.Group d) ->
-    GroupDeviceVS.build_item ~format_time ~name:(GroupDeviceVS.build_section_name (`Added d))
-      ~domain_type:DTDevice (`Added d)
-  | `Removed (Device.Group d) ->
-    GroupDeviceVS.build_item ~format_time ~name:(GroupDeviceVS.build_section_name (`Removed d))
-      ~domain_type:DTDevice (`Removed d)
-  | `Modified (Device.Patch.GroupPatch p) ->
-    GroupDeviceVS.build_item ~format_time ~name:(GroupDeviceVS.build_section_name (`Modified p))
-      ~domain_type:DTDevice (`Modified p)
-  | `Unchanged ->
-    { name = "Device"; change = Unchanged; domain_type = DTDevice; children = [] }
-
 
 (* ==================== Full Track Views ==================== *)
 
@@ -1313,7 +1264,7 @@ let create_midi_track_item
       ~format_time
       ~build_clips:(create_midi_clip_item ~ctx ~track_id ~note_name_style ~format_time)
       ~build_automations:(create_automation_item ~ctx ~track_id ~get_pointee_name ~format_time)
-      ~build_devices:(create_device_item ~format_time)
+      ~build_devices:(DeviceVS.build_item ~format_time)
       ~name:(MidiTrackVS.build_section_name c)
       ~domain_type:DTTrack c in
   let item = match ref_track with
@@ -1352,7 +1303,7 @@ let create_audio_like_track_item
       ~format_time
       ~build_clips:(create_audio_clip_item ~ctx ~track_id ~format_time)
       ~build_automations:(create_automation_item ~ctx ~track_id ~get_pointee_name ~format_time)
-      ~build_devices:(create_device_item ~format_time)
+      ~build_devices:(DeviceVS.build_item ~format_time)
       ~name:(AudioTrackVS.build_section_name ~type_label:track_type_name c)
       ~domain_type:DTTrack c in
   let item = match ref_track with
@@ -1438,7 +1389,7 @@ let create_main_track_item
     MainTrackVS.build_item
       ~format_time
       ~build_automations:(create_automation_item ~ctx ~track_id:0 ~get_pointee_name ~format_time)
-      ~build_devices:(create_device_item ~format_time)
+      ~build_devices:(DeviceVS.build_item ~format_time)
       ~name:(MainTrackVS.build_section_name tag)
       ~domain_type:DTTrack tag
   in

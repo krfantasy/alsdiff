@@ -1279,8 +1279,11 @@ let mk_group_dev id dn disp =
   Device.Group { id; device_name = dn; display_name = disp; pointee = 0;
                  enabled = dev_enabled; branches = []; macros = []; snapshots = []; preset = None }
 
-(* Equivalence with the hand-written create_device_item across all 4 kinds x
-   3 change kinds + Unchanged. Field-level equality of the whole item. *)
+(* Pins the generated Device.ViewSpec dispatcher's output across all 4 kinds x
+   3 change kinds + Unchanged. The dispatcher was validated byte-for-byte
+   against the hand-written create_device_item before that function was
+   deleted (the projector now routes devices through DeviceVS directly), so
+   these hardcoded assertions are the regression pin. *)
 let bump_display = function
   | Device.Regular r -> Device.Regular { r with display_name = r.display_name ^ "!" }
   | Device.Plugin p -> Device.Plugin { p with display_name = p.display_name ^ "!" }
@@ -1292,21 +1295,41 @@ let device_modified_change dev =
   let patch = Device.diff dev new_dev in
   `Modified patch
 
-let eq_item a b = a = b (* item is a structural record; = is fine *)
-
-let test_device_dispatch_matches_handwritten () =
+let test_device_dispatch_generated_output () =
   let format_time = default_dual_time_formatter in
+  let change_ct = Alcotest.of_pp (fun fmt ct ->
+      Fmt.pf fmt "%s" (match ct with
+          | Added -> "Added" | Removed -> "Removed"
+          | Modified -> "Modified" | Unchanged -> "Unchanged"))
+  in
   let kinds = [
     mk_regular 1 "Eq8" "EQ Eight"; mk_plugin 2 "Serum" "Serum";
     mk_m4l 3 "DeviceOn" "Device On"; mk_group_dev 4 "Rack" "Inst Rack" ]
   in
   List.iter (fun dev ->
-      let changes = [ `Added dev; `Removed dev; device_modified_change dev; `Unchanged ] in
-      List.iter (fun c ->
-          let generated = DeviceVS.build_item ~format_time c in
-          let handwritten = create_device_item ~format_time c in
-          check bool "generated == handwritten" true (eq_item generated handwritten))
-        changes)
+      let device_name, id, display_name = (match dev with
+          | Device.Regular d -> (d.device_name, d.id, d.display_name)
+          | Device.Plugin d -> (d.device_name, d.id, d.display_name)
+          | Device.Max4Live d -> (d.device_name, d.id, d.display_name)
+          | Device.Group d -> (d.device_name, d.id, d.display_name))
+      in
+      (* Value-side names: "<device_name> (#<id>): <display_name>". The
+         modified name carries the patch's new display name (the "!"). *)
+      let value_name = Printf.sprintf "%s (#%d): %s" device_name id display_name in
+      let modified_name = Printf.sprintf "%s (#%d): %s!" device_name id display_name in
+      List.iter (fun (c, expected_name, expected_change) ->
+          let item = DeviceVS.build_item ~format_time c in
+          check string "dispatcher item name" expected_name item.name;
+          check change_ct "dispatcher item change" expected_change item.change;
+          check bool "dispatcher item is DTDevice" true (item.domain_type = DTDevice))
+        [ (`Added dev, value_name, Added);
+          (`Removed dev, value_name, Removed);
+          (device_modified_change dev, modified_name, Modified) ];
+      let unchanged = DeviceVS.build_item ~format_time `Unchanged in
+      check string "unchanged item name" "Device" unchanged.name;
+      check change_ct "unchanged item change" Unchanged unchanged.change;
+      check bool "unchanged item is DTDevice" true (unchanged.domain_type = DTDevice);
+      check bool "unchanged item has no children" true (unchanged.children = []))
     kinds
 
 let () =
@@ -1382,7 +1405,7 @@ let () =
         test_spec_optional_context_without_reference_section;
     ];
     "device variant dispatch", [
-      test_case "generated Device.ViewSpec matches create_device_item" `Quick
-        test_device_dispatch_matches_handwritten;
+      test_case "generated Device.ViewSpec dispatcher output pinned" `Quick
+        test_device_dispatch_generated_output;
     ];
   ]
