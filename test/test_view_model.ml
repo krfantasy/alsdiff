@@ -378,6 +378,30 @@ let get_single_event_item item =
   check int "single event in collection" 1 (List.length events_col.items);
   get_item (List.hd events_col.items)
 
+(* Characterization pin: a patch event list containing `Unchanged entries
+   keeps only the surviving events, in order — the Events collection must
+   look identical whether `Unchanged entries are dropped before building
+   items (bespoke filter) or after (build-then-filter in
+   ViewBuilder.build_collection). *)
+let test_create_automation_item_skips_unchanged_events () =
+  let event_patch = {
+    Automation.EnvelopeEvent.Patch.id = 42;
+    time = `Modified { oldval = 1.0; newval = 2.0 };
+    value = `Unchanged;
+    curve = `Unchanged;
+  } in
+  let automation_patch = {
+    Automation.Patch.id = 1;
+    target = 2;
+    events = [ `Unchanged; `Modified event_patch ];
+  } in
+  let item = create_automation_item ~ctx:Ctx.empty ~track_id:1
+      ~get_pointee_name:(fun _ -> "Target") (`Modified automation_patch) in
+  (* Only the Modified event survives into the Events collection *)
+  let event_item = get_single_event_item item in
+  check string "event name" "Event[42]" event_item.name;
+  check bool "event change" true (event_item.change = Modified)
+
 let test_create_automation_item_curve_added_summary () =
   let event_patch = {
     Automation.EnvelopeEvent.Patch.id = 42;
@@ -1428,6 +1452,8 @@ let () =
       test_case "Combined summary includes modified curve details" `Quick test_create_automation_item_curve_modified_summary;
       test_case "Added automation renders its events" `Quick test_create_automation_item_added_event_summary;
       test_case "Removed automation renders its events" `Quick test_create_automation_item_removed_event_summary;
+      test_case "Modified patch with Unchanged events skips them" `Quick
+        test_create_automation_item_skips_unchanged_events;
     ];
     "create_events_item", [
       test_case "Curve-only Modified event carries Time/Value context" `Quick

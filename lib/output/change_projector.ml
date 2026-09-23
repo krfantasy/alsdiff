@@ -1164,47 +1164,32 @@ let create_automation_item
     | `Unchanged -> "Automation"
   in
 
-  (* Wrap a list of event items in an [Events] Collection, so that
+  (* Events are built by the standard [ViewBuilder.build_collection] — the
+     same machinery as Notes/Clips/Devices/Locators — so
      [max_collection_items] truncation applies uniformly to Modified, Added
-     and Removed automations. Empty event lists yield no children. *)
-  let wrap_events (event_items : view list) : view list =
-    match event_items with
-    | [] -> []
-    | _ -> [ Collection { name = "Events"; change = change_type; domain_type = DTEvent;
-                          items = event_items; truncatable = true } ]
+     and Removed automations. Modified events resolve their old values
+     through [ctx] themselves, keyed by this automation's identity id;
+     [Ctx] memoizes the event table once per (track, automation). *)
+  let build_event_item
+      (ec : (EnvelopeEvent.t, EnvelopeEvent.Patch.t) structured_change)
+    : item =
+    let event_id = match ec with
+      | `Added e | `Removed e -> e.Automation.EnvelopeEvent.id
+      | `Modified p -> p.Automation.EnvelopeEvent.Patch.id
+      | `Unchanged -> -1
+    in
+    let event_item = create_events_item ~ctx ~track_id ~automation_id ~format_time ec in
+    { event_item with name = Printf.sprintf "Event[%d]" event_id }
   in
-  let render_value_events
-      (tag : EnvelopeEvent.t -> (EnvelopeEvent.t, EnvelopeEvent.Patch.t) structured_change)
-      (events : EnvelopeEvent.t list) : view list =
-    events |> List.map (fun e ->
-        let event_item =
-          create_events_item ~ctx ~track_id ~automation_id ~format_time (tag e) in
-        Item { event_item with name = Printf.sprintf "Event[%d]" e.Automation.EnvelopeEvent.id })
-  in
-  (* Modified events resolve their old values through [ctx] themselves, keyed
-     by this automation's identity id; [Ctx] memoizes the event table once per
-     (track, automation) — same quadratic-scan rationale as the notes path. *)
   let event_children : view list =
-    match c with
-    | `Modified patch ->
-      let events = patch.events |> List.filter_map (fun event_change ->
-          match event_change with
-          | `Unchanged -> None
-          | _ ->
-            let event_id = match event_change with
-              | `Added e -> e.Automation.EnvelopeEvent.id
-              | `Removed e -> e.Automation.EnvelopeEvent.id
-              | `Modified p -> p.Automation.EnvelopeEvent.Patch.id
-              | `Unchanged -> -1
-            in
-            let event_item =
-              create_events_item ~ctx ~track_id ~automation_id ~format_time event_change in
-            Some (Item { event_item with name = Printf.sprintf "Event[%d]" event_id }))
-      in
-      wrap_events events
-    | `Added a -> wrap_events (render_value_events (fun e -> `Added e) a.events)
-    | `Removed r -> wrap_events (render_value_events (fun e -> `Removed e) r.events)
-    | `Unchanged -> []
+    match ViewBuilder.build_collection c
+            ~name:"Events"
+            ~of_value:(fun (a : Automation.t) -> a.events)
+            ~of_patch:(fun (p : Automation.Patch.t) -> p.events)
+            ~build_item:build_event_item
+            ~domain_type:DTEvent with
+    | Some col -> [ Collection col ]
+    | None -> []
   in
 
   { name = automation_name; change = change_type; domain_type = DTAutomation; children = event_children }
