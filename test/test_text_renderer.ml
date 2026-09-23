@@ -60,7 +60,8 @@ let test_collection () =
             Field { name = "Pitch"; change = Added; domain_type = DTOther; kind = Content; oldval = None; newval = Some (Fint 60) }
           ]
         }
-      ]
+      ];
+      truncatable = true;
     }
   in
   let buffer = Buffer.create 1024 in
@@ -83,6 +84,7 @@ let test_collection_compact () =
       items = [
         Item { name = "Operator"; change = Added; domain_type = DTDevice; children = [] };
       ];
+      truncatable = true;
     }
   in
   let cfg = { full with modified = Compact } in
@@ -124,7 +126,7 @@ let test_collection_limit () =
   let items = List.init 100 (fun i ->
       Item { name = "Note"; change = Added; domain_type = DTOther; children = [Field { name = "Pitch"; change = Added; domain_type = DTOther; kind = Content; oldval = None; newval = Some (Fint i) }] }
     ) in
-  let view = Collection { name = "Notes"; change = Added; domain_type = DTOther; items } in
+  let view = Collection { name = "Notes"; change = Added; domain_type = DTOther; items; truncatable = true } in
   let cfg = { full with max_collection_items = Some 10 } in
   let buffer = Buffer.create 1024 in
   let ppf = Format.formatter_of_buffer buffer in
@@ -466,7 +468,8 @@ let test_inline_collection () =
         Item { name = "Note E4"; change = Added; domain_type = DTNote;
                children = [Field { name = "Velocity"; change = Added; domain_type = DTNote; kind = Content;
                                    oldval = None; newval = Some (Fint 80) }] };
-      ]
+      ];
+      truncatable = true;
     }
   in
   let cfg = { full with added = Inline; modified = Inline } in
@@ -488,7 +491,7 @@ let test_collection_limit_mixed_changes () =
     @ List.init 20 (fun _ ->
         Item { name = "Note"; change = Removed; domain_type = DTOther; children = [] })
   in
-  let view = Collection { name = "Notes"; change = Modified; domain_type = DTOther; items } in
+  let view = Collection { name = "Notes"; change = Modified; domain_type = DTOther; items; truncatable = true } in
   let cfg = { full with max_collection_items = Some 5 } in
   let buffer = Buffer.create 1024 in
   let ppf = Format.formatter_of_buffer buffer in
@@ -510,7 +513,7 @@ let test_collection_no_truncation () =
   let items = List.init 5 (fun _ ->
       Item { name = "Note"; change = Added; domain_type = DTOther; children = [] }
     ) in
-  let view = Collection { name = "Notes"; change = Added; domain_type = DTOther; items } in
+  let view = Collection { name = "Notes"; change = Added; domain_type = DTOther; items; truncatable = true } in
   let cfg = { full with max_collection_items = Some 10 } in
   let buffer = Buffer.create 1024 in
   let ppf = Format.formatter_of_buffer buffer in

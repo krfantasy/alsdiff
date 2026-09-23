@@ -105,6 +105,7 @@ let one_item_collection =
           Item
             { name = "Dev"; change = Added; domain_type = DTDevice; children = [] };
         ];
+      truncatable = true;
     }
 
 let empty_collection =
@@ -114,6 +115,7 @@ let empty_collection =
       change = Modified;
       domain_type = DTDevice;
       items = [];
+      truncatable = true;
     }
 
 (* element-like Summary: counts present, no children *)

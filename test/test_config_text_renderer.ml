@@ -120,7 +120,7 @@ let test_unchanged_ignore_hidden () =
 let test_max_collection_items_none_unlimited () =
   let cfg = { full with max_collection_items = None } in
   let items = List.init 100 (fun _ -> simple_item "Item" Added) in
-  let view = Collection { name = "Items"; change = Added; domain_type = DTOther; items } in
+  let view = Collection { name = "Items"; change = Added; domain_type = DTOther; items; truncatable = true } in
   let output = render_view cfg view in
   (* Count lines - should have 100 "Items" lines + 1 header = 101 lines *)
   let lines = String.split_on_char '\n' output |> List.filter (fun s -> String.trim s <> "") in
@@ -130,7 +130,7 @@ let test_max_collection_items_none_unlimited () =
 let test_max_collection_items_limits_output () =
   let cfg = { full with max_collection_items = Some 5 } in
   let items = List.init 20 (fun _ -> simple_item "Item" Added) in
-  let view = Collection { name = "Items"; change = Added; domain_type = DTOther; items } in
+  let view = Collection { name = "Items"; change = Added; domain_type = DTOther; items; truncatable = true } in
   let output = render_view cfg view in
   let lines = String.split_on_char '\n' output |> List.filter (fun s -> String.trim s <> "") in
   (* 1 header + 5 items + 1 truncation = 7 lines *)
@@ -140,7 +140,7 @@ let test_max_collection_items_limits_output () =
 let test_max_collection_items_zero_shows_none () =
   let cfg = { full with max_collection_items = Some 0 } in
   let items = List.init 10 (fun _ -> simple_item "Item" Added) in
-  let view = Collection { name = "Items"; change = Added; domain_type = DTOther; items } in
+  let view = Collection { name = "Items"; change = Added; domain_type = DTOther; items; truncatable = true } in
   let output = render_view cfg view |> normalize_output in
   (* With Full mode and max=0, no items are shown and output is empty.
      The collection filter limits to 0 items, leaving nothing to render. *)
@@ -152,7 +152,7 @@ let test_max_collection_items_truncation_breakdown () =
   let added_items = List.init 10 (fun _ -> simple_item "Item" Added) in
   let removed_items = List.init 5 (fun _ -> simple_item "Item" Removed) in
   let all_items = added_items @ removed_items in
-  let view = Collection { name = "Items"; change = Modified; domain_type = DTOther; items = all_items } in
+  let view = Collection { name = "Items"; change = Modified; domain_type = DTOther; items = all_items; truncatable = true } in
   let output = render_view cfg view in
   (* Should show breakdown of truncated items *)
   Alcotest.(check bool) "contains added breakdown" true (contains_string "5 Added" output);
@@ -196,7 +196,7 @@ let test_custom_prefixes_all_together () =
     simple_item "RemovedItem" Removed;
     simple_item "ModifiedItem" Modified;
   ] in
-  let view = Collection { name = "Items"; change = Modified; domain_type = DTOther; items } in
+  let view = Collection { name = "Items"; change = Modified; domain_type = DTOther; items; truncatable = true } in
   let output = render_view cfg view in
   Alcotest.(check bool) "has added prefix" true (contains_string "[+]" output);
   Alcotest.(check bool) "has removed prefix" true (contains_string "[-]" output);
@@ -211,7 +211,7 @@ let test_with_prefixes_helper_function () =
     simple_item "RemovedItem" Removed;
     simple_item "ModifiedItem" Modified;
   ] in
-  let view = Collection { name = "Items"; change = Modified; domain_type = DTOther; items } in
+  let view = Collection { name = "Items"; change = Modified; domain_type = DTOther; items; truncatable = true } in
   let output = render_view cfg view in
   Alcotest.(check bool) "helper has NEW prefix" true (contains_string "NEW" output);
   Alcotest.(check bool) "helper has DEL prefix" true (contains_string "DEL" output);
@@ -331,7 +331,7 @@ let test_max_items_with_custom_prefixes () =
   let added_items = List.init 5 (fun _ -> simple_item "Item" Added) in
   let removed_items = List.init 3 (fun _ -> simple_item "Item" Removed) in
   let all_items = added_items @ removed_items in
-  let view = Collection { name = "Items"; change = Modified; domain_type = DTOther; items = all_items } in
+  let view = Collection { name = "Items"; change = Modified; domain_type = DTOther; items = all_items; truncatable = true } in
   let output = render_view cfg view in
   (* The collection shows items with custom prefixes for Added and Removed items *)
   Alcotest.(check bool) "has NEW prefix" true (contains_string "NEW" output);
@@ -380,7 +380,7 @@ let test_inline_modified_field () =
 let test_compact_collection_summary () =
   let cfg = { full with added = Summary } in
   let items = List.init 10 (fun _ -> simple_item "Item" Added) in
-  let view = Collection { name = "Items"; change = Added; domain_type = DTOther; items } in
+  let view = Collection { name = "Items"; change = Added; domain_type = DTOther; items; truncatable = true } in
   let output = render_view cfg view |> normalize_output in
   Alcotest.(check bool) "summary shows count" true (contains_string "(10 Added)" output)
 
@@ -390,7 +390,7 @@ let test_compact_collection_summary () =
 let test_compact_collection_header_count () =
   let cfg = { full with added = Compact } in
   let items = List.init 5 (fun _ -> simple_item "Item" Added) in
-  let view = Collection { name = "Items"; change = Added; domain_type = DTOther; items } in
+  let view = Collection { name = "Items"; change = Added; domain_type = DTOther; items; truncatable = true } in
   let output = render_view cfg view |> normalize_output in
   Alcotest.(check string) "compact collection header+count" "+ Items (5 Added)" output
 
@@ -407,7 +407,7 @@ let test_indent_width_negative () =
 let test_max_collection_items_zero_summary () =
   let cfg = { full with added = Summary; max_collection_items = Some 0 } in
   let items = List.init 10 (fun _ -> simple_item "Item" Added) in
-  let view = Collection { name = "Items"; change = Added; domain_type = DTOther; items } in
+  let view = Collection { name = "Items"; change = Added; domain_type = DTOther; items; truncatable = true } in
   let output = render_view cfg view |> normalize_output in
   (* Summary mode shows counts regardless of max_collection_items *)
   Alcotest.(check string) "summary ignores max" "+ Items (10 Added)" output
@@ -436,7 +436,8 @@ let test_collection_summary_excludes_ignored_element () =
       items = [
         Item { name = "Hidden"; change = Added;    domain_type = DTOther; children = [] };
         Item { name = "Shown";  change = Modified; domain_type = DTOther; children = [] };
-      ] } in
+      ];
+      truncatable = true } in
   let output = render_view cfg view |> normalize_output in
   Alcotest.(check bool) "collection ignores ignored element" false (contains_string "Added" output);
   Alcotest.(check bool) "collection counts shown element"     true  (contains_string "(1 Modified)" output)

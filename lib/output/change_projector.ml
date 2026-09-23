@@ -165,10 +165,14 @@ module ViewBuilder = struct
       @param of_value extracts the item list from the parent value
       @param of_patch extracts the change list from the parent patch
       @param build_item builds a item from an item change
+      @param truncatable whether the collection is subject to the
+        [max_collection_items] cap (defaults [true]); must precede the
+        positional argument so that it can be erased when omitted
       @param domain_type the domain type for this collection
       @return Some new_collection if there are items, None otherwise
   *)
   let build_collection
+      ?(truncatable = true)
       (c : ('parent, 'pp) structured_change)
       ~(name : string)
       ~(of_value : 'parent -> 'item list)
@@ -194,7 +198,7 @@ module ViewBuilder = struct
         | Field _ -> true
       ) items in
     if items = [] then None
-    else Some { name; change = change_type; domain_type; items }
+    else Some { name; change = change_type; domain_type; items; truncatable }
 
 end
 
@@ -964,6 +968,7 @@ module DeviceViewSpecB : Alsdiff_view_spec_types.View_spec_types.S
     change : change_type;
     domain_type : domain_type;
     items : view list;
+    truncatable : bool;
   }
   and dual_time_formatter = Display_context.dual_time_formatter = {
     format_old : float -> field_value;
@@ -1165,7 +1170,8 @@ let create_automation_item
   let wrap_events (event_items : view list) : view list =
     match event_items with
     | [] -> []
-    | _ -> [ Collection { name = "Events"; change = change_type; domain_type = DTEvent; items = event_items } ]
+    | _ -> [ Collection { name = "Events"; change = change_type; domain_type = DTEvent;
+                          items = event_items; truncatable = true } ]
   in
   let render_value_events
       (tag : EnvelopeEvent.t -> (EnvelopeEvent.t, EnvelopeEvent.Patch.t) structured_change)

@@ -26,6 +26,12 @@ and collection = {
   change : Output_types.change_type;
   domain_type : Output_types.domain_type;
   items : view list;
+  truncatable : bool;
+  (** [false] exempts this collection from the [max_collection_items] cap
+      (Config.filter_collection_elements_with_info); detail-level filtering
+      still applies. For structural collections whose every element must
+      render; ordinary content collections (Notes/Events/Clips/Devices/...)
+      keep [true]. *)
 }
 
 and view =

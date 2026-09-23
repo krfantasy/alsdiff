@@ -9,7 +9,7 @@ let mk_item name change domain_type children =
   Item { name; change; domain_type; children }
 
 let mk_collection name change domain_type items =
-  Collection { name; change; domain_type; items }
+  Collection { name; change; domain_type; items; truncatable = true }
 
 let test_empty_no_changes () =
   let views = [mk_item "LiveSet" Unchanged DTLiveset []] in
