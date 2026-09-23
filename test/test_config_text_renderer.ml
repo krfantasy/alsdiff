@@ -45,6 +45,12 @@ let simple_field_item name change field_name old_val new_val =
     ]
   }
 
+(* Unwrap a Collection view *)
+let get_collection = function
+  | Collection c -> c
+  | Item _ -> failwith "Expected Collection view, got Item"
+  | Field _ -> failwith "Expected Collection view, got Field"
+
 (* Render to string helper *)
 let render_view cfg view =
   render_to_string cfg view
@@ -157,6 +163,34 @@ let test_max_collection_items_truncation_breakdown () =
   (* Should show breakdown of truncated items *)
   Alcotest.(check bool) "contains added breakdown" true (contains_string "5 Added" output);
   Alcotest.(check bool) "contains removed breakdown" true (contains_string "5 Removed" output)
+
+(* 2.5. Test truncatable=false escapes the cap *)
+let test_max_collection_items_truncatable_false_escapes_cap () =
+  let cfg = { full with max_collection_items = Some 5 } in
+  let items = List.init 20 (fun _ -> simple_item "Item" Added) in
+  let view = Collection { name = "Items"; change = Added; domain_type = DTOther;
+                          items; truncatable = false } in
+  (* Direct: no truncation info, all items kept *)
+  let (kept, info) = filter_collection_elements_with_info cfg (get_collection view) in
+  Alcotest.(check int) "all items kept" 20 (List.length kept);
+  Alcotest.(check bool) "no truncation info" true (info = None);
+  (* Rendered: 1 header + 20 items = 21 lines, no "... and N more" *)
+  let output = render_view cfg view in
+  let lines = String.split_on_char '\n' output |> List.filter (fun s -> String.trim s <> "") in
+  Alcotest.(check int) "untruncated line count" 21 (List.length lines);
+  Alcotest.(check bool) "no truncation message" true (not (contains_string "more" output))
+
+(* 2.6. Control: truncatable=true (default) still truncates *)
+let test_truncatable_true_still_truncates () =
+  let cfg = { full with max_collection_items = Some 5 } in
+  let items = List.init 20 (fun _ -> simple_item "Item" Added) in
+  let view = Collection { name = "Items"; change = Added; domain_type = DTOther;
+                          items; truncatable = true } in
+  let output = render_view cfg view in
+  let lines = String.split_on_char '\n' output |> List.filter (fun s -> String.trim s <> "") in
+  (* 1 header + 5 items + 1 truncation = 7 lines, same as test 2.2 *)
+  Alcotest.(check int) "still truncated" 7 (List.length lines);
+  Alcotest.(check bool) "has truncation message" true (contains_string "more" output)
 
 (* ==================== 3. Custom Prefix Tests ==================== *)
 
@@ -482,6 +516,9 @@ let tests = [
   "max_items limits output", `Quick, test_max_collection_items_limits_output;
   "max_items zero shows none", `Quick, test_max_collection_items_zero_shows_none;
   "max_items truncation breakdown", `Quick, test_max_collection_items_truncation_breakdown;
+  "max_items truncatable=false escapes cap", `Quick,
+  test_max_collection_items_truncatable_false_escapes_cap;
+  "truncatable=true still truncates", `Quick, test_truncatable_true_still_truncates;
 
   (* Custom Prefix Tests *)
   "custom prefix added", `Quick, test_custom_prefix_added;

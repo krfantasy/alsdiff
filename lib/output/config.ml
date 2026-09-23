@@ -187,6 +187,7 @@ let filter_collection_elements_with_info
     let total = List.length filtered in
     match cfg.max_collection_items with
     | None -> (filtered, None)
+    | Some _ when not col.truncatable -> (filtered, None)
     | Some n when total <= n -> (filtered, None)
     | Some n ->
       let displayed = List.take n filtered in
