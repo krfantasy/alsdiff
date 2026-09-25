@@ -31,8 +31,11 @@ export interface FieldView {
   name: string;
   change: ChangeType;
   domain_type: DomainType;
-  // ADR 0001: role the backend stamped at emission. Absent on artifacts
-  // produced before the kind key existed.
+  // ADR 0001: role the backend stamped at emission — a riding policy, not
+  // provenance. Context/Identity fields ride at every detail level
+  // (identity join keys TrackId/GroupId, the liveset tempo/TS riders);
+  // Content obeys the level gates (it drops at counts-only Summary).
+  // Absent on artifacts produced before the kind key existed.
   kind?: FieldKind;
   old_value?: FieldValue;
   new_value?: FieldValue;
