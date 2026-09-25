@@ -959,9 +959,8 @@ let test_reference_fills_modified_mixer_params () =
 
 (* Id recycling: an Added track whose id collides with an old (removed)
    track's id must not inherit that old track's context. The context fills
-   target only empty Unchanged placeholders and identity fields are
-   Modified-gated, so the Added item keeps its own values throughout. Pins
-   this invariant before the view_spec PPX (TODO item 4) generates fills. *)
+   target only empty Unchanged placeholders and the identity restamp only
+   changes the kind, so the Added item keeps its own values throughout. *)
 let test_added_track_ignores_same_id_old_track () =
   let mk_track name mixer =
     {
@@ -994,6 +993,45 @@ let test_added_track_ignores_same_id_old_track () =
   in
   check bool "added track: no old-track value anywhere" true
     (not (has_old_value [ Item item ]))
+
+(* ADR 0001 id-ness for Added/Removed tracks: the value path's TrackId (const
+   spec) and GroupId fields are re-stamped Identity in place — exactly one
+   field each, keeping the Added/Removed change and values — so counts-only
+   levels (which drop Content fields) keep the ids. This restores what the
+   web's retired extractTrackIdFromName regex used to recover by name. *)
+let test_added_removed_tracks_carry_identity_fields () =
+  let t = {
+    Track.MidiTrack.id = 12; name = "New"; current_name = "New"; group_id = 4;
+    clips = []; automations = []; devices = [];
+    mixer = Track_helpers.make_mixer 0.5 0.0;
+    routings = Track_helpers.make_empty_routing_set ();
+  } in
+  let count name item =
+    List.length (List.filter (function
+        | Field { name = n; _ } -> n = name
+        | _ -> false) item.children)
+  in
+  let added = create_midi_track_item ~ctx:Ctx.empty ~get_pointee_name:(fun _ -> "?") (`Added t) in
+  let a_id = get_field (find_view_by_name "TrackId" added.children) in
+  check bool "added TrackId is Identity" true (a_id.kind = Identity);
+  check bool "added TrackId keeps Added change" true (a_id.change = Added);
+  (match a_id.newval with
+   | Some (Fint 12) -> ()
+   | _ -> check bool "added TrackId newval = 12" true false);
+  let a_group = get_field (find_view_by_name "GroupId" added.children) in
+  check bool "added GroupId is Identity" true (a_group.kind = Identity);
+  check bool "added GroupId keeps Added change" true (a_group.change = Added);
+  check int "exactly one TrackId field" 1 (count "TrackId" added);
+  check int "exactly one GroupId field" 1 (count "GroupId" added);
+  let removed = create_midi_track_item ~ctx:Ctx.empty ~get_pointee_name:(fun _ -> "?") (`Removed t) in
+  let r_id = get_field (find_view_by_name "TrackId" removed.children) in
+  check bool "removed TrackId is Identity" true (r_id.kind = Identity);
+  check bool "removed TrackId keeps Removed change" true (r_id.change = Removed);
+  (match r_id.oldval with
+   | Some (Fint 12) -> ()
+   | _ -> check bool "removed TrackId oldval = 12" true false);
+  check bool "removed GroupId is Identity" true
+    ((get_field (find_view_by_name "GroupId" removed.children)).kind = Identity)
 
 (* When a MidiClip is Modified in an inline field, the patch path emits the
    unchanged Loop/TimeSignature sections as empty Unchanged placeholders.
@@ -1481,6 +1519,8 @@ let () =
       test_case "Reference liveset populates unchanged mixer" `Quick test_reference_populates_unchanged_mixer;
       test_case "Reference fills modified mixer params" `Quick test_reference_fills_modified_mixer_params;
       test_case "Added track ignores same-id old track" `Quick test_added_track_ignores_same_id_old_track;
+      test_case "Added/Removed tracks carry Identity fields" `Quick
+        test_added_removed_tracks_carry_identity_fields;
       test_case "Reference fills modified clip sections" `Quick test_reference_fills_modified_clip_sections;
       test_case "Modified track carries identity fields" `Quick test_modified_track_identity_fields;
       test_case "Changed group emits single Modified GroupId" `Quick test_modified_track_group_change_no_duplicate;

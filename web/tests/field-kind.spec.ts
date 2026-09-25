@@ -56,10 +56,10 @@ test("defaults trackId to 0 without any id field (regex hack retired)", () => {
   expect(tracks[0].trackId).toBe(0);
 });
 
-test("Summary-shaped removed track loses its id — accepted loss (ADR 0001)", () => {
-  // At counts-only levels Content id fields drop and the retired regex was
-  // the old recovery path; Modified tracks keep Identity riders, Added and
-  // Removed tracks get their id-ness back with items 3-4.
+test("Summary-shaped Added/Removed tracks keep ids via Identity riders", () => {
+  // The projector re-stamps the value-side TrackId/GroupId of Added/Removed
+  // tracks as Identity, so they ride counts-only Summary levels — the ids
+  // no longer need the retired display-name regex.
   const tracks = extractTracks([
     {
       type: "item",
@@ -67,9 +67,27 @@ test("Summary-shaped removed track loses its id — accepted loss (ADR 0001)", (
       change: "Removed",
       domain_type: "Track",
       counts: { added: 0, removed: 4, modified: 1 },
+      children: [
+        { type: "field", name: "TrackId", change: "Removed", domain_type: "Track", kind: "Identity", old_value: 5 },
+        { type: "field", name: "GroupId", change: "Removed", domain_type: "Track", kind: "Identity", old_value: 2 },
+      ],
+    } as any,
+    {
+      type: "item",
+      name: "AudioTrack (#9): Lead",
+      change: "Added",
+      domain_type: "Track",
+      counts: { added: 4, removed: 0, modified: 0 },
+      children: [
+        { type: "field", name: "TrackId", change: "Added", domain_type: "Track", kind: "Identity", new_value: 9 },
+        { type: "field", name: "GroupId", change: "Added", domain_type: "Track", kind: "Identity", new_value: 2 },
+      ],
     } as any,
   ]);
-  expect(tracks[0].trackId).toBe(0);
+  expect(tracks[0].trackId).toBe(5);
+  expect(tracks[0].groupId).toBe(2);
+  expect(tracks[1].trackId).toBe(9);
+  expect(tracks[1].groupId).toBe(2);
 });
 
 test("extractTempo reads Context-stamped liveset fields", () => {

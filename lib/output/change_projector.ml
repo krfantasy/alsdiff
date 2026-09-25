@@ -1200,21 +1200,40 @@ let create_automation_item
 
 
 (** [prepend_track_identity_fields ~track_id ~group_id item] re-attaches the
-    TrackId/GroupId identity fields to a Modified track item. They are identity
-    metadata, not diff content: consumers (the web app) nest tracks under their
-    group by these fields, but the patch path drops them for Modified tracks
-    (the const spec yields no patch value; an unchanged group_id atom carries
-    none either). TrackId comes from the patch's identity field; GroupId from
-    the reference (old) track when the patch says unchanged. Fields the patch
-    path already emitted (GroupId changed -> Modified field) are left alone. *)
+    TrackId/GroupId identity fields to a track item. They are identity
+    metadata, not diff content: consumers (the web app) nest tracks under
+    their group by these fields, so they must ride at every detail level
+    (ADR 0001), including counts-only Summary where Content fields drop.
+    For a Modified track the patch path emits no Unchanged fields, so absent
+    names are PREPENDED as Unchanged riders — TrackId from the patch's
+    identity field, GroupId from the reference (old) track when the patch
+    says unchanged. For an Added/Removed track the value path has already
+    emitted TrackId (const spec) and GroupId as Content fields of the
+    addition; those are RE-STAMPED [Identity] in place — exactly once each,
+    keeping their Added/Removed change and values. A patch-emitted Modified
+    GroupId (the changed id IS the diff) is left Content. *)
 let prepend_track_identity_fields
     ~(track_id : int option)
     ~(group_id : int option)
     (item : item)
   : item =
+  (* Value-side TrackId/GroupId (Added/Removed tracks) already sit in the
+     children as Content: restamp them Identity in place instead of
+     prepending a second field of the same name. Gated on the caller
+     supplying the value, so a Modified GroupId (the changed id IS the
+     diff, supplied as None) stays Content. *)
+  let restamp name value = function
+    | Field f when value <> None && f.name = name -> Field { f with kind = Identity }
+    | v -> v
+  in
+  let children =
+    item.children
+    |> List.map (restamp "TrackId" track_id)
+    |> List.map (restamp "GroupId" group_id)
+  in
   let present name = List.exists (function
       | Field f -> f.name = name
-      | _ -> false) item.children in
+      | _ -> false) children in
   let mk name v =
     Field { name; change = Unchanged; domain_type = DTTrack; kind = Identity;
             oldval = None; newval = Some (Fint v) }
@@ -1225,7 +1244,7 @@ let prepend_track_identity_fields
       | _ -> None)
       [ ("TrackId", track_id); ("GroupId", group_id) ]
   in
-  { item with children = extras @ item.children }
+  { item with children = extras @ children }
 
 
 (** [create_midi_track_item] creates a [item] from a MidiTrack structured change (new type system).
@@ -1264,7 +1283,13 @@ let create_midi_track_item
       | _ -> None
     in
     prepend_track_identity_fields ~track_id:(Some pt.Track.MidiTrack.Patch.id) ~group_id item
-  | _ -> item
+  | `Added t | `Removed t ->
+    (* The value path emitted TrackId/GroupId as Content fields of the
+       addition; restamp them Identity so counts-only levels keep the ids
+       (ADR 0001: id-ness comes from the projector, not the consumer). *)
+    prepend_track_identity_fields
+      ~track_id:(Some t.Track.MidiTrack.id) ~group_id:(Some t.Track.MidiTrack.group_id) item
+  | `Unchanged -> item
 
 (** [create_audio_like_track_item] creates a [item] for AudioTrack-like structured changes.
     Shared implementation for AudioTrack and GroupTrack (which share the same internal structure).
@@ -1307,7 +1332,10 @@ let create_audio_like_track_item
       | _ -> None
     in
     prepend_track_identity_fields ~track_id:(Some pt.Track.AudioTrack.Patch.id) ~group_id item
-  | _ -> item
+  | `Added t | `Removed t ->
+    prepend_track_identity_fields
+      ~track_id:(Some t.Track.AudioTrack.id) ~group_id:(Some t.Track.AudioTrack.group_id) item
+  | `Unchanged -> item
 
 
 (** [create_main_track_item] creates a [item] from a MainTrack structured change (new type system).
