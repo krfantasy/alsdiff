@@ -142,9 +142,9 @@ let entry_of_expr (e : expression) : (variant_entry, string) result =
   | Pexp_tuple [ a; b; c; d ] ->
     (match (string_literal_of_pexp a, string_literal_of_pexp b,
             string_literal_of_pexp c, string_literal_of_pexp d) with
-     | Some vctor, Some vmodule, Some vpatch, Some vbuilder ->
-       Ok { vctor; vmodule; vpatch; vbuilder }
-     | _ -> Error "view.variant_dispatch entries must be 4 string literals")
+    | Some vctor, Some vmodule, Some vpatch, Some vbuilder ->
+      Ok { vctor; vmodule; vpatch; vbuilder }
+    | _ -> Error "view.variant_dispatch entries must be 4 string literals")
   | _ -> Error "view.variant_dispatch entries must be 4 string literals"
 
 (* Payload grammar, as written on the sum types:
@@ -198,10 +198,10 @@ let parse_variant_dispatch (attrs : attributes) : (variant_dispatch, string) res
    - all-self: every entry has a module and an empty builder (Device)
    - builder-routed: every entry either has a module AND a builder label, or
      is a skip entry (module = "", builder = "") (Track)
-   Then, regardless of mode: self-routed needs [@view.type_label]; a skip
-   entry may not carry a builder label; patch constructors and (routed)
-   builder labels are each claimed by at most one entry.
-   Returns [true] = builder-routed. *)
+     Then, regardless of mode: self-routed needs [@view.type_label]; a skip
+     entry may not carry a builder label; patch constructors and (routed)
+     builder labels are each claimed by at most one entry.
+     Returns [true] = builder-routed. *)
 let validate_variant_dispatch
     ~(type_label : string option)
     (vd : variant_dispatch)
@@ -921,7 +921,7 @@ let generate_variant_dispatch ~type_decl ~vd ~builder_routed : structure =
     let retag e tag payload =
       pexp_construct ~loc { txt = Lident "Some"; loc }
         (Some (pexp_apply ~loc (pexp_ident ~loc { txt = Lident e.vbuilder; loc })
-             [ Nolabel, pexp_variant ~loc tag (Some payload) ]))
+                 [ Nolabel, pexp_variant ~loc tag (Some payload) ]))
     in
     (* `Tag (<ctor> <payload-pat>) *)
     let value_pat e tag payload_pat =
@@ -990,11 +990,11 @@ let generate_variant_dispatch ~type_decl ~vd ~builder_routed : structure =
     in
     let build_item_binding =
       pstr_value ~loc Nonrecursive [{
-        pvb_pat = ppat_var ~loc { txt = "build_item"; loc };
-        pvb_expr = expr;
-        pvb_attributes = [];
-        pvb_loc = loc;
-        pvb_constraint = None }]
+          pvb_pat = ppat_var ~loc { txt = "build_item"; loc };
+          pvb_expr = expr;
+          pvb_attributes = [];
+          pvb_loc = loc;
+          pvb_constraint = None }]
     in
     let b_sig = pmty_ident ~loc { loc; txt = Longident.parse "Alsdiff_view_spec_types.View_spec_types.S" } in
     let functor_param = Named ({ txt = Some "B"; loc }, b_sig) in
@@ -1055,10 +1055,10 @@ let generate_variant_dispatch ~type_decl ~vd ~builder_routed : structure =
           if e.vpatch = "" then []
           else
             [ case
-                  (ppat_variant ~loc "Modified"
-                     (Some (ppat_construct ~loc { loc; txt = Ldot (Lident "Patch", e.vpatch) }
-                              (Some (ppat_var ~loc { txt = "p"; loc })))))
-                  (dispatch_call alias "Modified" (pexp_ident ~loc { txt = Lident "p"; loc })) ]
+                (ppat_variant ~loc "Modified"
+                   (Some (ppat_construct ~loc { loc; txt = Ldot (Lident "Patch", e.vpatch) }
+                            (Some (ppat_var ~loc { txt = "p"; loc })))))
+                (dispatch_call alias "Modified" (pexp_ident ~loc { txt = Lident "p"; loc })) ]
         in
         added_removed @ modified
       in
@@ -1100,11 +1100,11 @@ let generate_variant_dispatch ~type_decl ~vd ~builder_routed : structure =
       in
       let build_item_binding =
         pstr_value ~loc Nonrecursive [{
-          pvb_pat = ppat_var ~loc { txt = "build_item"; loc };
-          pvb_expr = with_ft;
-          pvb_attributes = [];
-          pvb_loc = loc;
-          pvb_constraint = None }]
+            pvb_pat = ppat_var ~loc { txt = "build_item"; loc };
+            pvb_expr = with_ft;
+            pvb_attributes = [];
+            pvb_loc = loc;
+            pvb_constraint = None }]
       in
       let b_sig = pmty_ident ~loc { loc; txt = Longident.parse "Alsdiff_view_spec_types.View_spec_types.S" } in
       let functor_param = Named ({ txt = Some "B"; loc }, b_sig) in
@@ -1127,7 +1127,19 @@ let generate_view_spec_for_decl ~type_decl =
   | Ptype_record _ | Ptype_open when
       has_variant_dispatch_attr type_decl.ptype_attributes ->
     let ext = Ppxlib.Location.error_extensionf ~loc
-        "view.variant_dispatch is for variant (sum) types, not records" in
+        "view.variant_dispatch is for variant (sum) types, not records or \
+         open types" in
+    [pstr_extension ~loc ext []]
+  | Ptype_abstract when
+      has_variant_dispatch_attr type_decl.ptype_attributes
+      && type_decl.ptype_manifest = None ->
+    (* Truly abstract (no manifest): the emitter's constructor patterns could
+       never resolve — they would surface as unbound-constructor errors
+       downstream. An abstract ALIAS to a variant (type t = device, manifest
+       present — the Device.t shape) is fine and falls through. *)
+    let ext = Ppxlib.Location.error_extensionf ~loc
+        "view.variant_dispatch is for variant (sum) types, not an abstract \
+         type with no manifest (type t = <variant> works)" in
     [pstr_extension ~loc ext []]
   | Ptype_variant _ | Ptype_abstract when
       has_variant_dispatch_attr type_decl.ptype_attributes ->
@@ -1138,11 +1150,11 @@ let generate_view_spec_for_decl ~type_decl =
      | Ok vd ->
        (match validate_variant_dispatch
                 ~type_label:(get_type_label type_decl.ptype_attributes) vd with
-        | Error msg ->
-          let ext = Ppxlib.Location.error_extensionf ~loc "%s" msg in
-          [pstr_extension ~loc ext []]
-        | Ok builder_routed ->
-          generate_variant_dispatch ~type_decl ~vd ~builder_routed))
+       | Error msg ->
+         let ext = Ppxlib.Location.error_extensionf ~loc "%s" msg in
+         [pstr_extension ~loc ext []]
+       | Ok builder_routed ->
+         generate_variant_dispatch ~type_decl ~vd ~builder_routed))
   | Ptype_record fields ->
     (match List.find_map ~f:find_incompatible_patch_skip_view fields with
      | Some attr_name ->

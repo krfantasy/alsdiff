@@ -42,6 +42,7 @@ let cases =
     ("view_spec_context_on_atomic.ml", Some "there is no section placeholder to fill");
     ("variant_dispatch_on_record.ml", Some "view.variant_dispatch is for variant (sum) types");
     ("variant_dispatch_on_open.ml", Some "view.variant_dispatch is for variant (sum) types");
+    ("variant_dispatch_on_abstract.ml", Some "view.variant_dispatch is for variant (sum) types");
     ("variant_dispatch_bad_arity.ml", Some "4 string literals");
     ("variant_dispatch_mixed_mode.ml", Some "mixes self-routed and builder-routed");
     ("variant_dispatch_skip_in_self.ml", Some "cannot skip constructors");
