@@ -1,20 +1,17 @@
 (data_only_dirs fixtures)
 
-;; Standalone deriver driver linking the real ppx modules (see
-;; lib/ppx/dune for why ppx_impl exists alongside ppx_patch).
+;; In-process rejection harness linking the real ppx modules (see
+;; lib/ppx/dune for why ppx_impl exists alongside ppx_patch). -linkall keeps
+;; the deriver registrations from being dropped in the link.
 (executable
- (name driver)
- (modules driver)
+ (name ppx_negative)
+ (modules ppx_negative)
  (libraries ppxlib ppx_impl)
  (ocamlopt_flags (:standard -linkall))
  (ocamlc_flags (:standard -linkall)))
-
-(executable
- (name ppx_negative)
- (modules ppx_negative))
 
 (rule
  (alias runtest)
  (deps (glob_files fixtures/*.ml))
  (action
-  (run %{exe:ppx_negative.exe} %{exe:driver.exe} fixtures)))
+  (run %{exe:ppx_negative.exe} fixtures)))

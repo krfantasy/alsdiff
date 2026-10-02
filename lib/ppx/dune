@@ -1,5 +1,5 @@
-;; The deriver modules live in the plain library [ppx_impl] so a standalone
-;; driver executable (test/ppx_negative) can link them for rejection tests;
+;; The deriver modules live in the plain library [ppx_impl] so the
+;; test/ppx_negative rejection harness can link them in-process;
 ;; [(kind ppx_rewriter)] libraries are empty stubs when linked as ordinary
 ;; dependencies. [ppx_patch] stays the (pps ...) entry point for consumers.
 (library

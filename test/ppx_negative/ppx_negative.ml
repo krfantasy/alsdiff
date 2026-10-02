@@ -1,52 +1,69 @@
 (* PPX rejection tests (5364b2a, 44b9f78, 9d712d6, 182840c).
 
    The derivers' rejections surface as [%%ocaml.error "..."] extensions in
-   the standalone driver's expanded output — the compile fails downstream
-   when the compiler consumes the AST. So a fixture "fails to compile" iff
-   its expansion carries an ocaml.error node, and the expected message must
-   appear inside it. Positive-control fixtures must expand cleanly: an
-   unexpected ocaml.error there means a rejection over-fired. *)
+   the expanded AST — the compile fails downstream when the compiler
+   consumes the AST. So a fixture "fails to compile" iff its expansion
+   carries an ocaml.error node, and the expected message must appear inside
+   it. Positive-control fixtures must expand cleanly: an unexpected
+   ocaml.error there means a rejection over-fired.
 
-let read_file path =
-  let ic = open_in_bin path in
-  let n = in_channel_length ic in
-  let s = really_input_string ic n in
-  close_in ic;
-  s
+   Expansion runs in-process via [Ppxlib.Driver.map_structure] after linking
+   the real derivers — no subprocess and no shell, so the suite cannot be
+   broken by command-line mangling (cmd.exe on Windows made the earlier
+   standalone-driver version unrunnable there). *)
+
+let () =
+  ignore
+    ( Ppx_impl.Ppx_patch.deriver,
+      Ppx_impl.Ppx_view_spec.deriver,
+      Ppx_impl.Ppx_id.deriver )
+
+(* [ocaml.error] payloads are [PStr "message"]. *)
+let message_of_payload = function
+  | Ppxlib.PStr
+      [ { pstr_desc =
+            Pstr_eval
+              ( { pexp_desc = Pexp_constant (Pconst_string (msg, _, _)); _ },
+                _ )
+        ; _ } ] -> Some msg
+  | _ -> None
+
+let error_messages_of_structure structure =
+  let folder =
+    object
+      inherit ['acc] Ppxlib.Ast_traverse.fold
+
+      method! extension (name, payload) acc =
+        if name.Ppxlib.txt = "ocaml.error" then
+          match message_of_payload payload with
+          | Some msg -> msg :: acc
+          | None -> "<unprintable ocaml.error payload>" :: acc
+        else acc
+    end
+  in
+  List.rev (folder#structure structure [])
+
+(* [expand_fixture path] expands [path] with the linked derivers and returns
+   every ocaml.error message; a deriver or the parser aborting with
+   [Location.Error] contributes that message alone. *)
+let expand_fixture path =
+  match
+    let ic = open_in_bin path in
+    Fun.protect
+      ~finally:(fun () -> close_in ic)
+      (fun () ->
+         let lexbuf = Lexing.from_channel ic in
+         lexbuf.Lexing.lex_curr_p <-
+           { lexbuf.Lexing.lex_curr_p with Lexing.pos_fname = path };
+         Ppxlib.Driver.map_structure (Ppxlib.Parse.implementation lexbuf))
+  with
+  | structure -> error_messages_of_structure structure
+  | exception Ppxlib.Location.Error e -> [ Ppxlib.Location.Error.message e ]
 
 let contains ~needle ~haystack =
   let ln = String.length needle and lh = String.length haystack in
   let rec go i = i + ln <= lh && (String.sub haystack i ln = needle || go (i + 1)) in
   ln = 0 || go 0
-
-(* [native_path p] makes the executable path [p] spawnable by the shell
-   behind [Sys.command]: cmd.exe on Windows parses "/" in a command name as
-   a switch prefix, so "./driver.exe" fails with "'.' is not recognized" —
-   resolve to absolute and use native separators there. *)
-let native_path p =
-  let n = String.length p in
-  let p =
-    if n >= 2 && p.[0] = '.' && (p.[1] = '/' || p.[1] = '\\') then
-      String.sub p 2 (n - 2)
-    else p
-  in
-  let p = if Filename.is_relative p then Filename.concat (Sys.getcwd ()) p else p in
-  if Sys.win32 then String.map (function '/' -> '\\' | c -> c) p else p
-
-(* [run_driver driver fixture] expands [fixture] with the standalone ppx
-   driver and returns the expanded source. *)
-let run_driver driver fixture =
-  let out = Filename.temp_file "alsdiff_ppx_negative" ".ml" in
-  let cmd =
-    Printf.sprintf "%s -impl %s -o %s"
-      (Filename.quote (native_path driver)) (Filename.quote fixture)
-      (Filename.quote out)
-  in
-  if Sys.command cmd <> 0 then None
-  else
-    let content = read_file out in
-    Sys.remove out;
-    Some content
 
 let cases =
   [
@@ -70,32 +87,33 @@ let cases =
   ]
 
 let () =
-  if Array.length Sys.argv <> 3 then begin
-    prerr_endline "usage: ppx_negative <driver.exe> <fixtures-dir>";
+  if Array.length Sys.argv <> 2 then begin
+    prerr_endline "usage: ppx_negative <fixtures-dir>";
     exit 2
   end;
-  let driver = Sys.argv.(1) and dir = Sys.argv.(2) in
+  let dir = Sys.argv.(1) in
   let failures = ref 0 in
   List.iter
     (fun (name, expected) ->
        let fixture = Filename.concat dir name in
+       let messages = expand_fixture fixture in
        let outcome =
-         match run_driver driver fixture with
-         | None -> Error "driver did not run"
-         | Some output ->
-           let rejected = contains ~needle:"ocaml.error" ~haystack:output in
-           match expected with
-           | Some msg ->
-             if not rejected then Error "no rejection raised"
-             else if not (contains ~needle:msg ~haystack:output) then
-               Error (Printf.sprintf "rejection message does not mention %S" msg)
-             else Ok ()
-           | None ->
-             if rejected then
-               Error (Printf.sprintf "unexpected rejection:\n%s"
-                        (String.concat "\n" (List.filter (fun l -> String.length l > 0)
-                                               (List.tl (String.split_on_char '\n' output)))))
-             else Ok ()
+         match expected with
+         | Some msg ->
+           if messages = [] then Error "no rejection raised"
+           else if
+             not (List.exists (fun m -> contains ~needle:msg ~haystack:m) messages)
+           then
+             Error
+               (Printf.sprintf "rejection messages do not mention %S: %s" msg
+                  (String.concat " | " messages))
+           else Ok ()
+         | None ->
+           if messages = [] then Ok ()
+           else
+             Error
+               (Printf.sprintf "unexpected rejection: %s"
+                  (String.concat " | " messages))
        in
        match outcome with
        | Ok () -> Printf.printf "[ppx-negative] PASS %s\n" name
