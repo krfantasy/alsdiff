@@ -19,13 +19,28 @@ let contains ~needle ~haystack =
   let rec go i = i + ln <= lh && (String.sub haystack i ln = needle || go (i + 1)) in
   ln = 0 || go 0
 
+(* [native_path p] makes the executable path [p] spawnable by the shell
+   behind [Sys.command]: cmd.exe on Windows parses "/" in a command name as
+   a switch prefix, so "./driver.exe" fails with "'.' is not recognized" —
+   resolve to absolute and use native separators there. *)
+let native_path p =
+  let n = String.length p in
+  let p =
+    if n >= 2 && p.[0] = '.' && (p.[1] = '/' || p.[1] = '\\') then
+      String.sub p 2 (n - 2)
+    else p
+  in
+  let p = if Filename.is_relative p then Filename.concat (Sys.getcwd ()) p else p in
+  if Sys.win32 then String.map (function '/' -> '\\' | c -> c) p else p
+
 (* [run_driver driver fixture] expands [fixture] with the standalone ppx
    driver and returns the expanded source. *)
 let run_driver driver fixture =
   let out = Filename.temp_file "alsdiff_ppx_negative" ".ml" in
   let cmd =
     Printf.sprintf "%s -impl %s -o %s"
-      (Filename.quote driver) (Filename.quote fixture) (Filename.quote out)
+      (Filename.quote (native_path driver)) (Filename.quote fixture)
+      (Filename.quote out)
   in
   if Sys.command cmd <> 0 then None
   else
